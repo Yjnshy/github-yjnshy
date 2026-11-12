@@ -1,2 +1,111 @@
-# github-yjnshy
-我的第一个github项目
+# media-toolkit
+
+多平台**无水印视频/图文下载** + **直播自动录制** 的 Python 命令行工具。
+
+支持抖音、B站、小红书及 yt-dlp 覆盖的 1000+ 站点；Cookie 从浏览器**自动提取**，无需手动 F12 复制。
+
+## ✨ 功能特性
+
+- **无水印下载**：抖音视频自动解析无水印直链；图文作品下载全部原图（自动排除水印版和压缩图），文案同步存档为 txt
+- **Cookie 自动化**：自动从 Edge / Chrome / Firefox / Brave 浏览器提取登录态，彻底告别手动复制 Cookie
+- **直播录制**：开播自动录、下播自动停、断线自动重连，支持按时长分段，ts 格式断电不损坏文件
+- **多平台**：抖音 / B站 / 小红书 专用适配，其余 1000+ 站点由 yt-dlp 兜底
+- **批量下载**：整段分享文案直接粘贴，自动提取链接、去重、批量下载
+- **规范命名**：统一 `平台_作者_标题_时间戳` 命名并分类存储
+
+## 🚀 快速开始
+
+环境要求：Python 3.9+，以及 [ffmpeg](https://ffmpeg.org/download.html)（录制与高画质合并必需）。
+
+```bash
+# 1. 克隆并安装
+git clone https://github.com/Yjnshy/github-yjnshy.git
+cd github-yjnshy
+pip install -e .                 # Cookie 自动提取已内置（复用 yt-dlp 的浏览器解密）
+
+# 2. 生成自己的配置（可选，都有默认值）
+cp config.example.yaml config.yaml
+
+# 3. 开始用
+mtk download "https://v.douyin.com/xxxxxxx/"     # 下载抖音无水印视频
+mtk record https://live.douyin.com/123456789     # 录制一个直播间
+mtk watch                                        # 值守 config.yaml 里的所有直播间
+```
+
+## 📖 使用说明
+
+### 下载 `mtk download`
+
+```bash
+mtk download "链接1" "链接2" -q 720 -o D:/视频
+```
+
+- 支持整段分享文案：`mtk download "7.94 复制打开抖音… https://v.douyin.com/xxx/ …"`
+- `-q` 画质：`best`（默认）/ `1080` / `720` / `480` / `audio` / `mp3`
+- 抖音图文作品会自动下载全部无水印原图，并保存文案 txt
+
+### 录制 `mtk record`
+
+```bash
+mtk record https://live.bilibili.com/6
+```
+
+立即开始录制单个直播间，Ctrl+C 停止。
+
+### 值守 `mtk watch`
+
+在 `config.yaml` 的 `record.rooms` 里每行填一个直播间链接（`#` 开头暂停监控），然后：
+
+```bash
+mtk watch
+```
+
+开播自动录、下播自动停，7×24 无人值守。
+
+## ⚙️ 配置说明
+
+复制 `config.example.yaml` 为 `config.yaml`，主要选项：
+
+| 选项 | 说明 | 默认值 |
+|---|---|---|
+| `output_dir` | 保存根目录 | `./downloads` |
+| `quality` | 默认画质 | `best` |
+| `cookies.browser` | 从哪个浏览器提取 Cookie | `edge` |
+| `cookies.cookies_file` | 手动指定 cookies.txt（优先级最高） | 空 |
+| `proxy` | 网络代理 | 空 |
+| `record.format` | 录制格式 | `ts` |
+| `record.poll_interval` | 开播检测间隔（秒） | `60` |
+| `record.max_retries` | 单场断线重连上限 | `20` |
+| `record.segment_minutes` | 按时长分段（0 不分段） | `0` |
+
+## 🔒 隐私与安全
+
+- Cookie 只在你本机的内存和系统临时目录中流转，**不会上传任何地方**
+- `config.yaml` 与 `cookies*.txt` 已被 `.gitignore` 排除，不会误提交
+- 请勿把含 Cookie 的文件发给任何人，那等同于你的账号登录态
+
+## 🏗️ 项目结构
+
+```
+src/media_toolkit/
+├── cli.py               # 命令行入口
+├── core/                # 配置、日志、命名、ffmpeg、跨平台兼容
+├── cookies/             # 浏览器 Cookie 自动提取
+├── platforms/           # 平台适配层（douyin / generic 兜底）
+├── downloader/          # 下载引擎、图文下载
+└── recorder/            # 直播监控与录制
+```
+
+直播流解析思路参考了开源项目 [DouyinLiveRecorder](https://github.com/ihmily/DouyinLiveRecorder)（MIT），下载引擎基于 [yt-dlp](https://github.com/yt-dlp/yt-dlp)。
+
+## ⚠️ 免责声明
+
+本工具仅供**个人学习与技术研究**使用。请遵守各内容平台的服务协议与版权规定：
+
+- 下载/录制的内容版权归原作者所有，请勿用于商业用途或未经授权的二次分发
+- 请尊重创作者的劳动成果与隐私，不要录制、传播禁止录制的内容
+- 使用本工具产生的一切法律后果由使用者本人承担，与项目作者无关
+
+## 📄 License
+
+[MIT](LICENSE)
