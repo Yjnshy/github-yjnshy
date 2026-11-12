@@ -32,6 +32,9 @@ mtk record https://live.douyin.com/123456789     # 录制一个直播间
 mtk watch                                        # 值守 config.yaml 里的所有直播间
 ```
 
+> 首次使用抖音功能前，请先在你选择的浏览器（默认 Chrome）里登录 douyin.com。
+> Cookie 会自动提取并缓存 7 天，期间无需重复登录，也不用关闭浏览器。
+
 ## 📖 使用说明
 
 ### 下载 `mtk download`
@@ -43,6 +46,24 @@ mtk download "链接1" "链接2" -q 720 -o D:/视频
 - 支持整段分享文案：`mtk download "7.94 复制打开抖音… https://v.douyin.com/xxx/ …"`
 - `-q` 画质：`best`（默认）/ `1080` / `720` / `480` / `audio` / `mp3`
 - 抖音图文作品会自动下载全部无水印原图，并保存文案 txt
+
+### Cookie 相关
+
+```bash
+mtk --browser firefox download "链接"   # 临时换一个浏览器提取 Cookie
+mtk cache                              # 查看缓存状态
+mtk cache --clear                      # 换账号 / Cookie 失效时清空缓存
+```
+
+获取优先级：`cookies.txt`（配置指定）→ 本地缓存（7 天）→ 浏览器自动提取。
+
+> **关于 Edge 读不到 Cookie**：Edge 与新版 Chrome 的部分版本启用了
+> App-Bound Encryption（系统级密钥保护），第三方程序无法解密。
+> 遇到 `Failed to decrypt with DPAPI` 时，请换用 Chrome / Firefox，
+> 或导出一份 cookies.txt 在配置里指定 `cookies.cookies_file`。
+>
+> **关于浏览器正在运行**：Chrome/Edge 运行时会锁住 Cookie 数据库，
+> 首次提取可能需要完全退出浏览器；成功提取后会缓存 7 天，之后不受影响。
 
 ### 录制 `mtk record`
 
@@ -70,8 +91,9 @@ mtk watch
 |---|---|---|
 | `output_dir` | 保存根目录 | `./downloads` |
 | `quality` | 默认画质 | `best` |
-| `cookies.browser` | 从哪个浏览器提取 Cookie | `edge` |
+| `cookies.browser` | 从哪个浏览器提取 Cookie | `chrome` |
 | `cookies.cookies_file` | 手动指定 cookies.txt（优先级最高） | 空 |
+| `cookies.cache_days` | Cookie 本地缓存天数（0 关闭） | `7` |
 | `proxy` | 网络代理 | 空 |
 | `record.format` | 录制格式 | `ts` |
 | `record.poll_interval` | 开播检测间隔（秒） | `60` |
@@ -80,7 +102,8 @@ mtk watch
 
 ## 🔒 隐私与安全
 
-- Cookie 只在你本机的内存和系统临时目录中流转，**不会上传任何地方**
+- Cookie 只在你本机内存、系统临时目录和 `~/.media-toolkit/cookie_cache.json` 中流转，**不会上传任何地方**
+- 缓存可通过 `mtk cache --clear` 随时清除
 - `config.yaml` 与 `cookies*.txt` 已被 `.gitignore` 排除，不会误提交
 - 请勿把含 Cookie 的文件发给任何人，那等同于你的账号登录态
 

@@ -2,20 +2,28 @@
 
 获取优先级（从高到低）：
 1. 环境变量 MTK_COOKIES_FILE 或配置里的 cookies.txt（Netscape 格式）
-2. 浏览器自动提取（复用 yt-dlp 内置的浏览器 Cookie 解密，
+2. 本地缓存（~/.media-toolkit/cookie_cache.json，默认 7 天）
+3. 浏览器自动提取（复用 yt-dlp 内置的浏览器 Cookie 解密，
    browser-cookie3 兜底）
 
+缓存的意义：部分浏览器（Chrome/Edge）运行时会锁住 Cookie 数据库，
+提取不到。缓存一次后 7 天内免关浏览器，过期再重新提取。
+
 安全约定：
-- Cookie 只在内存和系统临时目录中流转，绝不写入项目目录，绝不上传
+- Cookie 只在内存、系统临时目录和用户主目录的缓存文件中流转，
+  绝不写入项目目录，绝不上传
+- 缓存文件权限设为仅当前用户可读（非 Windows）
 - 提供给 yt-dlp 的 Netscape 文件创建在系统临时目录，用完即删
 """
 
 from __future__ import annotations
 
 import http.cookiejar
+import json
 import logging
 import os
 import tempfile
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -31,11 +39,29 @@ PLATFORM_DOMAINS: Dict[str, List[str]] = {
 }
 
 
+def _explain_cookie_error(message: str, browser: str) -> str:
+    """把 yt-dlp 的原始报错翻译成用户能照做的建议。"""
+    text = message.lower()
+    if "decrypt with dpapi" in text or "app-bound" in text:
+        return (f"{browser} 的 Cookie 受系统级加密（App-Bound Encryption）保护，"
+                "第三方程序无法解密。建议改用 Chrome / Firefox 登录同一账号，"
+                "或导出一份 cookies.txt 并在配置里指定 cookies.cookies_file。")
+    if "could not copy" in text:
+        return (f"{browser} 正在运行并锁住了 Cookie 数据库，"
+                "请完全退出该浏览器（任务管理器确认无残留进程）后重试。")
+    if "could not find" in text and "database" in text:
+        return f"未找到 {browser} 的 Cookie 数据库（可能未安装或从未使用）。"
+    return ""
+
+
 class CookieManager:
     """按需为各平台提供 Cookie 请求头。"""
 
-    def __init__(self, config: CookieConfig):
+    CACHE_PATH = Path.home() / ".media-toolkit" / "cookie_cache.json"
+
+    def __init__(self, config: CookieConfig, use_cache: bool = True):
         self._config = config
+        self._use_cache = use_cache and getattr(config, "cache_days", 0) > 0
         self._cache: Dict[str, str] = {}
         self._temp_files: List[str] = []
 
@@ -46,14 +72,20 @@ class CookieManager:
         if platform in self._cache:
             return self._cache[platform]
 
-        header = self._from_file(platform) or self._from_browser(platform)
+        header = (self._from_file(platform)
+                  or self._from_disk_cache(platform)
+                  or self._from_browser(platform))
         if header:
             self._cache[platform] = header
             logger.debug("[%s] Cookie 已就绪（%d 字符）", platform, len(header))
         else:
             logger.warning(
-                "[%s] 未能获取 Cookie：请在浏览器中登录该平台，"
-                "或在 config.yaml 中配置 cookies.cookies_file", platform)
+                "[%s] 未能获取 Cookie，可能原因：\n"
+                "  1. 浏览器里没有登录该平台（先登录再试）\n"
+                "  2. 浏览器正在运行，锁住了 Cookie 数据库（完全退出浏览器）\n"
+                "  3. Edge/新版 Chrome 启用了系统级加密，第三方无法解密"
+                "（改用 Chrome、Firefox，或导出 cookies.txt 后配置 cookies.cookies_file）",
+                platform)
         return header
 
     def write_netscape_file(self, platform: str) -> Optional[str]:
@@ -108,13 +140,67 @@ class CookieManager:
             return ""
         return "; ".join(items)
 
+    def _from_disk_cache(self, platform: str) -> str:
+        """读取本地缓存（未过期则复用，避免每次都去翻浏览器数据库）。"""
+        if not self._use_cache or not self.CACHE_PATH.is_file():
+            return ""
+        try:
+            data = json.loads(self.CACHE_PATH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return ""
+        entry = data.get(platform) or {}
+        if not entry.get("header") or entry.get("expires", 0) < time.time():
+            return ""
+        logger.info("[%s] 使用本地 Cookie 缓存（剩余 %d 天）", platform,
+                    max(0, int((entry["expires"] - time.time()) // 86400)))
+        return entry["header"]
+
+    def _save_disk_cache(self, platform: str, header: str) -> None:
+        if not self._use_cache:
+            return
+        try:
+            self.CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            data = {}
+            if self.CACHE_PATH.is_file():
+                data = json.loads(self.CACHE_PATH.read_text(encoding="utf-8"))
+            data[platform] = {
+                "header": header,
+                "expires": int(time.time()) + self._config.cache_days * 86400,
+            }
+            self.CACHE_PATH.write_text(json.dumps(data, ensure_ascii=False),
+                                       encoding="utf-8")
+            if os.name != "nt":
+                os.chmod(self.CACHE_PATH, 0o600)
+            logger.debug("[%s] Cookie 已缓存 %d 天", platform,
+                         self._config.cache_days)
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.debug("写入 Cookie 缓存失败: %s", exc)
+
+    def clear_cache(self) -> None:
+        """清空本地 Cookie 缓存（缓存失效时需要）。"""
+        self._cache.clear()
+        try:
+            self.CACHE_PATH.unlink(missing_ok=True)
+            logger.info("本地 Cookie 缓存已清除")
+        except OSError as exc:
+            logger.warning("清除缓存失败: %s", exc)
+
     def _from_browser(self, platform: str) -> str:
         domains = PLATFORM_DOMAINS.get(platform)
         if not domains:
             return ""
-        browser = (self._config.browser or "edge").lower()
-        return self._via_ytdlp(browser, domains[0]) or \
-            self._via_browser_cookie3(browser, domains[0])
+        domain = domains[0]
+        # 配置的浏览器优先，其余浏览器依次兜底（用户可能登录在别的浏览器里）
+        preferred = (self._config.browser or "edge").lower()
+        browsers = [preferred] + [b for b in ("edge", "chrome", "firefox", "brave")
+                                  if b != preferred]
+        for browser in browsers:
+            header = self._via_ytdlp(browser, domain)
+            if header:
+                logger.info("[%s] 已从 %s 浏览器提取 Cookie", platform, browser)
+                self._save_disk_cache(platform, header)
+                return header
+        return self._via_browser_cookie3(preferred, domain)
 
     @staticmethod
     def _via_ytdlp(browser: str, domain: str) -> str:
@@ -131,7 +217,10 @@ class CookieManager:
             }) as ydl:
                 jar = ydl.cookiejar
         except Exception as exc:
-            logger.debug("yt-dlp 浏览器 Cookie 提取失败: %s", exc)
+            logger.debug("[%s] Cookie 提取失败: %s", browser, exc)
+            hint = _explain_cookie_error(str(exc), browser)
+            if hint:
+                logger.debug(hint)
             return ""
         items = [
             f"{c.name}={c.value}" for c in jar

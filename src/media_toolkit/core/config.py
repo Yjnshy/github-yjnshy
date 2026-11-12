@@ -23,8 +23,9 @@ DEFAULT_CONFIG_PATHS = [
 
 @dataclass
 class CookieConfig:
-    browser: str = "edge"            # chrome / edge / firefox / brave
+    browser: str = "chrome"            # chrome / edge / firefox / brave
     cookies_file: str = ""           # Netscape 格式 cookies.txt 路径
+    cache_days: int = 7              # 提取成功后的本地缓存天数，0 表示不缓存
 
 
 @dataclass
@@ -73,8 +74,9 @@ def load_config(explicit_path: Optional[str] = None) -> AppConfig:
         cfg.ffprobe_path = raw.get("ffprobe_path", cfg.ffprobe_path)
         ck = raw.get("cookies") or {}
         cfg.cookies = CookieConfig(
-            browser=ck.get("browser", "edge"),
+            browser=ck.get("browser", "chrome"),
             cookies_file=ck.get("cookies_file", "") or "",
+            cache_days=int(ck.get("cache_days", 7)),
         )
         rc = raw.get("record") or {}
         cfg.record = RecordConfig(

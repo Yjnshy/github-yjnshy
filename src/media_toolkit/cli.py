@@ -19,12 +19,19 @@ console = Console()
 @click.option("--config", "config_path", default=None,
               help="配置文件路径（默认找 ./config.yaml 或 ~/.media-toolkit/config.yaml）")
 @click.option("--verbose", is_flag=True, help="输出调试日志")
+@click.option("--browser", default=None,
+              type=click.Choice(["chrome", "edge", "firefox", "brave"]),
+              help="临时指定提取 Cookie 的浏览器（覆盖配置文件）")
 @click.pass_context
-def main(ctx: click.Context, config_path: str | None, verbose: bool) -> None:
+def main(ctx: click.Context, config_path: str | None, verbose: bool,
+         browser: str | None) -> None:
     """media-toolkit：多平台无水印下载与直播自动录制工具。"""
     setup_logging(logging.DEBUG if verbose else logging.INFO)
+    config = load_config(config_path)
+    if browser:
+        config.cookies.browser = browser
     ctx.ensure_object(dict)
-    ctx.obj["config"] = load_config(config_path)
+    ctx.obj["config"] = config
 
 
 @main.command()
@@ -119,6 +126,28 @@ def watch(ctx: click.Context) -> None:
         console.print(f"[red]{exc}[/red]")
         raise SystemExit(1)
     monitor.watch(config.record.rooms)
+
+
+@main.command()
+@click.option("--clear", is_flag=True, help="清空本地 Cookie 缓存（Cookie 失效时使用）")
+@click.pass_context
+def cache(ctx: click.Context, clear: bool) -> None:
+    """管理 Cookie 本地缓存。
+
+    \b
+    示例：
+      mtk cache --clear     # Cookie 失效、换账号后清空缓存
+    """
+    from media_toolkit.cookies.manager import CookieManager
+
+    manager = CookieManager(ctx.obj["config"].cookies)
+    if clear:
+        manager.clear_cache()
+        console.print(f"[green]已清空缓存：{CookieManager.CACHE_PATH}[/green]")
+    else:
+        exists = CookieManager.CACHE_PATH.is_file()
+        console.print(f"缓存文件：{CookieManager.CACHE_PATH}"
+                      f"（{'存在' if exists else '不存在'}）")
 
 
 if __name__ == "__main__":

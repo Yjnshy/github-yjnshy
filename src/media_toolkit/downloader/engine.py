@@ -78,7 +78,7 @@ class DownloadEngine:
 
         # 无水印直链（抖音）或 yt-dlp 兜底
         target_url = info.url if info and info.url else url
-        platform = info.platform if info else "other"
+        platform = (info.platform if info else None) or adapter.name
         referer = info.referer if info else ""
 
         if info:

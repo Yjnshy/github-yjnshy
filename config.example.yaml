@@ -11,9 +11,12 @@ quality: "best"
 #   1. cookies_file 指定的 Netscape 格式 cookies.txt
 #   2. browser 指定的浏览器自动提取（需 pip install media-toolkit[cookies]）
 # 都不配置则不带 Cookie（部分平台会解析失败）
+# 注意：Edge / 新版 Chrome 的部分版本启用了系统级加密，
+# 第三方程序可能无法解密；此时请改用另一个浏览器或导出的 cookies.txt
 cookies:
-  browser: "edge"        # chrome / edge / firefox / brave
+  browser: "chrome"      # chrome / edge / firefox / brave（推荐 chrome）
   cookies_file: ""       # 例如 "D:/cookies/douyin.txt"
+  cache_days: 7          # 提取成功后缓存天数，避免每次都要关浏览器；0 表示不缓存
 
 # 网络代理（留空不使用），例如 "http://127.0.0.1:7890"
 proxy: ""
