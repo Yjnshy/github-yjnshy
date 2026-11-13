@@ -10,7 +10,7 @@
 用法::
 
     python packaging/make_shortcut.py                        # 建到当前用户桌面
-    python packaging/make_shortcut.py --name "帅羊羊"      # 自定义名称
+    python packaging/make_shortcut.py --name "帅羊羊DLY"      # 自定义名称
     python packaging/make_shortcut.py --app-dir "D:/Apps/DLY"
 """
 
@@ -106,7 +106,7 @@ def icon_source(exe: Path) -> Path:
     return ico if ico.is_file() else Path(exe)
 
 
-def create_shortcut(exe: Path, name: str = "帅羊羊下载工具",
+def create_shortcut(exe: Path, name: str = "帅羊羊DLY",
                     description: str = "") -> Path:
     """调用 IShellLink 在桌面创建快捷方式，返回 .lnk 路径。"""
     exe = Path(exe).resolve()
@@ -161,7 +161,7 @@ def create_shortcut(exe: Path, name: str = "帅羊羊下载工具",
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="在桌面创建程序快捷方式")
     parser.add_argument("--app-dir", default="", help="程序所在目录（含 DLY.exe）")
-    parser.add_argument("--name", default="帅羊羊下载工具", help="快捷方式名称")
+    parser.add_argument("--name", default="帅羊羊DLY", help="快捷方式名称")
     parser.add_argument("--desc", default="视频无水印下载 & 直播录制", help="备注")
     args = parser.parse_args(argv)
 

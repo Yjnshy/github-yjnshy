@@ -1,11 +1,11 @@
 @echo off
 chcp 65001 >nul
 setlocal
-title 打包 帅羊羊 为 exe
+title 打包 帅羊羊DLY 为 exe
 cd /d "%~dp0.."
 
 echo ==========================================
-echo   打包 帅羊羊 桌面版
+echo   打包 帅羊羊DLY 桌面版
 echo ==========================================
 echo.
 
@@ -54,7 +54,7 @@ echo.
 echo ==========================================
 echo   完成！产物在 dist\DLY\
 echo   双击 dist\DLY\DLY.exe 即可运行
-echo   桌面已生成「帅羊羊」快捷方式
+echo   桌面已生成「帅羊羊DLY」快捷方式
 echo ==========================================
 echo.
 pause

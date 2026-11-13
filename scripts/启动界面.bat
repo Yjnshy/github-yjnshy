@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-title 帅羊羊（关闭此黑窗口即退出程序）
+title 帅羊羊DLY（关闭此黑窗口即退出程序）
 cd /d "%~dp0.."
 echo 正在打开桌面窗口，请稍候…
 python -m dly.gui

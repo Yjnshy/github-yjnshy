@@ -20,7 +20,7 @@ from dly.gui.server import create_app
 
 logger = logging.getLogger(__name__)
 
-WINDOW_TITLE = "帅羊羊 — 视频下载 & 直播录制"
+WINDOW_TITLE = "帅羊羊DLY — 视频下载 & 直播录制"
 WINDOW_SIZE = (1180, 860)
 MIN_SIZE = (960, 640)
 QUIT_POLL_SECONDS = 0.3
@@ -30,7 +30,7 @@ class DesktopUnavailable(RuntimeError):
     """桌面窗口依赖缺失（没装 pywebview 或没有可用的 WebView2）。"""
 
 
-def alert(message: str, title: str = "帅羊羊") -> None:
+def alert(message: str, title: str = "帅羊羊DLY") -> None:
     """弹一个系统对话框。
 
     打包成窗口程序后没有控制台，启动失败时用户只会看到「什么都没发生」，

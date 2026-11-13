@@ -70,12 +70,12 @@ def write_version_file() -> str:
     StringFileInfo([
       StringTable('080404B0', [
         StringStruct('CompanyName', 'Yjnshy'),
-        StringStruct('FileDescription', '帅羊羊 · 视频下载与直播录制'),
+        StringStruct('FileDescription', '帅羊羊DLY · 视频下载与直播录制'),
         StringStruct('FileVersion', '{version}'),
         StringStruct('InternalName', '{APP_NAME}'),
         StringStruct('LegalCopyright', 'MIT License'),
         StringStruct('OriginalFilename', '{APP_NAME}.exe'),
-        StringStruct('ProductName', '帅羊羊'),
+        StringStruct('ProductName', '帅羊羊DLY'),
         StringStruct('ProductVersion', '{version}')
       ])
     ]),
