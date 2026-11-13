@@ -44,6 +44,7 @@ echo.
 echo 复制配置模板与使用说明…
 copy /y config.example.yaml "dist\DLY\config.example.yaml" >nul 2>nul
 copy /y "packaging\使用说明.txt" "dist\DLY\使用说明.txt" >nul 2>nul
+copy /y "packaging\app.ico" "dist\DLY\DLY.ico" >nul 2>nul
 
 echo.
 echo 创建桌面快捷方式…

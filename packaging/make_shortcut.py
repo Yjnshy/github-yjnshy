@@ -96,12 +96,24 @@ def find_exe(app_dir: Path | None = None) -> Path:
         "或用 --app-dir 指定程序所在目录。")
 
 
+def icon_source(exe: Path) -> Path:
+    """快捷方式图标来源。
+
+    优先用与 exe 同目录的独立 ``DLY.ico``：一是图标文件路径一变，资源管理器
+    必然重新读取，不会沿用旧的图标缓存；二是 exe 被重新打包后图标能立刻刷新。
+    """
+    ico = Path(exe).parent / "DLY.ico"
+    return ico if ico.is_file() else Path(exe)
+
+
 def create_shortcut(exe: Path, name: str = "帅羊羊下载工具",
                     description: str = "") -> Path:
     """调用 IShellLink 在桌面创建快捷方式，返回 .lnk 路径。"""
     exe = Path(exe).resolve()
     if not exe.is_file():
         raise FileNotFoundError(f"目标不存在：{exe}")
+
+    icon = icon_source(exe)
 
     lnk = desktop_dir() / f"{name}.lnk"
     if lnk.exists():
@@ -126,7 +138,7 @@ def create_shortcut(exe: Path, name: str = "帅羊羊下载工具",
             ptr, str(exe), 0)
         _vt_call(ptr, _VT_SET_WORKING_DIR, ctypes.c_wchar_p)(ptr, str(exe.parent))
         _vt_call(ptr, _VT_SET_ICON_LOCATION, ctypes.c_wchar_p, ctypes.c_int)(
-            ptr, str(exe), 0)
+            ptr, str(icon), 0)
         if description:
             _vt_call(ptr, _VT_SET_DESCRIPTION, ctypes.c_wchar_p)(ptr, description)
 
@@ -162,6 +174,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"✓ 快捷方式：{lnk}")
     print(f"  指向：{exe}")
+    print(f"  图标：{icon_source(exe)}")
     return 0
 
 
