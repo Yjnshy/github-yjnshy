@@ -1,12 +1,12 @@
 """生成应用图标 packaging/app.ico（产物已入库）。
 
-设计：深色圆角底 + 白色羊头几何符号（双角 + 倒三角脸 + 负空间眼睛）。
-羊头同时暗示「向下」—— 底部的尖就是下载方向，16px 缩小时仍认得出。
+设计：深色圆角底 + 白色云朵羊毛球（外张金角 + 黑眼 + 粉色小鼻）。
+圆润、干净，16px 缩小时仍是一颗认得出的羊头。
 
 用法::
 
-    python packaging/make_icon.py                 # 默认方案（粗角羊）
-    python packaging/make_icon.py --variant round # 换成圆脸萌版
+    python packaging/make_icon.py                 # 默认方案（云朵羊毛球）
+    python packaging/make_icon.py --variant ram-bold  # 换成原来的粗角羊头
     python packaging/make_icon.py --sheet         # 额外输出各尺寸对比图
 """
 
@@ -16,12 +16,15 @@ import argparse
 import math
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 SS = 1024                                   # 超采样画布
 BG_TOP = (26, 33, 56)                       # 深墨蓝
 BG_BOTTOM = (11, 14, 26)                    # 近黑
 WHITE = (246, 248, 252, 255)
+CREAM = (255, 201, 125, 255)                # 羊角
+DARK = (16, 23, 40, 255)                    # 眼睛
+BLUSH = (246, 191, 196, 255)                # 小粉鼻
 SIZES = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64),
          (128, 128), (256, 256), (512, 512)]
 
@@ -163,12 +166,109 @@ def variant_round() -> Image.Image:
     return img
 
 
+def _circle(draw, cx: float, cy: float, r: float, fill=WHITE) -> None:
+    draw.ellipse((SS * (cx - r), SS * (cy - r), SS * (cx + r), SS * (cy + r)), fill=fill)
+
+
+def _wool(draw, cx: float, cy: float, r: float) -> None:
+    """云朵羊毛球：一个主圆 + 沿外缘一圈小圆，做出蓬松的轮廓。"""
+    for k in range(9):
+        a = math.pi * 2 * k / 9 - math.pi / 2
+        _circle(draw, cx + math.cos(a) * (r - 0.015),
+                cy + math.sin(a) * (r - 0.015), r * 0.37)
+    _circle(draw, cx, cy, r)
+
+
+def _curl(draw, sx: int, x0: float, y0: float, span: float,
+          thick: float = 0.056) -> None:
+    """羊角：从头顶向外张开、向上弯，末端内勾的开口钩（不闭合）。"""
+    x = 0.5 + sx * x0
+    pts = _bezier3((SS * x, SS * y0),
+                   (SS * (x + sx * span * 0.62), SS * (y0 - 0.020)),
+                   (SS * (x + sx * span * 0.78), SS * (y0 - 0.145)),
+                   (SS * (x + sx * span * 0.42), SS * (y0 - 0.152)))
+    pts += _bezier2(pts[-1], (SS * (x + sx * span * 0.20), SS * (y0 - 0.150)),
+                    (SS * (x + sx * span * 0.18), SS * (y0 - 0.100)))[1:]
+    _stroke(draw, pts, SS * thick, fill=CREAM, width_end=SS * thick * 0.66)
+
+
+def _transparent() -> Image.Image:
+    return Image.new("RGBA", (SS, SS), (0, 0, 0, 0))
+
+
+def _outline(img: Image.Image, ratio: float = 0.008,
+             color: tuple = (26, 33, 56, 255)) -> Image.Image:
+    """沿不透明像素外扩一圈描边。
+
+    纯透明的白羊在浅色桌面/资源管理器白底上会「消失」，描边是让它在
+    任何背景上都立得住的唯一办法。做法：alpha 通道做形态学膨胀当遮罩。
+    """
+    k = int(SS * ratio) * 2 + 1
+    grown = img.getchannel("A").filter(ImageFilter.MaxFilter(k))
+    layer = Image.new("RGBA", img.size, color)
+    layer.putalpha(grown)
+    layer.alpha_composite(img)
+    return layer
+
+
+def _centered(img: Image.Image, pad: float = 0.07) -> Image.Image:
+    """按实际像素范围裁切后居中，四周留 pad 比例的空白。
+
+    透明图标没有底板兜着，图形偏一点就会显得歪，所以统一归一化：
+    裁到内容外框 -> 放进正方形 -> 重新缩放回 SS。
+    """
+    bbox = img.getbbox()
+    if not bbox:
+        return img
+    content = img.crop(bbox)
+    w, h = content.size
+    side = int(max(w, h) * (1 + 2 * pad))
+    canvas = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+    canvas.paste(content, ((side - w) // 2, (side - h) // 2), content)
+    return canvas.resize((SS, SS), Image.LANCZOS)
+
+
+def _wool_sheep(eye_r: float = 0.030, horn: float = 0.056, r: float = 0.205,
+                nose: bool = True, eye_dx: float = 0.072,
+                bg: bool = True) -> Image.Image:
+    """云朵羊毛球羊头：金角 + 白毛球 + 黑眼 + 粉鼻。bg=False 时背景透明。"""
+    img = _background() if bg else _transparent()
+    d = ImageDraw.Draw(img)
+    for sx in (-1, 1):
+        _curl(d, sx, 0.120, 0.480, 0.240, thick=horn)
+    _wool(d, 0.5, 0.615, r)
+    _circle(d, 0.5 - eye_dx, 0.600, eye_r, DARK)
+    _circle(d, 0.5 + eye_dx, 0.600, eye_r, DARK)
+    if nose:
+        d.ellipse((SS * (0.5 - 0.024), SS * (0.668 - 0.018),
+                   SS * (0.5 + 0.024), SS * (0.668 + 0.018)), fill=BLUSH)
+    return img
+
+
+def variant_wool() -> Image.Image:
+    """云朵羊毛球（默认，透明底 + 细描边）：没有底板，但浅底上也看得见。"""
+    return _centered(_outline(_wool_sheep(bg=False)))
+
+
+def variant_wool_plain() -> Image.Image:
+    """云朵羊毛球（纯透明、无描边）：最干净，只适合深色背景。"""
+    return _centered(_wool_sheep(bg=False))
+
+
+def variant_wool_dark() -> Image.Image:
+    """云朵羊毛球（深底）：留一圈深墨蓝圆角底，深色桌面上更聚焦。"""
+    return _wool_sheep()
+
+
 VARIANTS = {
+    "wool": variant_wool,
+    "wool-plain": variant_wool_plain,
+    "wool-dark": variant_wool_dark,
     "ram-bold": variant_ram_bold,
     "ram": variant_ram,
     "round": variant_round,
 }
-DEFAULT_VARIANT = "ram-bold"
+DEFAULT_VARIANT = "wool"
 
 
 def build(variant: str = DEFAULT_VARIANT) -> Image.Image:
@@ -191,11 +291,32 @@ def size_sheet(icon: Image.Image) -> Image.Image:
 
 
 def _small_icon() -> Image.Image:
-    """极小尺寸专用：去掉眼睛、加粗羊角，避免缩小时变成一团噪点。"""
+    """极小尺寸专用（粗角羊）：去掉眼睛、加粗羊角，避免缩小时变成一团噪点。"""
     return _ram(thickness=0.122, face_radius=0.05, face_half=0.19, eye=0)
 
 
-def save_ico(path: Path, full: Image.Image) -> None:
+def _small_wool(bg: bool = True) -> Image.Image:
+    """极小尺寸专用（羊毛球）：去掉粉鼻、加粗羊角、眼距拉开。
+
+    16/24px 下粉鼻不到 1px，留着只会让脸发脏，去掉。眼睛不能放大：
+    直径超过 1px 且间距不足时，抗锯齿会把两只眼睛连成一条横杠。
+    因此缩到 0.034 并把眼距拉到 0.090，每个点各占一个像素、中间留空。
+    """
+    return _wool_sheep(eye_r=0.034, horn=0.082, r=0.212, nose=False,
+                       eye_dx=0.090, bg=bg)
+
+
+SMALL_ICONS = {
+    "wool": lambda: _centered(_outline(_small_wool(bg=False)), pad=0.09),
+    "wool-plain": lambda: _centered(_small_wool(bg=False), pad=0.10),
+    "wool-dark": _small_wool,
+    "ram-bold": _small_icon,
+    "ram": _small_icon,
+    "round": _small_icon,
+}
+
+
+def save_ico(path: Path, full: Image.Image, small: Image.Image | None = None) -> None:
     """手工写 ICO 容器。
 
     Pillow 自带的 ICO 保存只能「从同一张大图缩出所有尺寸」，做不到给
@@ -204,9 +325,9 @@ def save_ico(path: Path, full: Image.Image) -> None:
     import io
     import struct
 
-    small = _small_icon()
     plan = {16: small, 24: small,
             32: full, 48: full, 64: full, 128: full, 256: full}
+    plan = {k: (v if v is not None else full) for k, v in plan.items()}
 
     blobs, entries, offset = [], [], 6 + 16 * len(plan)
     for size in sorted(plan):
@@ -237,7 +358,7 @@ def main(argv: list[str] | None = None) -> None:
     here = Path(__file__).parent
     ico = here / "app.ico"
     png = here / "app.png"
-    save_ico(ico, full)
+    save_ico(ico, full, SMALL_ICONS[args.variant]())
     full.resize((512, 512), Image.LANCZOS).save(png, format="PNG")
     print(f"已生成 {ico} 与 {png}（方案 {args.variant}）")
     if args.sheet:

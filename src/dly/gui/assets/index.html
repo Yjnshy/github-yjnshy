@@ -167,23 +167,39 @@
 <div class="wrap">
   <div class="topbar">
     <div class="brand">
-      <!-- 与 app.ico 同一套造型：双角 + 倒三角脸 + 负空间眼睛 -->
-      <svg class="logo" viewBox="0 0 100 100" aria-hidden="true">
+      <!-- 与 app.ico 同一套造型：透明底、金角 + 云朵羊毛球 + 黑眼 + 小粉鼻，
+           外轮廓一圈细描边，浅色顶栏上才看得见白色毛球 -->
+      <svg class="logo" viewBox="15 22.4 70 70" aria-hidden="true">
         <defs>
-          <linearGradient id="logo-bg" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#1A2138"/>
-            <stop offset="1" stop-color="#0B0E1A"/>
-          </linearGradient>
+          <g id="logo-sheep">
+            <g fill="none" stroke="#FFC97D" stroke-width="5.6" stroke-linecap="round">
+              <path d="M38 48 C23.1 46 19.3 33.5 27.9 32.8 Q33.7 33 33.7 38"/>
+              <path d="M62 48 C76.9 46 80.7 33.5 72.1 32.8 Q66.3 33 66.3 38"/>
+            </g>
+            <g fill="#F6F8FC">
+              <circle cx="50" cy="42.5" r="7.6"/>
+              <circle cx="62.2" cy="47" r="7.6"/>
+              <circle cx="68.7" cy="58.2" r="7.6"/>
+              <circle cx="66.5" cy="71" r="7.6"/>
+              <circle cx="56.5" cy="79.4" r="7.6"/>
+              <circle cx="43.5" cy="79.4" r="7.6"/>
+              <circle cx="33.5" cy="71" r="7.6"/>
+              <circle cx="31.3" cy="58.2" r="7.6"/>
+              <circle cx="37.8" cy="47" r="7.6"/>
+              <circle cx="50" cy="61.5" r="20.5"/>
+            </g>
+          </g>
+          <filter id="logo-ol" x="-30%" y="-30%" width="160%" height="160%">
+            <feMorphology in="SourceAlpha" operator="dilate" radius="1.1" result="grown"/>
+            <feFlood flood-color="#1A2138" result="ink"/>
+            <feComposite in="ink" in2="grown" operator="in"/>
+          </filter>
         </defs>
-        <rect width="100" height="100" rx="22" fill="url(#logo-bg)"/>
-        <g fill="none" stroke="#F6F8FC" stroke-width="9.2" stroke-linecap="round">
-          <path d="M34.5 43.5 C32.5 19.5 10.5 17.5 9.5 34.5 Q9.2 41.5 16.5 42.5"/>
-          <path d="M65.5 43.5 C67.5 19.5 89.5 17.5 90.5 34.5 Q90.8 41.5 83.5 42.5"/>
-        </g>
-        <path d="M36 46 L64 46 L50 75.5 Z" fill="#F6F8FC" stroke="#F6F8FC"
-              stroke-width="12" stroke-linejoin="round"/>
-        <circle cx="42.8" cy="54" r="3.4" fill="#12182B"/>
-        <circle cx="57.2" cy="54" r="3.4" fill="#12182B"/>
+        <use href="#logo-sheep" filter="url(#logo-ol)"/>
+        <use href="#logo-sheep"/>
+        <circle cx="42.8" cy="60" r="3" fill="#101728"/>
+        <circle cx="57.2" cy="60" r="3" fill="#101728"/>
+        <ellipse cx="50" cy="66.8" rx="2.6" ry="1.9" fill="#F6BFC4"/>
       </svg>
       <div>
         <h1>帅羊羊</h1>

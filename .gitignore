@@ -3,8 +3,9 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .eggs/
-build/
-dist/
+# ---- 打包产物（含临时换目录用的 build_*/dist_* 备份） ----
+build*/
+dist*/
 .venv/
 venv/
 
