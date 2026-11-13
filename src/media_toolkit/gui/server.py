@@ -1,8 +1,13 @@
-"""本地图形界面：内置 HTTP 服务 + 单页前端。
+"""图形界面：内置 HTTP 服务 + 单页前端。
 
-为什么不是传统桌面窗口：Tkinter 依赖 tcl/tk，部分精简版 Python 不带
-（本项目实测环境就没有），而 Web 界面用标准库 http.server 即可，
-零额外依赖、跨平台一致，后续打包也不需要额外运行时。
+窗口形态有两种，共用同一套界面与接口：
+
+- **桌面窗口**（默认）：由 :mod:`media_toolkit.gui.desktop` 用 pywebview 承载
+- **浏览器**：``mtk gui --web``，调试或没有 WebView2 时使用
+
+为什么界面用网页技术：Tkinter 依赖 tcl/tk，部分精简版 Python 不带（本项目
+实测环境就没有），而 Web 界面用标准库 http.server 即可，跨平台一致，
+后续做手机端也能直接复用同一套前端。
 
 安全约定：只绑定 127.0.0.1，端口固定范围内递增；不对局域网暴露。
 """
@@ -24,6 +29,7 @@ from media_toolkit import __version__
 from media_toolkit.core.compat import open_folder
 from media_toolkit.core.config import load_config
 from media_toolkit.core.ffmpeg import find_ffmpeg
+from media_toolkit.core.transcode import FPS_CHOICES, normalize_fps
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +57,7 @@ class AppState:
         }
         self.recorder = None
         self.monitor = None
+        self.desktop = False          # 桌面窗口模式下前端会隐藏「退出程序」提示
         self._quit = threading.Event()
 
     # ---- 事件流 ----
@@ -112,12 +119,15 @@ class _LogBridge(logging.Handler):
 # 业务动作（全部在后台线程执行）
 # ----------------------------------------------------------------------
 
-def _run_download(state: AppState, text: str, quality: str, outdir: str) -> None:
+def _run_download(state: AppState, text: str, quality: str, outdir: str,
+                  fps: int = 0, keep_original: bool = False) -> None:
     from media_toolkit.downloader.engine import DownloadEngine
 
     with state._lock:  # noqa: SLF001 内部状态，避免并发重复启动
         state.download["active"] = True
     state.log("download", "开始解析链接…")
+    if fps:
+        state.log("download", f"下载完成后转码到 {fps}fps（需重新编码，比较耗时）")
 
     # yt-dlp 的进度回调非常密集，界面上按 1.5 秒节流，否则日志会被刷屏
     last = {"at": 0.0}
@@ -133,8 +143,10 @@ def _run_download(state: AppState, text: str, quality: str, outdir: str) -> None
     try:
         config = load_config()
         config.quality = quality
+        config.keep_original = bool(keep_original)
         engine = DownloadEngine(config, progress=progress)
-        ok, total = engine.download_text(text, quality=quality, output_dir=outdir)
+        ok, total = engine.download_text(text, quality=quality,
+                                         output_dir=outdir, fps=fps)
         level = "ok" if ok == total and total else "warn"
         state.log("download", f"完成：成功 {ok} / 共 {total}", level)
     except Exception as exc:  # noqa: BLE001
@@ -144,7 +156,8 @@ def _run_download(state: AppState, text: str, quality: str, outdir: str) -> None
         state.download["active"] = False
 
 
-def _run_record(state: AppState, url: str, outroot: str, segment: int) -> None:
+def _run_record(state: AppState, url: str, outroot: str, segment: int,
+                fps: int = 0) -> None:
     from media_toolkit.cookies.manager import CookieManager
     from media_toolkit.platforms import find_adapter
     from media_toolkit.recorder.recorder import LiveRecorder, RecordingError
@@ -177,6 +190,7 @@ def _run_record(state: AppState, url: str, outroot: str, segment: int) -> None:
             ffmpeg, outdir,
             fmt=config.record.format,
             segment_minutes=segment,
+            fps=fps,
             on_progress=lambda s, b: state.set_record(seconds=s, size=b),
         )
         state.recorder = recorder
@@ -184,6 +198,10 @@ def _run_record(state: AppState, url: str, outroot: str, segment: int) -> None:
         state.log("record", f"主播：{live.anchor}", "ok")
         state.log("record", f"标题：{live.title}")
         state.log("record", f"输出目录：{outdir}")
+        if fps:
+            state.log("record", f"目标帧率：{fps}fps（边录边转码，CPU 占用较高）", "warn")
+        else:
+            state.log("record", "目标帧率：原画直通（不转码）")
 
         path = recorder.record_once(live)
         state.log("record", f"已保存：{path}", "ok")
@@ -202,7 +220,8 @@ def _run_record(state: AppState, url: str, outroot: str, segment: int) -> None:
         state.set_record(active=False)
 
 
-def _run_watch(state: AppState, rooms: List[str], interval: int) -> None:
+def _run_watch(state: AppState, rooms: List[str], interval: int,
+               fps: int = 0) -> None:
     from media_toolkit.recorder.monitor import LiveMonitor
 
     with state._lock:
@@ -210,6 +229,11 @@ def _run_watch(state: AppState, rooms: List[str], interval: int) -> None:
     try:
         config = load_config()
         config.record.poll_interval = interval
+        config.record.fps = normalize_fps(fps)
+        if config.record.fps:
+            state.log("watch",
+                      f"值守目标帧率：{config.record.fps}fps（每场都会转码录制）",
+                      "warn")
         monitor = LiveMonitor(config,
                               notify=lambda m: state.log("watch", m))
         state.monitor = monitor
@@ -286,11 +310,16 @@ class Handler(BaseHTTPRequestHandler):
             "version": __version__,
             "default_output": str(Path(config.output_dir).resolve()),
             "quality": config.quality,
+            "fps": config.fps,
+            "record_fps": config.record.fps,
+            "keep_original": config.keep_original,
+            "fps_choices": list(FPS_CHOICES),
             "segment_minutes": config.record.segment_minutes,
             "poll_interval": config.record.poll_interval,
             "browser": config.cookies.browser,
             "rooms": config.record.rooms,
             "ffmpeg": bool(find_ffmpeg(config.ffmpeg_path)),
+            "desktop": bool(getattr(self.state, "desktop", False)),
             "download": self.state.download,
             "record": self.state.record,
             "watch": self.state.watch,
@@ -343,8 +372,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             quality = data.get("quality") or "best"
             outdir = (data.get("output_dir") or "").strip()
+            fps = normalize_fps(data.get("fps"))
             threading.Thread(target=_run_download,
-                             args=(self.state, text, quality, outdir),
+                             args=(self.state, text, quality, outdir, fps,
+                                   bool(data.get("keep_original"))),
                              daemon=True).start()
             self._json({"ok": True})
             return
@@ -362,8 +393,9 @@ class Handler(BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 segment = 0
             outdir = (data.get("output_dir") or "").strip()
+            fps = normalize_fps(data.get("fps"))
             threading.Thread(target=_run_record,
-                             args=(self.state, url, outdir, segment),
+                             args=(self.state, url, outdir, segment, fps),
                              daemon=True).start()
             self._json({"ok": True})
             return
@@ -395,8 +427,9 @@ class Handler(BaseHTTPRequestHandler):
                 interval = max(10, int(data.get("interval") or 60))
             except (TypeError, ValueError):
                 interval = 60
+            fps = normalize_fps(data.get("fps"))
             threading.Thread(target=_run_watch,
-                             args=(self.state, rooms, interval),
+                             args=(self.state, rooms, interval, fps),
                              daemon=True).start()
             self._json({"ok": True})
             return
@@ -461,36 +494,72 @@ def _make_server(state: AppState) -> ThreadingHTTPServer:
     raise RuntimeError(f"无法启动本地服务：{last_error}")
 
 
-def launch(open_browser: bool = True) -> None:
-    """启动界面（阻塞直到用户退出）。"""
+class AppContext:
+    """一次界面运行所需的全部资源：共享状态、HTTP 服务与监听线程。"""
+
+    def __init__(self, state: AppState, server: ThreadingHTTPServer,
+                 desktop: bool = False):
+        self.state = state
+        self.server = server
+        self.desktop = desktop
+        self.url = f"http://{HOST}:{server.server_address[1]}/"
+        self._thread = threading.Thread(target=server.serve_forever,
+                                        daemon=True, name="http-server")
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def wait(self, interval: float = 0.4) -> None:
+        """阻塞到用户请求退出（关窗口或点「退出程序」）。"""
+        while not self.state.quit_requested:
+            self._thread.join(timeout=interval)
+
+    def shutdown(self) -> None:
+        """停止所有任务并关闭服务；可重复调用。"""
+        _stop_tasks(self.state)
+        try:
+            self.server.shutdown()
+        except Exception:  # noqa: BLE001 服务可能已关闭
+            pass
+
+
+def _stop_tasks(state: AppState) -> None:
+    """先停任务再退进程，避免留下孤儿 ffmpeg 继续写文件。"""
+    try:
+        if state.recorder is not None:
+            state.recorder.stop()
+        if state.monitor is not None:
+            state.monitor.stop()
+    except Exception:  # noqa: BLE001
+        logger.debug("停止任务时出错", exc_info=True)
+
+
+def create_app(desktop: bool = False) -> AppContext:
+    """创建状态与本地服务（不启动监听，由调用方决定窗口形态）。"""
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
     state = AppState()
-    logging.getLogger("media_toolkit").addHandler(_LogBridge(state))
+    state.desktop = desktop
+    log = logging.getLogger("media_toolkit")
+    if not any(isinstance(h, _LogBridge) for h in log.handlers):
+        log.addHandler(_LogBridge(state))
+    return AppContext(state, _make_server(state), desktop=desktop)
 
-    server = _make_server(state)
-    url = f"http://{HOST}:{server.server_address[1]}/"
-    print(f"界面已启动：{url}")
+
+def launch(open_browser: bool = True) -> None:
+    """浏览器模式：启动服务并打开系统浏览器（阻塞直到用户退出）。"""
+    app = create_app(desktop=False)
+    app.start()
+    print(f"界面已启动：{app.url}")
     print("关闭此窗口或按 Ctrl+C 即可退出。")
 
     if open_browser:
-        threading.Timer(0.6, lambda: webbrowser.open(url)).start()
-
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+        threading.Timer(0.6, lambda: webbrowser.open(app.url)).start()
 
     try:
-        while not state.quit_requested:
-            thread.join(timeout=0.4)
+        app.wait()
     except KeyboardInterrupt:
         pass
     finally:
-        try:
-            if state.recorder is not None:
-                state.recorder.stop()
-            if state.monitor is not None:
-                state.monitor.stop()
-        except Exception:  # noqa: BLE001
-            pass
-        server.shutdown()
+        app.shutdown()
         print("已退出。")

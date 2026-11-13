@@ -1,12 +1,14 @@
 # media-toolkit
 
-多平台**无水印视频/图文下载** + **直播自动录制** 的 Python 命令行工具。
+多平台**无水印视频/图文下载** + **直播自动录制** 的工具，提供**桌面窗口**与命令行两套用法。
 
 支持抖音、B站、小红书及 yt-dlp 覆盖的 1000+ 站点；Cookie 从浏览器**自动提取**，无需手动 F12 复制。
 
 ## ✨ 功能特性
 
+- **桌面窗口**：独立窗口应用（不是网页），下载 / 录制 / 值守三个页签，双击即用；同一套界面将来可直接复用到手机端
 - **无水印下载**：抖音视频自动解析无水印直链；图文作品下载全部原图（自动排除水印版和压缩图），文案同步存档为 txt
+- **自定义帧率**：下载与录制都能指定目标帧率（60/50/30/25/24/15），也可保持原帧率直通不转码
 - **Cookie 自动化**：自动从 Edge / Chrome / Firefox / Brave 浏览器提取登录态，彻底告别手动复制 Cookie
 - **直播录制**：开播自动录、下播自动停、断线自动重连，支持按时长分段，ts 格式断电不损坏文件
 - **抖音直播可录**：内置纯 Python 的 a_bogus 签名（无需 Node.js），能取到原画 flv/hls 直链
@@ -16,27 +18,27 @@
 
 ## 🚀 快速开始
 
-环境要求：Python 3.9+，以及 [ffmpeg](https://ffmpeg.org/download.html)（录制与高画质合并必需）。
+环境要求：Python 3.9+，以及 [ffmpeg](https://ffmpeg.org/download.html)（录制、合并与转码必需）。
 
 ```bash
 # 1. 克隆并安装
 git clone https://github.com/Yjnshy/github-yjnshy.git
 cd github-yjnshy
-pip install -e .                 # Cookie 自动提取已内置（复用 yt-dlp 的浏览器解密）
+pip install -e ".[desktop]"       # 带桌面窗口；只要命令行用 pip install -e .
 
 # 2. 生成自己的配置（可选，都有默认值）
 cp config.example.yaml config.yaml
 
 # 3. 开始用
+mtk gui                                          # 打开桌面窗口
 mtk download "https://v.douyin.com/xxxxxxx/"     # 下载抖音无水印视频
 mtk record https://live.douyin.com/123456789     # 录制一个直播间
 mtk watch                                        # 值守 config.yaml 里的所有直播间
-mtk gui                                          # 打开图形界面
 ```
 
-> 不想记命令？双击 `scripts/启动界面.bat`，浏览器会打开图形界面（下载 / 录制 / 值守三个页签）。
-> 界面由程序内置的本地服务提供（只监听 127.0.0.1），关闭页面不影响运行，
-> 需要停止时点右下角「退出程序」或关掉那个黑色命令行窗口。
+> **关于桌面窗口**：界面用系统自带的 WebView2 渲染（Win10/11 默认已装），
+> 不占额外内存也不用装 Qt。窗口关掉就等于退出程序，正在录制的任务会先被停止，
+> 不会留下后台进程。没有 WebView2 时程序会自动改用系统浏览器打开，功能完全一样。
 
 > 首次使用抖音功能前，请先在你选择的浏览器（默认 Chrome）里登录 douyin.com。
 > Cookie 会自动提取并缓存 7 天，期间无需重复登录，也不用关闭浏览器。
@@ -47,11 +49,19 @@ mtk gui                                          # 打开图形界面
 
 ```bash
 mtk download "链接1" "链接2" -q 720 -o D:/视频
+mtk download "链接" --fps 30            # 下载完成后转成 30 帧
+mtk download "链接" --fps 24 --keep-original   # 转码，同时保留原片
 ```
 
 - 支持整段分享文案：`mtk download "7.94 复制打开抖音… https://v.douyin.com/xxx/ …"`
 - `-q` 画质：`best`（默认）/ `1080` / `720` / `480` / `audio` / `mp3`
+- `--fps` 目标帧率：不填 = 保持原帧率（下载完直接存，最快）
+- `--keep-original` 转码后把原片另存为 `文件名_原画.mp4`
 - 抖音图文作品会自动下载全部无水印原图，并保存文案 txt
+
+> **关于帧率**：源视频的帧率是固定的，改帧率只能重新编码，所以是在下载**完成之后**
+> 做一次转码。1080P 的 3 分钟视频通常需要几十秒到几分钟，取决于电脑性能；
+> 转码会重新压缩画面（体积可能略微变大），只想收藏原片时请保持「原帧率」。
 
 ### Cookie 相关
 
@@ -78,9 +88,14 @@ mtk record https://live.bilibili.com/6                       # 录到断流/下�
 mtk record https://live.bilibili.com/6 --segment 30          # 每 30 分钟切一段
 mtk record https://live.douyin.com/123456789 -o D:/录制       # 指定保存目录
 mtk record https://live.bilibili.com/6 --format mp4          # 容器格式（默认 ts）
+mtk record https://live.bilibili.com/6 --fps 30              # 边录边转成 30 帧
 ```
 
 立即开始录制单个直播间，实时显示已录时长与体积，Ctrl+C 立即停止（会先杀掉 ffmpeg 再退出，不留孤儿进程）。
+
+> **关于录制帧率**：默认「原画直通」用 `-c copy` 纯转封装，CPU 几乎不占用。
+> 指定 `--fps` 后会改用 libx264 边录边转码，CPU 占用明显升高，
+> 配置一般的电脑建议保持默认；要转帧率也可以录完再用别的工具处理。
 
 抖音直播间支持这几种链接，直接粘哪个都行：
 
@@ -116,6 +131,26 @@ mtk watch
 开播自动录、下播自动停、断线自动续录，7×24 无人值守；每 60 秒播报一次录制进度。
 Ctrl+C 会停掉所有正在进行的录制再退出。
 
+## 🖥️ 桌面窗口
+
+`mtk gui`，或双击 `scripts/启动界面.bat`：
+
+| 页签 | 能做什么 |
+|---|---|
+| 下载视频 | 粘贴链接/分享文案 → 选画质与帧率 → 开始下载，实时看进度 |
+| 录制直播 | 填直播间链接 → 选帧率与分段 → 开始/停止录制，显示已录时长与体积 |
+| 无人值守 | 填直播间列表 → 选帧率 → 后台值守，开播自动录 |
+
+- 右上角切换 Cookie 来源（Chrome / Edge / Firefox / Brave）并一键测试提取结果
+- 底部显示连接状态、ffmpeg 检测结果与版本号
+- 界面只监听 `127.0.0.1`，不对局域网暴露；端口被占用会自动顺延到下一个
+- **关窗口 = 退出程序**：先停录制/值守，再关本地服务，不留孤儿 ffmpeg 进程
+- `mtk gui --web` 改用系统浏览器打开（调试用），`mtk gui --debug` 打开 DevTools
+
+> 为什么界面是网页技术：Tkinter 依赖 tcl/tk，精简版 Python 常常不带；
+> PyQt 要背上百 MB 运行时。用 pywebview 套一层系统自带的 WebView2，
+> 既有原生窗口体验，界面代码又能直接复用到将来的手机端。
+
 ## ⚙️ 配置说明
 
 复制 `config.example.yaml` 为 `config.yaml`，主要选项：
@@ -124,11 +159,14 @@ Ctrl+C 会停掉所有正在进行的录制再退出。
 |---|---|---|
 | `output_dir` | 保存根目录 | `./downloads` |
 | `quality` | 默认画质 | `best` |
+| `fps` | 下载后转码的目标帧率（0 = 不转码） | `0` |
+| `keep_original` | 转码后保留原片（另存 `_原画`） | `false` |
 | `cookies.browser` | 从哪个浏览器提取 Cookie | `chrome` |
 | `cookies.cookies_file` | 手动指定 cookies.txt（优先级最高） | 空 |
 | `cookies.cache_days` | Cookie 本地缓存天数（0 关闭） | `7` |
 | `proxy` | 网络代理 | 空 |
 | `record.format` | 录制格式 | `ts` |
+| `record.fps` | 录制帧率（0 = 原画直通不转码） | `0` |
 | `record.poll_interval` | 开播检测间隔（秒） | `60` |
 | `record.max_retries` | 单场断线重连上限 | `20` |
 | `record.segment_minutes` | 按时长分段（0 不分段） | `0` |
@@ -145,13 +183,15 @@ Ctrl+C 会停掉所有正在进行的录制再退出。
 ```
 src/media_toolkit/
 ├── cli.py               # 命令行入口
-├── core/                # 配置、日志、命名、ffmpeg、跨平台兼容
+├── core/                # 配置、日志、命名、ffmpeg、帧率转码、跨平台兼容
+│   └── transcode.py     # 按目标帧率重编码（下载后转码 / 录制时转码共用）
 ├── cookies/             # 浏览器 Cookie 自动提取
 ├── platforms/           # 平台适配层（douyin / generic 兜底）
 │   └── douyin_sign.py   # 抖音 a_bogus 请求签名（纯 Python）
 ├── downloader/          # 下载引擎、图文下载
 ├── recorder/            # 直播监控与录制
-└── gui/                 # 图形界面（标准库 http.server + 单页前端）
+└── gui/                 # 图形界面
+    ├── desktop.py       # 桌面窗口（pywebview，复用系统 WebView2）
     ├── server.py        # 本地服务与 JSON 接口
     └── assets/index.html
 ```
@@ -161,7 +201,7 @@ src/media_toolkit/
 - **[DouyinLiveRecorder](https://github.com/ihmily/DouyinLiveRecorder)**（MIT）：抖音直播接口的调用方式与
   `a_bogus` 签名算法参考自该项目，`platforms/douyin_sign.py` 即其实现的移植（已按 MIT 协议保留署名）
 - **[yt-dlp](https://github.com/yt-dlp/yt-dlp)**：下载引擎与浏览器 Cookie 解密，覆盖 1000+ 站点
-- **[FFmpeg](https://ffmpeg.org/)**：转封装、合并与录制
+- **[FFmpeg](https://ffmpeg.org/)**：转封装、合并、录制与帧率转码
 
 ## ⚠️ 免责声明
 

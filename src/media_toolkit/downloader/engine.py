@@ -5,13 +5,15 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, Optional
 
 from yt_dlp import YoutubeDL
 
 from media_toolkit.core.config import AppConfig
-from media_toolkit.core.ffmpeg import find_ffmpeg
+from media_toolkit.core.ffmpeg import find_ffmpeg, find_ffprobe
 from media_toolkit.core.naming import build_filename, extract_urls
+from media_toolkit.core.transcode import (TranscodeError, is_transcodable,
+                                          normalize_fps, transcode)
 from media_toolkit.cookies.manager import CookieManager
 from media_toolkit.downloader.images import download_images
 from media_toolkit.platforms import find_adapter
@@ -39,10 +41,12 @@ class DownloadEngine:
         self.config = config
         self.cookies = CookieManager(config.cookies)
         self.ffmpeg = find_ffmpeg(config.ffmpeg_path)
+        self.ffprobe = find_ffprobe(self.ffmpeg, config.ffprobe_path)
         self._notify = progress or (lambda msg: None)
 
     def download_text(self, text: str, quality: Optional[str] = None,
-                      output_dir: Optional[str] = None) -> tuple[int, int]:
+                      output_dir: Optional[str] = None,
+                      fps: Optional[int] = None) -> tuple[int, int]:
         """从任意文本（含分享文案）中提取链接并批量下载。
 
         返回 (成功数, 总数)。
@@ -52,6 +56,7 @@ class DownloadEngine:
             self._notify("没有从输入中识别到链接")
             return 0, 0
         quality = quality or self.config.quality
+        fps = normalize_fps(self.config.fps if fps is None else fps)
         outdir = Path(output_dir or self.config.output_dir)
         outdir.mkdir(parents=True, exist_ok=True)
 
@@ -59,14 +64,15 @@ class DownloadEngine:
         for index, url in enumerate(urls, 1):
             self._notify(f"[{index}/{len(urls)}] {url}")
             try:
-                if self.download_one(url, quality, outdir):
+                if self.download_one(url, quality, outdir, fps=fps):
                     success += 1
             except Exception as exc:
                 logger.error("下载失败 %s: %s", url, exc)
         self.cookies.cleanup()
         return success, len(urls)
 
-    def download_one(self, url: str, quality: str, outdir: Path) -> bool:
+    def download_one(self, url: str, quality: str, outdir: Path,
+                     fps: int = 0) -> bool:
         adapter = find_adapter(url, self.cookies, proxy=self.config.proxy)
         if adapter is None:
             logger.error("无法识别的链接: %s", url)
@@ -124,7 +130,50 @@ class DownloadEngine:
         with YoutubeDL(opts) as ydl:
             ydl.download([target_url])
         self._notify(f"✓ 完成：{Path(outtmpl).stem}")
+        self._apply_fps(outdir, stem, fps)
         return True
+
+    # ------------------------------------------------------------------
+    # 帧率转换（下载完成后进行，源帧率固定只能重编码）
+    # ------------------------------------------------------------------
+
+    def _apply_fps(self, outdir: Path, stem: str, fps: int) -> None:
+        fps = normalize_fps(fps)
+        if not fps:
+            return
+        target = self._locate_output(outdir, stem)
+        if target is None:
+            self._notify("未找到下载产物，已跳过帧率转换")
+            return
+        if not is_transcodable(target):
+            self._notify(f"{target.suffix} 不支持帧率转换，已跳过")
+            return
+        if not self.ffmpeg:
+            self._notify("缺少 ffmpeg，无法转换帧率")
+            return
+        try:
+            transcode(self.ffmpeg, target, fps,
+                      keep_original=self.config.keep_original,
+                      ffprobe_path=self.ffprobe,
+                      notify=self._notify)
+        except TranscodeError as exc:
+            self._notify(f"✗ 帧率转换失败：{exc}")
+            for line in (exc.detail or "").splitlines()[-3:]:
+                self._notify(f"  {line}")
+
+    @staticmethod
+    def _locate_output(outdir: Path, stem: str) -> Optional[Path]:
+        """按命名模板找到实际落盘文件（yt-dlp 会追加扩展名）。"""
+        # 元数据探测失败时 stem 里含 %(uploader)s 之类的模板字段，退化为前缀匹配
+        pattern = stem if "%(" not in stem else stem.split("%(")[0] + "*"
+        candidates = [
+            p for p in outdir.glob(pattern + ".*")
+            if p.is_file() and "__fps_tmp" not in p.name
+            and p.suffix.lower() not in (".part", ".ytdl", ".temp")
+        ]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda p: p.stat().st_mtime)
 
     def _download_image_post(self, info: MediaInfo, outdir: Path) -> bool:
         cookie = self.cookies.get_header(info.platform)

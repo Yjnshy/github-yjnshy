@@ -2,7 +2,8 @@
 
 设计要点：
 - 输出格式默认 ts：录制中断（断电/杀进程）文件也不损坏
-- ``ffmpeg -c copy`` 纯转封装，CPU 占用几乎为零
+- 默认 ``ffmpeg -c copy`` 纯转封装，CPU 占用几乎为零
+- 指定 ``fps`` 时改为 libx264 边录边转码（改帧率只能重新编码）
 - 拉流时透传 UA / Referer / Cookie：抖音等平台的 CDN 会校验登录态，缺了直接 403
 - 录制结束校验落盘体积，避免「静默失败」留下一堆 0 字节文件
 - 断线由 monitor 的重连循环负责重新拉起，本类只管「录到断」
@@ -20,6 +21,7 @@ from typing import Callable, Deque, List, Optional
 
 from media_toolkit.core import compat
 from media_toolkit.core.naming import build_filename
+from media_toolkit.core.transcode import normalize_fps
 from media_toolkit.platforms.base import UA_PC, LiveInfo
 
 logger = logging.getLogger(__name__)
@@ -61,11 +63,13 @@ class LiveRecorder:
 
     def __init__(self, ffmpeg_path: str, output_dir: Path,
                  fmt: str = "ts", segment_minutes: int = 0,
+                 fps: int = 0,
                  on_progress: Optional[ProgressCallback] = None):
         self.ffmpeg = ffmpeg_path
         self.output_dir = Path(output_dir)
         self.fmt = (fmt or "ts").lstrip(".").lower()
         self.segment_minutes = max(0, int(segment_minutes))
+        self.fps = normalize_fps(fps)
         self.on_progress = on_progress
         self._proc: Optional[subprocess.Popen] = None
         self._stop_requested = False
@@ -87,8 +91,22 @@ class LiveRecorder:
             "-reconnect_streamed", "1",
             "-reconnect_delay_max", "5",
             "-i", live.stream_url,
-            "-c", "copy",
         ]
+        if self.fps:
+            # 目标帧率必须重编码：直播流是固定帧率，-c copy 无法改变
+            cmd += [
+                "-map", "0:v:0", "-map", "0:a:0?",
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                "-pix_fmt", "yuv420p", "-r", str(self.fps),
+                "-c:a", "aac", "-b:a", "160k",
+            ]
+            if self.segment_minutes:
+                # 转码时分段按强制关键帧切，避免段边界漂移到下一个自然关键帧
+                seconds = self.segment_minutes * 60
+                cmd += ["-force_key_frames",
+                        f"expr:gte(t,n_forced*{seconds})"]
+        else:
+            cmd += ["-c", "copy"]
         if self.segment_minutes:
             cmd += [
                 "-f", "segment",

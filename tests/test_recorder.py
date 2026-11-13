@@ -86,6 +86,38 @@ def test_progress_flag_present(tmp_path):
     assert "-progress" in cmd and "pipe:1" in cmd
 
 
+# ---------------------------------------------------------------- 帧率
+
+def test_default_fps_uses_stream_copy(tmp_path):
+    rec = LiveRecorder("ffmpeg", tmp_path)
+    assert "-c copy" in " ".join(rec.build_cmd(_live(), tmp_path / "a.ts"))
+
+
+def test_fps_switches_to_transcode(tmp_path):
+    """改帧率只能重新编码，不能再用 -c copy。"""
+    rec = LiveRecorder("ffmpeg", tmp_path, fps=30)
+    joined = " ".join(rec.build_cmd(_live(), tmp_path / "a.ts"))
+
+    assert "-c:v libx264" in joined
+    assert "-r 30" in joined
+    assert "-c copy" not in joined
+
+
+def test_invalid_fps_falls_back_to_copy(tmp_path):
+    rec = LiveRecorder("ffmpeg", tmp_path, fps=999)
+    assert rec.fps == 0
+    assert "-c copy" in " ".join(rec.build_cmd(_live(), tmp_path / "a.ts"))
+
+
+def test_fps_segment_forces_keyframes(tmp_path):
+    """转码分段必须强制关键帧，否则段边界会漂移到下一个自然关键帧。"""
+    rec = LiveRecorder("ffmpeg", tmp_path, fps=25, segment_minutes=10)
+    joined = " ".join(rec.build_cmd(_live(), tmp_path / "a.ts"))
+
+    assert "-force_key_frames" in joined
+    assert "n_forced*600" in joined        # 10 分钟 = 600 秒
+
+
 # ---------------------------------------------------------------- Cookie 裁剪
 
 def test_short_cookie_untouched():

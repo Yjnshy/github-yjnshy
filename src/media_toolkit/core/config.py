@@ -34,6 +34,7 @@ class RecordConfig:
     poll_interval: int = 60
     max_retries: int = 20
     segment_minutes: int = 0
+    fps: int = 0                      # 0 = 原帧率直通（-c copy，不转码）
     rooms: List[str] = field(default_factory=list)
 
 
@@ -41,6 +42,8 @@ class RecordConfig:
 class AppConfig:
     output_dir: str = "./downloads"
     quality: str = "best"
+    fps: int = 0                      # 下载完成后转码到的帧率，0 = 不转码
+    keep_original: bool = False       # 转码后是否保留原片
     proxy: str = ""
     ffmpeg_path: str = ""
     ffprobe_path: str = ""
@@ -69,6 +72,8 @@ def load_config(explicit_path: Optional[str] = None) -> AppConfig:
             raw = yaml.safe_load(f) or {}
         cfg.output_dir = raw.get("output_dir", cfg.output_dir)
         cfg.quality = raw.get("quality", cfg.quality)
+        cfg.fps = int(raw.get("fps", cfg.fps) or 0)
+        cfg.keep_original = bool(raw.get("keep_original", cfg.keep_original))
         cfg.proxy = raw.get("proxy", cfg.proxy)
         cfg.ffmpeg_path = raw.get("ffmpeg_path", cfg.ffmpeg_path)
         cfg.ffprobe_path = raw.get("ffprobe_path", cfg.ffprobe_path)
@@ -84,6 +89,7 @@ def load_config(explicit_path: Optional[str] = None) -> AppConfig:
             poll_interval=int(rc.get("poll_interval", 60)),
             max_retries=int(rc.get("max_retries", 20)),
             segment_minutes=int(rc.get("segment_minutes", 0)),
+            fps=int(rc.get("fps", 0) or 0),
             rooms=[r for r in (rc.get("rooms") or [])
                    if isinstance(r, str) and r.strip() and not r.strip().startswith("#")],
         )
@@ -91,6 +97,7 @@ def load_config(explicit_path: Optional[str] = None) -> AppConfig:
     # 环境变量覆盖
     cfg.output_dir = os.environ.get("MTK_OUTPUT_DIR", cfg.output_dir)
     cfg.quality = os.environ.get("MTK_QUALITY", cfg.quality)
+    cfg.fps = int(os.environ.get("MTK_FPS", cfg.fps) or 0)
     cfg.proxy = os.environ.get("MTK_PROXY", cfg.proxy)
     cfg.cookies.browser = os.environ.get("MTK_COOKIE_BROWSER", cfg.cookies.browser)
     cfg.cookies.cookies_file = os.environ.get("MTK_COOKIES_FILE", cfg.cookies.cookies_file)

@@ -25,9 +25,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# 桌面窗口（独立窗口而非浏览器打开页面）；Win10/11 需要系统自带 WebView2
+desktop = ["pywebview>=5.0"]
 # 浏览器 Cookie 提取的额外兜底（yt-dlp 已内置主力实现，可不装）
 cookies = ["browser-cookie3>=0.19"]
 dev = ["pytest>=8.0"]
+build = ["pyinstaller>=6.0"]
 
 [project.scripts]
 mtk = "media_toolkit.cli:main"

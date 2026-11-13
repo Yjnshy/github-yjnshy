@@ -7,6 +7,14 @@ output_dir: "./downloads"
 # 默认画质：best / 1080 / 720 / 480 / audio / mp3
 quality: "best"
 
+# 下载帧率：0 = 保持原帧率（不转码，最快）
+# 填 60 / 50 / 30 / 25 / 24 / 15 等值，会在下载完成后重新编码到该帧率。
+# 转码比较吃 CPU，且会重新压缩画面；只是想收藏原片就保持 0。
+fps: 0
+
+# 转码后是否保留原片（保存为「文件名_原画.mp4」）
+keep_original: false
+
 # Cookie 来源（优先级从高到低）：
 #   1. cookies_file 指定的 Netscape 格式 cookies.txt
 #   2. browser 指定的浏览器自动提取（需 pip install media-toolkit[cookies]）
@@ -31,6 +39,9 @@ record:
   poll_interval: 60      # 开播状态轮询间隔（秒），挂机建议 120 以上
   max_retries: 20        # 单场直播断线重连次数上限
   segment_minutes: 0     # 按分钟分段，0 表示不分段
+  # 录制帧率：0 = 原画直通（-c copy，CPU 几乎不占用）
+  # 填具体数值会边录边用 libx264 转码，CPU 占用明显升高，低配电脑别开
+  fps: 0
   # 值守的直播间列表，一行一个，# 开头表示暂停监控
   rooms:
     # - "https://live.douyin.com/123456789"

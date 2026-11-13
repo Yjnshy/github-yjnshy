@@ -18,6 +18,7 @@
     --warn: #B7791F;
   }
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
     margin: 0;
     background: var(--bg);
@@ -25,13 +26,20 @@
     font: 14px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei UI",
           "Microsoft YaHei", system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
+    /* 整页纵向弹性布局：日志区自动吃满剩余高度，窗口多小都不溢出 */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
-  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 22px 40px; }
+  .wrap {
+    flex: 1; display: flex; flex-direction: column; min-height: 0;
+    width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 22px 12px;
+  }
 
   /* 顶栏 */
   .topbar {
     display: flex; align-items: center; justify-content: space-between;
-    gap: 16px; padding: 20px 0 14px;
+    gap: 16px; padding: 14px 0 10px; flex: none;
   }
   .brand { display: flex; align-items: center; gap: 12px; }
   .logo {
@@ -46,22 +54,25 @@
   .top-actions { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
 
   /* 页签 */
-  .tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border); }
+  .tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border); flex: none; }
   .tab {
     border: 0; background: none; cursor: pointer;
-    padding: 11px 18px; font-size: 14px; color: var(--muted);
+    padding: 10px 18px; font-size: 14px; color: var(--muted);
     border-bottom: 2px solid transparent; font-family: inherit;
   }
   .tab:hover { color: var(--text); }
   .tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 
-  .panel { display: none; padding-top: 18px; }
-  .panel.active { display: block; }
+  .panel { display: none; padding-top: 16px; }
+  .panel.active {
+    display: flex; flex-direction: column; flex: 1; min-height: 0;
+  }
 
   /* 卡片 */
   .card {
     background: var(--card); border: 1px solid var(--border);
-    border-radius: 12px; padding: 18px; margin-bottom: 14px;
+    border-radius: 12px; padding: 16px; margin-bottom: 12px;
+    flex: none;
   }
   .label { font-size: 12px; color: var(--muted); margin-bottom: 6px; display: block; }
 
@@ -94,6 +105,11 @@
   button.ghost:hover:not(:disabled) { color: var(--text); }
 
   .hint { font-size: 12px; color: var(--muted); }
+  .check {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12.5px; color: var(--muted); cursor: pointer; user-select: none;
+  }
+  .check input { width: auto; margin: 0; accent-color: var(--accent); }
 
   /* 录制状态卡 */
   .status-card { display: flex; align-items: center; gap: 14px; }
@@ -107,14 +123,18 @@
   .status-sub { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
   /* 日志 */
-  .log-card { padding: 0; overflow: hidden; }
+  .log-card {
+    padding: 0; overflow: hidden;
+    flex: 1; min-height: 132px;
+    display: flex; flex-direction: column;
+  }
   .log-head {
     display: flex; justify-content: space-between; align-items: center;
     padding: 10px 16px; border-bottom: 1px solid var(--border);
-    font-size: 12px; color: var(--muted);
+    font-size: 12px; color: var(--muted); flex: none;
   }
   .log {
-    margin: 0; padding: 12px 16px; height: 260px; overflow-y: auto;
+    margin: 0; padding: 12px 16px; flex: 1; min-height: 0; overflow-y: auto;
     font-size: 12.5px; line-height: 1.75; white-space: pre-wrap; word-break: break-all;
     background: #FCFCFD;
   }
@@ -125,7 +145,7 @@
   .log .line.muted { color: var(--muted); }
 
   footer {
-    display: flex; align-items: center; gap: 10px;
+    display: flex; align-items: center; gap: 10px; flex: none;
     padding: 6px 0 0; font-size: 12px; color: var(--muted);
   }
   .spacer { flex: 1; }
@@ -195,6 +215,18 @@
             <option value="mp3">仅音频（MP3）</option>
           </select>
         </div>
+        <div class="field">
+          <span class="label">帧率</span>
+          <select id="dl-fps">
+            <option value="0">原帧率（不转码）</option>
+            <option value="60">60 fps</option>
+            <option value="50">50 fps</option>
+            <option value="30">30 fps</option>
+            <option value="25">25 fps</option>
+            <option value="24">24 fps</option>
+            <option value="15">15 fps</option>
+          </select>
+        </div>
         <div class="field grow">
           <span class="label">保存到</span>
           <input type="text" id="dl-outdir">
@@ -203,8 +235,15 @@
       </div>
       <div class="row">
         <button class="primary" id="dl-btn" onclick="startDownload()">开始下载</button>
+        <label class="check">
+          <input type="checkbox" id="dl-keep"> 保留原片
+        </label>
         <span class="hint" id="dl-hint"></span>
       </div>
+      <p class="hint" style="margin:10px 0 0">
+        帧率选「原帧率」= 原始画质直存，最快；选具体数值会在下载完成后重新编码，
+        速度取决于电脑性能，文件名不变。
+      </p>
     </div>
     <div class="card log-card">
       <div class="log-head"><span>运行日志</span><span id="dl-count"></span></div>
@@ -228,7 +267,21 @@
           <input type="text" id="rec-outdir">
         </div>
         <button class="ghost" onclick="openFolder('rec-outdir')">打开目录</button>
-        <div class="field" style="min-width:150px">
+      </div>
+      <div class="row">
+        <div class="field" style="min-width:170px">
+          <span class="label">帧率</span>
+          <select id="rec-fps">
+            <option value="0">原画直通（不转码）</option>
+            <option value="60">60 fps</option>
+            <option value="50">50 fps</option>
+            <option value="30">30 fps</option>
+            <option value="25">25 fps</option>
+            <option value="24">24 fps</option>
+            <option value="15">15 fps</option>
+          </select>
+        </div>
+        <div class="field" style="min-width:170px">
           <span class="label">分段（分钟，0=不分段）</span>
           <input type="number" id="rec-seg" min="0" value="0">
         </div>
@@ -237,13 +290,17 @@
         <button class="primary" id="rec-start" onclick="startRecord()">开始录制</button>
         <button class="danger" id="rec-stop" onclick="stopRecord()" disabled>停止录制</button>
       </div>
+      <p class="hint" style="margin:10px 0 0">
+        默认「原画直通」= 原样保存，CPU 几乎不占用；指定帧率会边录边转码，
+        CPU 占用明显升高，配置较低的电脑建议保持原画。
+      </p>
     </div>
 
     <div class="card status-card">
       <div class="dot" id="rec-dot"></div>
       <div>
         <div class="status-title" id="rec-status">空闲中</div>
-        <div class="status-sub" id="rec-detail">填入直播间链接后点击「开始录制」，可 Ctrl+C 于控制台停止</div>
+        <div class="status-sub" id="rec-detail">填入直播间链接后点击「开始录制」，随时可点「停止录制」结束</div>
       </div>
     </div>
 
@@ -259,15 +316,27 @@
       <span class="label">直播间列表（一行一个；# 开头的行忽略）</span>
       <textarea id="watch-rooms" placeholder="https://live.douyin.com/123456789&#10;https://live.bilibili.com/6&#10;# 这行会被忽略"></textarea>
       <div class="row">
-        <div class="field" style="min-width:170px">
+        <div class="field" style="min-width:160px">
           <span class="label">轮询间隔（秒）</span>
           <input type="number" id="watch-interval" min="10" value="60">
+        </div>
+        <div class="field" style="min-width:180px">
+          <span class="label">录制帧率</span>
+          <select id="watch-fps">
+            <option value="0">原画直通（不转码）</option>
+            <option value="60">60 fps</option>
+            <option value="50">50 fps</option>
+            <option value="30">30 fps</option>
+            <option value="25">25 fps</option>
+            <option value="24">24 fps</option>
+            <option value="15">15 fps</option>
+          </select>
         </div>
         <button class="primary" id="watch-start" onclick="startWatch()">开始值守</button>
         <button class="danger" id="watch-stop" onclick="stopWatch()" disabled>停止值守</button>
       </div>
       <div class="row">
-        <span class="hint">开播自动录、下播自动停；断流会指数退避重连。关闭此页面程序会继续运行，需点下方「退出程序」。</span>
+        <span class="hint" id="watch-tip">开播自动录、下播自动停；断流会指数退避重连。</span>
       </div>
     </div>
     <div class="card log-card">
@@ -385,6 +454,9 @@ function render() {
   ff.textContent = snapshot.ffmpeg ? 'ffmpeg 就绪' : '缺少 ffmpeg';
   ff.className = 'badge ' + (snapshot.ffmpeg ? 'ok' : 'bad');
   $('version').textContent = 'v' + snapshot.version;
+  $('watch-tip').textContent = '开播自动录、下播自动停；断流会指数退避重连。'
+    + (snapshot.desktop ? '关闭窗口即停止值守。'
+                        : '关闭浏览器页面程序会继续运行，需点下方「退出程序」。');
 }
 
 /* ---------------- 轮询 ---------------- */
@@ -416,12 +488,35 @@ function applyDefaults() {
   $('dl-outdir').value = snapshot.default_output || '';
   $('rec-outdir').value = snapshot.default_output || '';
   $('dl-quality').value = snapshot.quality || 'best';
+  $('dl-keep').checked = !!snapshot.keep_original;
+  setFps('dl-fps', snapshot.fps);
+  setFps('rec-fps', snapshot.record_fps);
+  setFps('watch-fps', snapshot.record_fps);
   $('rec-seg').value = snapshot.segment_minutes || 0;
   $('watch-interval').value = snapshot.poll_interval || 60;
   $('browser').value = snapshot.browser || 'chrome';
   if ((snapshot.rooms || []).length) {
     $('watch-rooms').value = snapshot.rooms.join('\n');
   }
+}
+
+/* 配置文件里可能是下拉框没有的帧率（比如 45），动态补一个选项再选中 */
+function setFps(id, value) {
+  const el = $(id);
+  if (!el) return;
+  const v = String(value || 0);
+  if (!Array.from(el.options).some(o => o.value === v)) {
+    const opt = document.createElement('option');
+    opt.value = v;
+    opt.textContent = v + ' fps';
+    el.appendChild(opt);
+  }
+  el.value = v;
+}
+
+function fpsOf(id) {
+  const el = $(id);
+  return parseInt((el && el.value) || '0', 10) || 0;
 }
 
 /* ---------------- 动作 ---------------- */
@@ -433,6 +528,8 @@ async function startDownload() {
     await api('/api/download', {
       text,
       quality: $('dl-quality').value,
+      fps: fpsOf('dl-fps'),
+      keep_original: $('dl-keep').checked,
       output_dir: $('dl-outdir').value.trim()
     });
   } catch (e) { $('dl-hint').textContent = e.message; }
@@ -445,7 +542,8 @@ async function startRecord() {
     await api('/api/record/start', {
       url,
       output_dir: $('rec-outdir').value.trim(),
-      segment: parseInt($('rec-seg').value || '0', 10)
+      segment: parseInt($('rec-seg').value || '0', 10),
+      fps: fpsOf('rec-fps')
     });
   } catch (e) { $('rec-status').textContent = e.message; }
 }
@@ -460,7 +558,8 @@ async function startWatch() {
   try {
     await api('/api/watch/start', {
       rooms,
-      interval: parseInt($('watch-interval').value || '60', 10)
+      interval: parseInt($('watch-interval').value || '60', 10),
+      fps: fpsOf('watch-fps')
     });
   } catch (e) { appendLine('watch', { text: e.message, level: 'warn' }); }
 }

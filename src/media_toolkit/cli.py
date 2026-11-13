@@ -57,9 +57,14 @@ def main(ctx: click.Context, config_path: str | None, verbose: bool,
               type=click.Choice(["best", "1080", "720", "480", "audio", "mp3"]),
               help="画质（默认读配置文件）")
 @click.option("-o", "--output", "output_dir", default=None, help="保存目录")
+@click.option("--fps", "fps", default=None, type=int,
+              help="下载后转码到指定帧率（默认原帧率不转码；转码较耗时）")
+@click.option("--keep-original", is_flag=True,
+              help="转码后保留原片（另存为 xxx_原画）")
 @click.pass_context
 def download(ctx: click.Context, text: tuple, quality: str | None,
-             output_dir: str | None) -> None:
+             output_dir: str | None, fps: int | None,
+             keep_original: bool) -> None:
     """下载视频/图文（无水印）。支持整段分享文案直接粘贴。
 
     \b
@@ -67,13 +72,19 @@ def download(ctx: click.Context, text: tuple, quality: str | None,
       mtk download "https://v.douyin.com/xxxxx/"
       mtk download "7.94 复制打开抖音… https://v.douyin.com/xxxxx/ 12/25"
       mtk download 链接1 链接2 -q 720 -o D:/视频
+      mtk download 链接 --fps 30            # 下载后转成 30 帧
     """
+    from media_toolkit.core.transcode import normalize_fps
     from media_toolkit.downloader.engine import DownloadEngine
 
-    engine = DownloadEngine(ctx.obj["config"],
+    config = ctx.obj["config"]
+    if keep_original:
+        config.keep_original = True
+    engine = DownloadEngine(config,
                             progress=lambda msg: console.print(msg))
     success, total = engine.download_text(
-        " ".join(text), quality=quality, output_dir=output_dir)
+        " ".join(text), quality=quality, output_dir=output_dir,
+        fps=normalize_fps(fps) if fps is not None else None)
     if success == total:
         console.print(f"[green]全部完成：{success}/{total}[/green]")
     else:
@@ -89,20 +100,25 @@ def download(ctx: click.Context, text: tuple, quality: str | None,
 @click.option("--format", "fmt", default=None,
               type=click.Choice(["ts", "mp4", "mkv", "flv"]),
               help="输出容器（默认 ts，断电也不损坏）")
+@click.option("--fps", "fps", default=None, type=int,
+              help="录制帧率（默认原画直通；指定后边录边转码，CPU 占用高）")
 @click.pass_context
 def record(ctx: click.Context, room_url: str, output_dir: str | None,
-           segment_minutes: int | None, fmt: str | None) -> None:
+           segment_minutes: int | None, fmt: str | None,
+           fps: int | None) -> None:
     """录制单个直播间（立即开始，下播或断流超限自动停止）。
 
     \b
     示例：
       mtk record https://live.douyin.com/123456789
       mtk record https://live.bilibili.com/6 --segment 30
+      mtk record https://live.bilibili.com/6 --fps 30
     """
     import time
     from pathlib import Path
 
     from media_toolkit.core.ffmpeg import find_ffmpeg
+    from media_toolkit.core.transcode import normalize_fps
     from media_toolkit.cookies.manager import CookieManager
     from media_toolkit.platforms import find_adapter
     from media_toolkit.recorder.recorder import LiveRecorder, RecordingError
@@ -126,6 +142,9 @@ def record(ctx: click.Context, room_url: str, output_dir: str | None,
         raise SystemExit(1)
 
     outdir = Path(output_dir or config.output_dir) / "直播录制"
+    target_fps = normalize_fps(fps) if fps is not None else config.record.fps
+    if target_fps:
+        console.print(f"[yellow]目标帧率 {target_fps}fps：边录边转码，CPU 占用较高[/yellow]")
     console.print(f"[red]🔴 录制中[/red] {live.anchor} - {live.title}")
     console.print(f"[dim]输出目录：{outdir}　Ctrl+C 停止[/dim]")
 
@@ -146,6 +165,7 @@ def record(ctx: click.Context, room_url: str, output_dir: str | None,
         fmt=fmt or config.record.format,
         segment_minutes=(config.record.segment_minutes
                          if segment_minutes is None else segment_minutes),
+        fps=target_fps,
         on_progress=on_progress,
     )
     try:
@@ -200,14 +220,18 @@ def cache(ctx: click.Context, clear: bool) -> None:
 
 
 @main.command()
-def gui() -> None:
-    """打开图形界面（下载 / 录制 / 值守）。"""
+@click.option("--web", is_flag=True,
+              help="用系统浏览器打开（默认是独立桌面窗口）")
+@click.option("--debug", is_flag=True,
+              help="开发者模式：窗口内可打开 DevTools")
+def gui(web: bool, debug: bool) -> None:
+    """打开图形界面（桌面窗口：下载 / 录制 / 值守）。"""
     try:
-        from media_toolkit.gui.app import launch
-    except ImportError as exc:  # 极少见：tkinter 缺失
+        from media_toolkit.gui import launch
+    except ImportError as exc:
         console.print(f"[red]无法加载图形界面：{exc}[/red]")
         raise SystemExit(1)
-    launch()
+    launch(debug=debug, web=web)
 
 
 if __name__ == "__main__":
