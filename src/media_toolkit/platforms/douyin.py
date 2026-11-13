@@ -19,6 +19,7 @@ import httpx
 from media_toolkit.platforms.base import (
     UA_MOBILE, UA_PC, LiveInfo, MediaInfo, PlatformAdapter,
 )
+from media_toolkit.platforms.douyin_sign import ab_sign
 
 logger = logging.getLogger(__name__)
 
@@ -151,62 +152,141 @@ class DouyinAdapter(PlatformAdapter):
     # ------------------------------------------------------------------
 
     def get_live_info(self, room_url: str) -> Optional[LiveInfo]:
+        """查询直播间状态与流地址。
+
+        抖音 Web 端已改为接口下发数据：房间页 HTML 只含 AB 测试配置，
+        必须请求 ``webcast/room/web/enter`` 接口，且查询串要带 a_bogus 签名，
+        否则接口返回空响应（风控）。签名实现见 ``douyin_sign``。
+
+        流程：链接 → web_rid → 签名请求接口 → 取 room.status 与 stream_url。
+        """
         cookie = self.cookies.get_header(self.name)
-        try:
-            with self._client(cookie, mobile=False) as client:
-                resp = client.get(room_url)
-                resp.raise_for_status()
-                html = resp.text
-                final_url = str(resp.url)
-        except httpx.HTTPError as exc:
-            logger.error("获取抖音直播间失败: %s", exc)
+        web_rid, referer = self._resolve_web_rid(room_url, cookie)
+        if not web_rid:
+            logger.error("无法从链接解析出抖音直播间号: %s", room_url)
             return None
 
-        data = self._parse_render_data(html)
-        if data is None:
-            data = self._parse_router_data(html)
-        if data is None:
-            logger.warning("直播间页面未包含流数据（可能未开播或页面结构变更）")
+        payload = self._fetch_room_api(web_rid, referer, cookie)
+        if payload is None:
+            # 风控或网络异常，无法判断状态，交由上层按「未开播」处理并稍后重试
             return LiveInfo(platform=self.name, room_url=room_url,
-                            is_live=False, referer=final_url)
+                            is_live=False, referer=referer,
+                            user_agent=UA_PC, cookie=cookie)
 
-        room = _deep_find(data, "room")
-        if not isinstance(room, dict):
-            return LiveInfo(platform=self.name, room_url=room_url, is_live=False,
-                            referer=final_url)
-
-        status = room.get("status")           # 2 = 直播中
-        owner = room.get("owner") or {}
+        rooms = payload.get("data") or []
+        room = rooms[0] if rooms else {}
+        status = room.get("status")            # 2 = 直播中
+        anchor = (payload.get("user") or {}).get("nickname") or ""
         info = LiveInfo(
             platform=self.name,
             room_url=room_url,
             is_live=(status == 2),
             title=room.get("title") or "",
-            anchor=owner.get("nickname") or "",
-            referer=final_url,
+            anchor=anchor,
+            referer=referer,
             user_agent=UA_PC,
             cookie=cookie,
         )
         if not info.is_live:
+            logger.debug("[douyin] 房间 %s 未开播（status=%s）", web_rid, status)
             return info
 
-        # 流地址：stream_url 节点下优先 flv，其次 hls
+        info.stream_url = self._pick_stream_url(room)
+        if not info.stream_url:
+            logger.warning("[douyin] 已开播但未取到流地址（可能是网页端不支持的类型，"
+                           "如 VR/特殊玩法）")
+        return info
+
+    # ---- 直播辅助 ----
+
+    @staticmethod
+    def _extract_web_rid(url: str) -> str:
+        m = re.search(r"live\.douyin\.com/(\d{6,})", url)
+        return m.group(1) if m else ""
+
+    def _resolve_web_rid(self, room_url: str, cookie: str) -> tuple:
+        """直播链接 → (web_rid, referer)。短链先跟随跳转。"""
+        rid = self._extract_web_rid(room_url)
+        if rid:
+            return rid, f"https://live.douyin.com/{rid}"
+        try:
+            final_url = self._follow_redirect(room_url, cookie)
+        except httpx.HTTPError as exc:
+            logger.error("抖音直播短链跳转失败: %s", exc)
+            return "", room_url
+        rid = self._extract_web_rid(final_url)
+        return rid, final_url
+
+    def _fetch_room_api(self, web_rid: str, referer: str,
+                        cookie: str) -> Optional[Dict]:
+        """带 a_bogus 签名请求房间信息接口。"""
+        params = {
+            "aid": "6383",
+            "app_name": "douyin_web",
+            "live_id": "1",
+            "device_platform": "web",
+            "language": "zh-CN",
+            "enter_from": "web_live",
+            "cookie_enabled": "true",
+            "screen_width": "1920",
+            "screen_height": "1080",
+            "browser_language": "zh-CN",
+            "browser_platform": "Win32",
+            "browser_name": "Chrome",
+            "browser_version": "131.0.0.0",
+            "web_rid": web_rid,
+        }
+        api = ("https://live.douyin.com/webcast/room/web/enter/?"
+               + urllib.parse.urlencode(params))
+        query = urllib.parse.urlparse(api).query
+        api = f"{api}&a_bogus={ab_sign(query, UA_PC)}"
+
+        headers = {
+            "User-Agent": UA_PC,
+            "Cookie": cookie,
+            "Referer": referer,
+        }
+        try:
+            with httpx.Client(timeout=20, headers=headers,
+                              proxy=self.proxy or None) as client:
+                resp = client.get(api)
+            if not resp.text:
+                logger.warning("[douyin] 房间接口返回空响应（触发风控），"
+                               "签名可能已过期，需同步上游实现")
+                return None
+            data = resp.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            logger.error("[douyin] 房间接口请求失败: %s", exc)
+            return None
+
+        if data.get("status_code") not in (0, None):
+            logger.warning("[douyin] 房间接口返回异常: %s %s",
+                           data.get("status_code"), data.get("status_msg"))
+            return None
+        return data.get("data") or {}
+
+    @staticmethod
+    def _pick_stream_url(room: Dict) -> str:
+        """从 room["stream_url"] 中挑一条可直连的流地址。
+
+        优先原画（ORIGIN 的 flv），其次各档位 flv，最后 hls。
+        """
         stream = room.get("stream_url") or {}
-        candidates: List[str] = []
-        for key in ("flv_pull_url", "flv_pull_url_FULL_HD1", "hls_pull_url_map",
-                    "hls_pull_url", "default_resolution"):
+        candidates = _origin_candidates(stream)
+        for key in ("flv_pull_url", "hls_pull_url_map"):
             value = stream.get(key)
             if isinstance(value, dict):
                 candidates.extend(v for v in value.values()
                                   if isinstance(v, str) and v.startswith("http"))
-            elif isinstance(value, str) and value.startswith("http"):
+            elif isinstance(value, str):
                 candidates.append(value)
+        if stream.get("hls_pull_url"):
+            candidates.append(stream["hls_pull_url"])
+
         flv = next((u for u in candidates if ".flv" in u), "")
         hls = next((u for u in candidates if ".m3u8" in u), "")
-        info.stream_url = flv or hls
-        if not info.stream_url:
-            logger.warning("已开播但未解析到流地址，页面结构可能已变更")
-        return info
+        return flv or hls
+
 
     @staticmethod
     def _parse_render_data(html: str) -> Optional[Dict]:
@@ -312,3 +392,42 @@ def _deep_find(data: Any, key: str) -> Any:
             if found is not None:
                 return found
     return None
+
+
+def _origin_candidates(stream: Dict) -> List[str]:
+    """解析原画地址。
+
+    抖音把各档位地址放在 ``stream_url.flv_pull_url`` / ``hls_pull_url_map``，
+    但原画（ORIGIN）只以 JSON 字符串形式藏在 ``live_core_sdk_data.pull_data``
+    或 ``pull_datas[*].stream_data`` 里，需要二次解析。
+    """
+    blobs: List[str] = []
+    pull_datas = stream.get("pull_datas") or {}
+    if isinstance(pull_datas, dict) and pull_datas:
+        first = pull_datas[next(iter(pull_datas))] or {}
+        blobs.append(first.get("stream_data") or "")
+    core = stream.get("live_core_sdk_data") or {}
+    blobs.append((core.get("pull_data") or {}).get("stream_data") or "")
+
+    urls: List[str] = []
+    for blob in blobs:
+        if not blob:
+            continue
+        try:
+            data = json.loads(blob)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        origin = ((data.get("data") or {}).get("origin") or {}).get("main") or {}
+        if not isinstance(origin, dict):
+            continue
+        codec = ""
+        try:
+            codec = (json.loads(origin.get("sdk_params") or "{}")
+                     .get("VCodec") or "")
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            codec = ""
+        for kind in ("flv", "hls"):
+            url = origin.get(kind)
+            if isinstance(url, str) and url.startswith("http"):
+                urls.append(f"{url}&codec={codec}" if codec else url)
+    return urls

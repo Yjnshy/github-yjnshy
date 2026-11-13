@@ -13,8 +13,8 @@ import pytest
 from media_toolkit.platforms.base import UA_PC, LiveInfo
 from media_toolkit.recorder import recorder as recorder_mod
 from media_toolkit.recorder.recorder import (
-    MIN_OUTPUT_BYTES, LiveRecorder, RecordingError,
-    _microseconds_to_seconds,
+    MAX_COOKIE_HEADER, MIN_OUTPUT_BYTES, LiveRecorder, RecordingError,
+    _microseconds_to_seconds, _trim_cookie,
 )
 
 
@@ -84,6 +84,34 @@ def test_progress_flag_present(tmp_path):
     rec = LiveRecorder("ffmpeg", tmp_path)
     cmd = rec.build_cmd(_live(), tmp_path / "a.ts")
     assert "-progress" in cmd and "pipe:1" in cmd
+
+
+# ---------------------------------------------------------------- Cookie 裁剪
+
+def test_short_cookie_untouched():
+    cookie = "ttwid=aaa; sessionid=bbb"
+    assert _trim_cookie(cookie) == cookie
+
+
+def test_long_cookie_trimmed_under_limit():
+    """完整 Cookie 7~8KB 会让 ffmpeg 报 overlong headers，必须裁到限制内。"""
+    cookie = "; ".join(f"k{i}=v{'x' * 40}" for i in range(300))
+    cookie += "; ttwid=keepme; msToken=tok"
+    trimmed = _trim_cookie(cookie)
+
+    assert len(trimmed) <= MAX_COOKIE_HEADER
+    assert "ttwid=keepme" in trimmed
+    assert "msToken=tok" in trimmed
+
+
+def test_headers_use_trimmed_cookie(tmp_path):
+    rec = LiveRecorder("ffmpeg", tmp_path)
+    live = _live(cookie="; ".join(f"k{i}=v{'x' * 40}" for i in range(300))
+                 + "; ttwid=keepme")
+    headers = rec._headers(live)
+
+    assert len(headers) < MAX_COOKIE_HEADER + 200
+    assert "ttwid=keepme" in headers
 
 
 # ---------------------------------------------------------------- 小工具

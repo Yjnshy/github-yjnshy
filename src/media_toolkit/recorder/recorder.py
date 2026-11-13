@@ -37,6 +37,16 @@ _SEGMENT_FORMAT = {
     "flv": "flv",
 }
 
+# ffmpeg 的 HTTP 请求头有长度上限，超了会报 "[http] overlong headers" 直接打不开流。
+# 实测抖音的完整 Cookie 有 7~8KB，必须裁剪。
+MAX_COOKIE_HEADER = 1500
+
+# 拉流真正用得上的 Cookie（没有也能拉，但保留可提高成功率）
+_COOKIE_KEEP = (
+    "ttwid", "msToken", "sessionid", "sessionid_ss",
+    "odin_tt", "passport_csrf_token", "UIFID_TEMP", "sid_guard",
+)
+
 
 class RecordingError(RuntimeError):
     """录制失败且没有留下有效产物。"""
@@ -95,8 +105,9 @@ class LiveRecorder:
     def _headers(live: LiveInfo) -> str:
         """ffmpeg 的 -headers 要求每行以 CRLF 结尾。"""
         lines = [f"Referer: {live.referer or live.room_url}"]
-        if live.cookie:
-            lines.append(f"Cookie: {live.cookie}")
+        cookie = _trim_cookie(live.cookie)
+        if cookie:
+            lines.append(f"Cookie: {cookie}")
         return "\r\n".join(lines) + "\r\n"
 
     # ------------------------------------------------------------------
@@ -235,3 +246,27 @@ def _microseconds_to_seconds(value: str) -> float:
         return int(value) / 1_000_000
     except (TypeError, ValueError):
         return 0.0
+
+
+def _trim_cookie(cookie: str, limit: int = MAX_COOKIE_HEADER) -> str:
+    """裁剪 Cookie 到 ffmpeg 能接受的体积。
+
+    实测：完整 Cookie（7~8KB）会让 ffmpeg 报 ``overlong headers`` 直接打不开流；
+    而抖音直播 CDN 实际并不校验 Cookie（流地址自带签名），裁剪不影响拉流。
+    """
+    if not cookie or len(cookie) <= limit:
+        return cookie
+
+    jar = {}
+    for part in cookie.split(";"):
+        part = part.strip()
+        if "=" in part:
+            key, value = part.split("=", 1)
+            jar[key.strip()] = value.strip()
+
+    kept = [f"{k}={jar[k]}" for k in _COOKIE_KEEP if k in jar]
+    trimmed = "; ".join(kept)
+    if len(trimmed) > limit:
+        trimmed = trimmed[:limit].rsplit(";", 1)[0]
+    logger.debug("Cookie 已裁剪：%d → %d 字符", len(cookie), len(trimmed))
+    return trimmed

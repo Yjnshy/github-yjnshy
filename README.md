@@ -9,6 +9,7 @@
 - **无水印下载**：抖音视频自动解析无水印直链；图文作品下载全部原图（自动排除水印版和压缩图），文案同步存档为 txt
 - **Cookie 自动化**：自动从 Edge / Chrome / Firefox / Brave 浏览器提取登录态，彻底告别手动复制 Cookie
 - **直播录制**：开播自动录、下播自动停、断线自动重连，支持按时长分段，ts 格式断电不损坏文件
+- **抖音直播可录**：内置纯 Python 的 a_bogus 签名（无需 Node.js），能取到原画 flv/hls 直链
 - **多平台**：抖音 / B站 / 小红书 专用适配，其余 1000+ 站点由 yt-dlp 兜底
 - **批量下载**：整段分享文案直接粘贴，自动提取链接、去重、批量下载
 - **规范命名**：统一 `平台_作者_标题_时间戳` 命名并分类存储
@@ -78,10 +79,18 @@ mtk record https://live.bilibili.com/6 --format mp4          # 容器格式（�
 
 录制特性：
 
-- **拉流透传 UA / Referer / Cookie** —— 抖音等平台的 CDN 会校验登录态，缺了直接 403
+- **拉流透传 UA / Referer / Cookie** —— 抖音等平台的 CDN 会校验请求上下文
+- **Cookie 自动裁剪** —— 完整 Cookie 有 7~8KB，超过 ffmpeg 的请求头上限会报
+  `overlong headers` 直接打不开流，这里只保留拉流需要的少数几项
 - **断流自动重连** —— ffmpeg 自带重连，重连失败由监控层指数退避重试（10s → 20s → … 上限 5 分钟）
 - **失败不静默** —— 没录到数据（403、流地址过期）会抛出原因并删除 0 字节文件，不会留一堆空文件
 - **ts 容器** —— 断电或强杀进程，已录部分仍可播放
+
+> **抖音直播的实现说明**：抖音 Web 端已不再把房间数据写进页面 HTML，
+> 改为必须请求 `webcast/room/web/enter` 接口，且查询串要带 `a_bogus` 签名，
+> 否则接口返回空（风控）。本项目内置了一份纯 Python 的签名实现，
+> **不依赖 Node.js**。抖音可能不定期更换算法，若突然报「接口返回空响应」，
+> 说明签名已过期，需要同步上游实现（见下方「致谢」）。
 
 ### 值守 `mtk watch`
 
@@ -126,11 +135,17 @@ src/media_toolkit/
 ├── core/                # 配置、日志、命名、ffmpeg、跨平台兼容
 ├── cookies/             # 浏览器 Cookie 自动提取
 ├── platforms/           # 平台适配层（douyin / generic 兜底）
+│   └── douyin_sign.py   # 抖音 a_bogus 请求签名（纯 Python）
 ├── downloader/          # 下载引擎、图文下载
 └── recorder/            # 直播监控与录制
 ```
 
-直播流解析思路参考了开源项目 [DouyinLiveRecorder](https://github.com/ihmily/DouyinLiveRecorder)（MIT），下载引擎基于 [yt-dlp](https://github.com/yt-dlp/yt-dlp)。
+## 🙏 致谢
+
+- **[DouyinLiveRecorder](https://github.com/ihmily/DouyinLiveRecorder)**（MIT）：抖音直播接口的调用方式与
+  `a_bogus` 签名算法参考自该项目，`platforms/douyin_sign.py` 即其实现的移植（已按 MIT 协议保留署名）
+- **[yt-dlp](https://github.com/yt-dlp/yt-dlp)**：下载引擎与浏览器 Cookie 解密，覆盖 1000+ 站点
+- **[FFmpeg](https://ffmpeg.org/)**：转封装、合并与录制
 
 ## ⚠️ 免责声明
 
