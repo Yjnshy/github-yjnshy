@@ -258,7 +258,7 @@
           <span class="label">保存到</span>
           <input type="text" id="dl-outdir">
         </div>
-        <button class="ghost" onclick="openFolder('dl-outdir')">打开目录</button>
+        <button class="ghost" id="dl-pick" onclick="chooseFolder('dl-outdir', this)">选择目录</button>
       </div>
       <div class="row">
         <button class="primary" id="dl-btn" onclick="startDownload()">开始下载</button>
@@ -293,7 +293,7 @@
           <span class="label">保存到（自动建「直播录制」子目录）</span>
           <input type="text" id="rec-outdir">
         </div>
-        <button class="ghost" onclick="openFolder('rec-outdir')">打开目录</button>
+        <button class="ghost" id="rec-pick" onclick="chooseFolder('rec-outdir', this)">选择目录</button>
       </div>
       <div class="row">
         <div class="field" style="min-width:170px">
@@ -606,9 +606,28 @@ async function clearCookie() {
   catch (e) { notify(e.message); }
 }
 
-async function openFolder(fieldId) {
-  try { await api('/api/open', { path: $(fieldId).value.trim() }); }
-  catch (e) { notify(e.message); }
+let picking = false;
+
+/* 弹系统「选择文件夹」窗口，把结果回填到输入框。
+   后端是阻塞的（等用户点确定/取消），所以按钮要禁用，避免叠开好几个对话框。 */
+async function chooseFolder(fieldId, btn) {
+  if (picking) return;
+  const input = $(fieldId);
+  const label = btn ? btn.textContent : '';
+  picking = true;
+  if (btn) { btn.disabled = true; btn.textContent = '选择中…'; }
+  try {
+    const res = await api('/api/pick-folder', {
+      path: input.value.trim(),
+      title: '选择保存目录'
+    });
+    if (res && res.path) input.value = res.path;
+  } catch (e) {
+    notify(e.message);
+  } finally {
+    picking = false;
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+  }
 }
 
 async function quitApp() {

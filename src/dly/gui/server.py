@@ -39,6 +39,9 @@ DEFAULT_PORT = 8765
 PORT_RANGE = 20
 MAX_EVENTS = 1200
 
+# 选择文件夹是模态窗口，同一时刻只允许一个（连点按钮不再叠出第二个）
+_PICK_LOCK = threading.Lock()
+
 
 class AppState:
     """界面共享状态：日志事件流 + 各任务状态。"""
@@ -462,6 +465,25 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True})
             except Exception as exc:  # noqa: BLE001
                 self._json({"error": str(exc)}, 500)
+            return
+
+        if path == "/api/pick-folder":
+            # 弹系统「选择文件夹」窗口：同步等待用户选完再返回，前端据此回填输入框
+            from dly.core.folder_dialog import pick_folder
+
+            if not _PICK_LOCK.acquire(blocking=False):
+                self._json({"error": "已经有一个选择窗口开着"}, 409)
+                return
+            try:
+                picked = pick_folder((data.get("path") or "").strip(),
+                                     (data.get("title") or "选择保存目录").strip())
+            except Exception as exc:  # noqa: BLE001 弹窗失败不该拖垮服务
+                logger.exception("选择目录失败")
+                self._json({"error": str(exc)}, 500)
+                return
+            finally:
+                _PICK_LOCK.release()
+            self._json({"path": picked, "cancelled": not picked})
             return
 
         if path == "/api/open":
