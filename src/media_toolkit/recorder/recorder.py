@@ -137,7 +137,7 @@ class LiveRecorder:
         proc = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", errors="replace",
-            **compat.popen_kwargs())
+            **compat.popen_kwargs(isolate_console=True))
         self._proc = proc
 
         stderr_tail: Deque[str] = deque(maxlen=30)

@@ -173,10 +173,10 @@ class DouyinAdapter(PlatformAdapter):
                             is_live=False, referer=referer,
                             user_agent=UA_PC, cookie=cookie)
 
-        rooms = payload.get("data") or []
+        rooms = _room_list(payload)
         room = rooms[0] if rooms else {}
         status = room.get("status")            # 2 = 直播中
-        anchor = (payload.get("user") or {}).get("nickname") or ""
+        anchor = _anchor_name(payload, room)
         info = LiveInfo(
             platform=self.name,
             room_url=room_url,
@@ -201,6 +201,20 @@ class DouyinAdapter(PlatformAdapter):
 
     @staticmethod
     def _extract_web_rid(url: str) -> str:
+        """从各种抖音直播链接里取 web_rid。
+
+        已知形态（末尾数字就是 web_rid）：
+        - https://live.douyin.com/311923254809
+        - https://www.douyin.com/follow/live/311923254809?anchor_id=...
+        - https://www.douyin.com/root/live/311923254809
+        先只看 path，避免误匹配 query 里的 anchor_id。
+        """
+        if "douyin.com" not in url:
+            return ""
+        path = urllib.parse.urlparse(url).path if "://" in url else url
+        m = re.search(r"/(\d{6,})/?$", path)
+        if m:
+            return m.group(1)
         m = re.search(r"live\.douyin\.com/(\d{6,})", url)
         return m.group(1) if m else ""
 
@@ -263,7 +277,7 @@ class DouyinAdapter(PlatformAdapter):
             logger.warning("[douyin] 房间接口返回异常: %s %s",
                            data.get("status_code"), data.get("status_msg"))
             return None
-        return data.get("data") or {}
+        return _normalize_room_payload(data.get("data"))
 
     @staticmethod
     def _pick_stream_url(room: Dict) -> str:
@@ -315,6 +329,50 @@ class DouyinAdapter(PlatformAdapter):
 # ----------------------------------------------------------------------
 # 纯函数（可离线单测）
 # ----------------------------------------------------------------------
+
+def _normalize_room_payload(payload: Any) -> Dict:
+    """把房间接口返回统一成 ``{"data": [room, ...], "user": {...}}``。
+
+    实测这个接口的层级并不稳定，见过两种形态：
+
+    - 扁平：``{"data": [room, ...], "user": {...}}``
+    - 嵌套：``{"data": {"data": [room], "user": {...}}, ...}``
+
+    统一之后再取房间列表，避免因层级变化而"看起来解析成功、其实是空字典"。
+    """
+    if isinstance(payload, list):
+        return {"data": payload}
+    if not isinstance(payload, dict):
+        return {}
+    inner = payload.get("data")
+    if isinstance(inner, dict) and ("data" in inner or "user" in inner):
+        merged = dict(inner)
+        if not merged.get("user") and isinstance(payload.get("user"), dict):
+            merged["user"] = payload["user"]
+        return merged
+    if isinstance(inner, list):
+        return {**payload, "data": inner}
+    return payload
+
+
+def _room_list(payload: Dict) -> List[Dict]:
+    """取房间列表，兼容 data 是列表或被再包一层的情况。"""
+    rooms = payload.get("data")
+    if isinstance(rooms, dict):
+        rooms = rooms.get("data")
+    if not isinstance(rooms, list):
+        return []
+    return [r for r in rooms if isinstance(r, dict)]
+
+
+def _anchor_name(payload: Dict, room: Dict) -> str:
+    """主播昵称：优先接口顶层的 user，其次房间对象里的 owner。"""
+    user = payload.get("user") or {}
+    if isinstance(user, dict) and user.get("nickname"):
+        return user["nickname"]
+    owner = (room or {}).get("owner") or {}
+    return owner.get("nickname") or ""
+
 
 def find_item(data: Any) -> Optional[Dict]:
     """在 _ROUTER_DATA 里广度优先找第一个非空 item_list[0]。"""

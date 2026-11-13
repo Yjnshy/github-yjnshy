@@ -77,6 +77,14 @@ mtk record https://live.bilibili.com/6 --format mp4          # 容器格式（�
 
 立即开始录制单个直播间，实时显示已录时长与体积，Ctrl+C 立即停止（会先杀掉 ffmpeg 再退出，不留孤儿进程）。
 
+抖音直播间支持这几种链接，直接粘哪个都行：
+
+```
+https://live.douyin.com/311923254809
+https://www.douyin.com/follow/live/311923254809?anchor_id=...
+https://www.douyin.com/root/live/311923254809
+```
+
 录制特性：
 
 - **拉流透传 UA / Referer / Cookie** —— 抖音等平台的 CDN 会校验请求上下文

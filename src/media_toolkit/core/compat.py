@@ -12,11 +12,20 @@ IS_WINDOWS = sys.platform == "win32"
 CREATE_NO_WINDOW = 0x08000000 if IS_WINDOWS else 0
 
 
-def popen_kwargs() -> dict:
-    """子进程通用参数：不弹窗、不从 stdin 读。"""
+def popen_kwargs(isolate_console: bool = False) -> dict:
+    """子进程通用参数：不弹窗、不从 stdin 读。
+
+    ``isolate_console=True`` 会让子进程不接收终端的 Ctrl+C（Windows 下
+    新建进程组即禁用 Ctrl+C 继承）。录制时开启它，让"何时停止 ffmpeg"
+    的决定权留在我们手里：用户按 Ctrl+C 先由 Python 收到，再由
+    :func:`kill_process_tree` 统一收尾，避免 ffmpeg 被信号直接打断。
+    """
     kwargs: dict = {"stdin": subprocess.DEVNULL}
     if IS_WINDOWS:
-        kwargs["creationflags"] = CREATE_NO_WINDOW
+        flags = CREATE_NO_WINDOW
+        if isolate_console:
+            flags |= subprocess.CREATE_NEW_PROCESS_GROUP
+        kwargs["creationflags"] = flags
     return kwargs
 
 

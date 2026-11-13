@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import signal
 
 import click
 from rich.console import Console
@@ -12,6 +13,21 @@ from media_toolkit.core.config import load_config
 from media_toolkit.core.logging import setup_logging
 
 console = Console()
+
+
+def _enable_graceful_interrupts() -> None:
+    """让 Ctrl+Break / kill 与 Ctrl+C 一样走优雅停止。
+
+    Windows 的控制台里，Ctrl+Break 默认直接终止进程（不会抛
+    KeyboardInterrupt），ffmpeg 子进程就会变成孤儿继续写文件。
+    这里统一映射到默认的 Ctrl+C 处理，保证停止逻辑只有一条路。
+    """
+    sigbreak = getattr(signal, "SIGBREAK", None)
+    if sigbreak is not None:
+        try:
+            signal.signal(sigbreak, signal.default_int_handler)
+        except (ValueError, OSError):
+            pass
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
@@ -26,6 +42,7 @@ console = Console()
 def main(ctx: click.Context, config_path: str | None, verbose: bool,
          browser: str | None) -> None:
     """media-toolkit：多平台无水印下载与直播自动录制工具。"""
+    _enable_graceful_interrupts()
     setup_logging(logging.DEBUG if verbose else logging.INFO)
     config = load_config(config_path)
     if browser:

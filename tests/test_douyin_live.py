@@ -6,7 +6,9 @@ import json
 
 import pytest
 
-from media_toolkit.platforms.douyin import DouyinAdapter
+from media_toolkit.platforms.douyin import (
+    DouyinAdapter, _anchor_name, _normalize_room_payload, _room_list,
+)
 
 
 def _room_with_origin(codec: str = "h264") -> dict:
@@ -40,11 +42,51 @@ def _room_with_origin(codec: str = "h264") -> dict:
 @pytest.mark.parametrize("url, expected", [
     ("https://live.douyin.com/369324308707", "369324308707"),
     ("https://live.douyin.com/123456789?enter_from=x", "123456789"),
+    # 关注页/主页进入直播间的真实形态，末尾数字同样是 web_rid
+    ("https://www.douyin.com/follow/live/311923254809?anchor_id=63496661311",
+     "311923254809"),
+    ("https://www.douyin.com/root/live/311923254809", "311923254809"),
+    # query 里的数字不能被误当成房间号
+    ("https://www.douyin.com/user/MS4wLjABAAAA?modal_id=7300000000000000000", ""),
     ("https://v.douyin.com/iABCdef/", ""),
     ("https://live.douyin.com/", ""),
 ])
 def test_extract_web_rid(url, expected):
     assert DouyinAdapter._extract_web_rid(url) == expected
+
+
+# ---------------------------------------------------------------- 接口返回归一化
+
+def test_normalize_flat_payload():
+    payload = {"data": [{"status": 2}], "user": {"nickname": "主播"}}
+    assert _normalize_room_payload(payload)["data"] == [{"status": 2}]
+
+
+def test_normalize_nested_payload():
+    """实测接口有时把 data 再包一层（data.data / data.user）。"""
+    raw = {
+        "data": {
+            "data": [{"status": 2, "title": "标题"}],
+            "user": {"nickname": "吴图图"},
+            "extra": {},
+        },
+        "status_code": 0,
+    }
+    payload = _normalize_room_payload(raw["data"])
+    assert _room_list(payload)[0]["title"] == "标题"
+    assert _anchor_name(payload, _room_list(payload)[0]) == "吴图图"
+
+
+def test_anchor_falls_back_to_owner():
+    payload = {"data": [{"owner": {"nickname": "房主昵称"}}]}
+    room = _room_list(payload)[0]
+    assert _anchor_name(payload, room) == "房主昵称"
+
+
+def test_room_list_tolerates_weird_shapes():
+    assert _room_list({}) == []
+    assert _room_list({"data": None}) == []
+    assert _room_list({"data": ["not-a-dict"]}) == []
 
 
 # ---------------------------------------------------------------- 流地址挑选
