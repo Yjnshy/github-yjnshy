@@ -33,7 +33,11 @@ class MediaInfo:
 
 @dataclass
 class LiveInfo:
-    """一条直播间的实时状态。"""
+    """一条直播间的实时状态。
+
+    ``user_agent`` / ``cookie`` 是拉流必需的请求上下文：
+    抖音等平台的 CDN 会校验 UA 与登录态，缺了直接 403。
+    """
     platform: str
     room_url: str
     is_live: bool
@@ -41,6 +45,8 @@ class LiveInfo:
     anchor: str = ""
     stream_url: str = ""            # 优先 flv，其次 hls
     referer: str = ""
+    user_agent: str = UA_PC
+    cookie: str = ""
 
 
 class PlatformAdapter(ABC):

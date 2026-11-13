@@ -68,10 +68,20 @@ mtk cache --clear                      # 换账号 / Cookie 失效时清空缓�
 ### 录制 `mtk record`
 
 ```bash
-mtk record https://live.bilibili.com/6
+mtk record https://live.bilibili.com/6                       # 录到断流/下播为止
+mtk record https://live.bilibili.com/6 --segment 30          # 每 30 分钟切一段
+mtk record https://live.douyin.com/123456789 -o D:/录制       # 指定保存目录
+mtk record https://live.bilibili.com/6 --format mp4          # 容器格式（默认 ts）
 ```
 
-立即开始录制单个直播间，Ctrl+C 停止。
+立即开始录制单个直播间，实时显示已录时长与体积，Ctrl+C 立即停止（会先杀掉 ffmpeg 再退出，不留孤儿进程）。
+
+录制特性：
+
+- **拉流透传 UA / Referer / Cookie** —— 抖音等平台的 CDN 会校验登录态，缺了直接 403
+- **断流自动重连** —— ffmpeg 自带重连，重连失败由监控层指数退避重试（10s → 20s → … 上限 5 分钟）
+- **失败不静默** —— 没录到数据（403、流地址过期）会抛出原因并删除 0 字节文件，不会留一堆空文件
+- **ts 容器** —— 断电或强杀进程，已录部分仍可播放
 
 ### 值守 `mtk watch`
 
@@ -81,7 +91,8 @@ mtk record https://live.bilibili.com/6
 mtk watch
 ```
 
-开播自动录、下播自动停，7×24 无人值守。
+开播自动录、下播自动停、断线自动续录，7×24 无人值守；每 60 秒播报一次录制进度。
+Ctrl+C 会停掉所有正在进行的录制再退出。
 
 ## ⚙️ 配置说明
 

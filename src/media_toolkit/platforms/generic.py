@@ -12,7 +12,9 @@ from typing import Optional
 from yt_dlp import YoutubeDL
 
 from media_toolkit.cookies.manager import PLATFORM_DOMAINS
-from media_toolkit.platforms.base import LiveInfo, MediaInfo, PlatformAdapter
+from media_toolkit.platforms.base import (
+    UA_PC, LiveInfo, MediaInfo, PlatformAdapter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,13 +53,18 @@ class GenericAdapter(PlatformAdapter):
         if not info:
             return None
         is_live = bool(info.get("is_live"))
+        platform = self._platform_of(room_url)
         live = LiveInfo(
-            platform=self._platform_of(room_url),
+            platform=platform,
             room_url=room_url,
             is_live=is_live,
             title=info.get("title") or "",
-            anchor=info.get("uploader") or "",
-            referer=room_url,
+            # 直播元数据里上传者字段因平台而异，逐个兜底
+            anchor=(info.get("uploader") or info.get("channel")
+                    or info.get("uploader_id") or ""),
+            referer=info.get("webpage_url") or room_url,
+            user_agent=UA_PC,
+            cookie=self.cookies.get_header(platform) if platform != "other" else "",
         )
         if is_live:
             # 优先 flv（延迟低、不易断），其次 hls

@@ -184,6 +184,8 @@ class DouyinAdapter(PlatformAdapter):
             title=room.get("title") or "",
             anchor=owner.get("nickname") or "",
             referer=final_url,
+            user_agent=UA_PC,
+            cookie=cookie,
         )
         if not info.is_live:
             return info

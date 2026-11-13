@@ -38,6 +38,10 @@ PLATFORM_DOMAINS: Dict[str, List[str]] = {
     "xiaohongshu": ["xiaohongshu.com"],
 }
 
+# 这些平台没有 Cookie 就基本不可用，取不到时值得告警；
+# 其余平台（如 B 站）匿名也能访问，取不到只记调试日志
+COOKIE_REQUIRED = {"douyin", "xiaohongshu"}
+
 
 def _explain_cookie_error(message: str, browser: str) -> str:
     """把 yt-dlp 的原始报错翻译成用户能照做的建议。"""
@@ -54,6 +58,27 @@ def _explain_cookie_error(message: str, browser: str) -> str:
     return ""
 
 
+class _QuietLogger:
+    """吞掉 yt-dlp 的内部日志。
+
+    yt-dlp 默认把 "Could not copy Chrome cookie database" 之类的 ERROR
+    直接写到 stderr，探测 Cookie 时会污染命令行输出，这里全部静音；
+    真正的异常仍会以 Python 异常形式抛出，不会丢信息。
+    """
+
+    def debug(self, msg: str) -> None:  # noqa: D102
+        pass
+
+    def info(self, msg: str) -> None:  # noqa: D102
+        pass
+
+    def warning(self, msg: str) -> None:  # noqa: D102
+        pass
+
+    def error(self, msg: str) -> None:  # noqa: D102
+        pass
+
+
 class CookieManager:
     """按需为各平台提供 Cookie 请求头。"""
 
@@ -63,6 +88,9 @@ class CookieManager:
         self._config = config
         self._use_cache = use_cache and getattr(config, "cache_days", 0) > 0
         self._cache: Dict[str, str] = {}
+        # 失败状态也缓存：无人值守模式下每轮都要查一次平台状态，
+        # 没有负缓存会反复解密浏览器数据库（很慢）并刷屏告警
+        self._failed: Dict[str, str] = {}
         self._temp_files: List[str] = []
 
     # ---- 对外接口 ----
@@ -71,6 +99,10 @@ class CookieManager:
         """获取某平台的 Cookie 请求头字符串，获取失败返回空串。"""
         if platform in self._cache:
             return self._cache[platform]
+        if platform in self._failed:
+            # 本次进程内已确认取不到，直接返回，避免重复解密浏览器数据库
+            logger.debug("[%s] Cookie 不可用（已缓存失败状态）", platform)
+            return ""
 
         header = (self._from_file(platform)
                   or self._from_disk_cache(platform)
@@ -79,12 +111,17 @@ class CookieManager:
             self._cache[platform] = header
             logger.debug("[%s] Cookie 已就绪（%d 字符）", platform, len(header))
         else:
+            self._failed[platform] = "浏览器与 cookies 文件均未取到"
+            if platform not in COOKIE_REQUIRED:
+                logger.debug("[%s] 未取到 Cookie，该平台匿名可访问，继续", platform)
+                return header
             logger.warning(
                 "[%s] 未能获取 Cookie，可能原因：\n"
                 "  1. 浏览器里没有登录该平台（先登录再试）\n"
                 "  2. 浏览器正在运行，锁住了 Cookie 数据库（完全退出浏览器）\n"
                 "  3. Edge/新版 Chrome 启用了系统级加密，第三方无法解密"
-                "（改用 Chrome、Firefox，或导出 cookies.txt 后配置 cookies.cookies_file）",
+                "（改用 Chrome、Firefox，或导出 cookies.txt 后配置 cookies.cookies_file）\n"
+                "（本次运行内不再重试，如需重试请执行 mtk cache --clear 或重启）",
                 platform)
         return header
 
@@ -179,6 +216,7 @@ class CookieManager:
     def clear_cache(self) -> None:
         """清空本地 Cookie 缓存（缓存失效时需要）。"""
         self._cache.clear()
+        self._failed.clear()
         try:
             self.CACHE_PATH.unlink(missing_ok=True)
             logger.info("本地 Cookie 缓存已清除")
@@ -213,6 +251,7 @@ class CookieManager:
             with YoutubeDL({
                 "quiet": True,
                 "no_warnings": True,
+                "logger": _QuietLogger(),
                 "cookiesfrombrowser": (browser,),
             }) as ydl:
                 jar = ydl.cookiejar

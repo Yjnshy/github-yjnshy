@@ -66,20 +66,29 @@ def download(ctx: click.Context, text: tuple, quality: str | None,
 
 @main.command()
 @click.argument("room_url")
+@click.option("-o", "--output", "output_dir", default=None, help="保存目录")
+@click.option("--segment", "segment_minutes", default=None, type=int,
+              help="按时长分段（分钟，0 表示整段录制）")
+@click.option("--format", "fmt", default=None,
+              type=click.Choice(["ts", "mp4", "mkv", "flv"]),
+              help="输出容器（默认 ts，断电也不损坏）")
 @click.pass_context
-def record(ctx: click.Context, room_url: str) -> None:
+def record(ctx: click.Context, room_url: str, output_dir: str | None,
+           segment_minutes: int | None, fmt: str | None) -> None:
     """录制单个直播间（立即开始，下播或断流超限自动停止）。
 
     \b
     示例：
       mtk record https://live.douyin.com/123456789
-      mtk record https://live.bilibili.com/6
+      mtk record https://live.bilibili.com/6 --segment 30
     """
-    from media_toolkit.platforms import find_adapter
-    from media_toolkit.cookies.manager import CookieManager
-    from media_toolkit.recorder.recorder import LiveRecorder
-    from media_toolkit.core.ffmpeg import find_ffmpeg
+    import time
     from pathlib import Path
+
+    from media_toolkit.core.ffmpeg import find_ffmpeg
+    from media_toolkit.cookies.manager import CookieManager
+    from media_toolkit.platforms import find_adapter
+    from media_toolkit.recorder.recorder import LiveRecorder, RecordingError
 
     config = ctx.obj["config"]
     cookies = CookieManager(config.cookies)
@@ -99,17 +108,40 @@ def record(ctx: click.Context, room_url: str) -> None:
         console.print("[red]未找到 ffmpeg，无法录制[/red]")
         raise SystemExit(1)
 
-    console.print(f"[red]🔴 录制中[/red] {live.anchor} - {live.title}（Ctrl+C 停止）")
-    recorder = LiveRecorder(ffmpeg,
-                            Path(config.output_dir) / "直播录制",
-                            fmt=config.record.format,
-                            segment_minutes=config.record.segment_minutes)
+    outdir = Path(output_dir or config.output_dir) / "直播录制"
+    console.print(f"[red]🔴 录制中[/red] {live.anchor} - {live.title}")
+    console.print(f"[dim]输出目录：{outdir}　Ctrl+C 停止[/dim]")
+
+    last = [time.monotonic()]
+
+    def on_progress(seconds: float, size: int) -> None:
+        now = time.monotonic()
+        if now - last[0] < 15:
+            return
+        last[0] = now
+        hh, rem = divmod(int(seconds), 3600)
+        mm, ss = divmod(rem, 60)
+        console.print(f"[dim]  ⏱ {hh:02d}:{mm:02d}:{ss:02d}　"
+                      f"{size / 1024 / 1024:.1f} MB[/dim]")
+
+    recorder = LiveRecorder(
+        ffmpeg, outdir,
+        fmt=fmt or config.record.format,
+        segment_minutes=(config.record.segment_minutes
+                         if segment_minutes is None else segment_minutes),
+        on_progress=on_progress,
+    )
     try:
         outfile = recorder.record_once(live)
         console.print(f"[green]✓ 已保存：{outfile}[/green]")
     except KeyboardInterrupt:
-        recorder.stop()
-        console.print("\n已停止录制")
+        console.print("\n[yellow]已停止录制[/yellow]")
+        raise SystemExit(0)
+    except RecordingError as exc:
+        console.print(f"[red]✗ {exc}[/red]")
+        if exc.detail:
+            console.print(f"[dim]{exc.detail}[/dim]")
+        raise SystemExit(1)
 
 
 @main.command()
