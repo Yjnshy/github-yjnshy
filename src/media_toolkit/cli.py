@@ -199,5 +199,16 @@ def cache(ctx: click.Context, clear: bool) -> None:
                       f"（{'存在' if exists else '不存在'}）")
 
 
+@main.command()
+def gui() -> None:
+    """打开图形界面（下载 / 录制 / 值守）。"""
+    try:
+        from media_toolkit.gui.app import launch
+    except ImportError as exc:  # 极少见：tkinter 缺失
+        console.print(f"[red]无法加载图形界面：{exc}[/red]")
+        raise SystemExit(1)
+    launch()
+
+
 if __name__ == "__main__":
     main()

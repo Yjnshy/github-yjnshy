@@ -31,7 +31,12 @@ cp config.example.yaml config.yaml
 mtk download "https://v.douyin.com/xxxxxxx/"     # 下载抖音无水印视频
 mtk record https://live.douyin.com/123456789     # 录制一个直播间
 mtk watch                                        # 值守 config.yaml 里的所有直播间
+mtk gui                                          # 打开图形界面
 ```
+
+> 不想记命令？双击 `scripts/启动界面.bat`，浏览器会打开图形界面（下载 / 录制 / 值守三个页签）。
+> 界面由程序内置的本地服务提供（只监听 127.0.0.1），关闭页面不影响运行，
+> 需要停止时点右下角「退出程序」或关掉那个黑色命令行窗口。
 
 > 首次使用抖音功能前，请先在你选择的浏览器（默认 Chrome）里登录 douyin.com。
 > Cookie 会自动提取并缓存 7 天，期间无需重复登录，也不用关闭浏览器。
@@ -145,7 +150,10 @@ src/media_toolkit/
 ├── platforms/           # 平台适配层（douyin / generic 兜底）
 │   └── douyin_sign.py   # 抖音 a_bogus 请求签名（纯 Python）
 ├── downloader/          # 下载引擎、图文下载
-└── recorder/            # 直播监控与录制
+├── recorder/            # 直播监控与录制
+└── gui/                 # 图形界面（标准库 http.server + 单页前端）
+    ├── server.py        # 本地服务与 JSON 接口
+    └── assets/index.html
 ```
 
 ## 🙏 致谢

@@ -37,3 +37,6 @@ Homepage = "https://github.com/Yjnshy/github-yjnshy"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"media_toolkit.gui" = ["assets/*.html"]
