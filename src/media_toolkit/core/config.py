@@ -15,6 +15,8 @@ from typing import List, Optional
 
 import yaml
 
+from media_toolkit.core import paths
+
 DEFAULT_CONFIG_PATHS = [
     Path("config.yaml"),
     Path.home() / ".media-toolkit" / "config.yaml",
@@ -40,7 +42,7 @@ class RecordConfig:
 
 @dataclass
 class AppConfig:
-    output_dir: str = "./downloads"
+    output_dir: str = ""              # 空 = 按运行方式推导默认目录
     quality: str = "best"
     fps: int = 0                      # 下载完成后转码到的帧率，0 = 不转码
     keep_original: bool = False       # 转码后是否保留原片
@@ -51,13 +53,22 @@ class AppConfig:
     record: RecordConfig = field(default_factory=RecordConfig)
 
 
+def _default_config_paths() -> List[Path]:
+    """配置文件搜索顺序：当前目录 > 程序目录（打包后为 exe 同级）> 用户目录。"""
+    candidates = list(DEFAULT_CONFIG_PATHS)
+    local = paths.app_dir() / "config.yaml"
+    if local not in candidates:
+        candidates.insert(1, local)
+    return candidates
+
+
 def _find_config_file(explicit: Optional[str]) -> Optional[Path]:
     if explicit:
         p = Path(explicit)
         if not p.is_file():
             raise FileNotFoundError(f"配置文件不存在: {p}")
         return p
-    for p in DEFAULT_CONFIG_PATHS:
+    for p in _default_config_paths():
         if p.is_file():
             return p
     return None
@@ -101,4 +112,9 @@ def load_config(explicit_path: Optional[str] = None) -> AppConfig:
     cfg.proxy = os.environ.get("MTK_PROXY", cfg.proxy)
     cfg.cookies.browser = os.environ.get("MTK_COOKIE_BROWSER", cfg.cookies.browser)
     cfg.cookies.cookies_file = os.environ.get("MTK_COOKIES_FILE", cfg.cookies.cookies_file)
+
+    # 路径收敛：没配就用推导出的默认目录；配了相对路径则按程序目录解析，
+    # 否则双击启动（工作目录可能是 system32）会把文件下到莫名其妙的地方
+    cfg.output_dir = (paths.resolve_path(cfg.output_dir) if cfg.output_dir
+                      else str(paths.default_output_dir()))
     return cfg

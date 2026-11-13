@@ -27,10 +27,13 @@ dependencies = [
 [project.optional-dependencies]
 # 桌面窗口（独立窗口而非浏览器打开页面）；Win10/11 需要系统自带 WebView2
 desktop = ["pywebview>=5.0"]
+# 图文作品里的 webp 转 jpg（不装也能用，只是图片保持 webp）
+images = ["pillow>=10.0"]
 # 浏览器 Cookie 提取的额外兜底（yt-dlp 已内置主力实现，可不装）
 cookies = ["browser-cookie3>=0.19"]
 dev = ["pytest>=8.0"]
-build = ["pyinstaller>=6.0"]
+# 打包成 exe 需要：pyinstaller + 窗口组件 + 图片转换
+build = ["pyinstaller>=6.0", "pywebview>=5.0", "pillow>=10.0"]
 
 [project.scripts]
 mtk = "media_toolkit.cli:main"

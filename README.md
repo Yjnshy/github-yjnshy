@@ -151,13 +151,43 @@ Ctrl+C 会停掉所有正在进行的录制再退出。
 > PyQt 要背上百 MB 运行时。用 pywebview 套一层系统自带的 WebView2，
 > 既有原生窗口体验，界面代码又能直接复用到将来的手机端。
 
+## 📦 打包成独立软件（免装 Python）
+
+```bat
+scripts\打包exe.bat
+```
+
+打包完成后产物在 `dist\MediaToolkit\`，把整个文件夹拷给别人，双击
+`MediaToolkit.exe` 即可运行，**对方不需要装 Python**。
+
+| 说明 | 内容 |
+|---|---|
+| 打包方式 | PyInstaller 文件夹模式（onedir），启动快、不触发杀软自解压告警 |
+| 体积 | 约 260MB，其中 ffmpeg / ffprobe 占 190MB |
+| 不带 ffmpeg | 设 `MTK_BUNDLE_FFMPEG=0` 再打包，程序会退回到系统 PATH 里的 ffmpeg |
+| 指定 ffmpeg | 设 `MTK_FFMPEG` / `MTK_FFPROBE` 指向你要打包的版本 |
+| 用户数据 | 日志与默认下载目录在 `%LOCALAPPDATA%\MediaToolkit\`（程序装在无写权限目录也能跑） |
+| 配置 | 把 `config.yaml` 放在 exe 同目录即可生效 |
+
+> 图标：`packaging/app.ico`；需要改设计就编辑 `packaging/make_icon.py` 后重跑它。
+> 打包后的 exe 带完整版本信息（右键属性可见），已关闭 UPX 压缩以免被误报。
+
+打包后仍可用的启动参数：`MediaToolkit.exe --web`（用浏览器打开）、`--debug`（开 DevTools）。
+
+### 分发给别人时
+
+1. 把 `dist\MediaToolkit\` 整个目录压缩成 zip 发出去（别只发 exe，会缺依赖）
+2. 提醒对方首次使用前在浏览器登录 douyin.com，程序会自动提取 Cookie
+3. 首次运行 Windows 可能弹 SmartScreen「未知发布者」——因为没买代码签名证书，
+   点「更多信息 → 仍要运行」即可；这是所有未签名 exe 的通用现象
+
 ## ⚙️ 配置说明
 
 复制 `config.example.yaml` 为 `config.yaml`，主要选项：
 
 | 选项 | 说明 | 默认值 |
 |---|---|---|
-| `output_dir` | 保存根目录 | `./downloads` |
+| `output_dir` | 保存根目录 | 源码运行 `./downloads`；打包后 `%LOCALAPPDATA%\MediaToolkit\downloads` |
 | `quality` | 默认画质 | `best` |
 | `fps` | 下载后转码的目标帧率（0 = 不转码） | `0` |
 | `keep_original` | 转码后保留原片（另存 `_原画`） | `false` |
@@ -183,8 +213,9 @@ Ctrl+C 会停掉所有正在进行的录制再退出。
 ```
 src/media_toolkit/
 ├── cli.py               # 命令行入口
-├── core/                # 配置、日志、命名、ffmpeg、帧率转码、跨平台兼容
-│   └── transcode.py     # 按目标帧率重编码（下载后转码 / 录制时转码共用）
+├── core/                # 配置、日志、命名、ffmpeg、帧率转码、路径解析、跨平台兼容
+│   ├── transcode.py     # 按目标帧率重编码（下载后转码 / 录制时转码共用）
+│   └── paths.py         # 源码运行 / 打包运行 的路径差异收敛在这里
 ├── cookies/             # 浏览器 Cookie 自动提取
 ├── platforms/           # 平台适配层（douyin / generic 兜底）
 │   └── douyin_sign.py   # 抖音 a_bogus 请求签名（纯 Python）
@@ -194,6 +225,12 @@ src/media_toolkit/
     ├── desktop.py       # 桌面窗口（pywebview，复用系统 WebView2）
     ├── server.py        # 本地服务与 JSON 接口
     └── assets/index.html
+
+packaging/
+├── app_main.py          # exe 入口（异常兜底 + 写日志）
+├── media_toolkit.spec   # PyInstaller 打包配置
+├── make_icon.py         # 生成 app.ico
+└── app.ico
 ```
 
 ## 🙏 致谢

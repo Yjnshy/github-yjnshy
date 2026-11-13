@@ -29,6 +29,7 @@ from media_toolkit import __version__
 from media_toolkit.core.compat import open_folder
 from media_toolkit.core.config import load_config
 from media_toolkit.core.ffmpeg import find_ffmpeg
+from media_toolkit.core.logging import setup_logging
 from media_toolkit.core.transcode import FPS_CHOICES, normalize_fps
 
 logger = logging.getLogger(__name__)
@@ -536,8 +537,8 @@ def _stop_tasks(state: AppState) -> None:
 
 def create_app(desktop: bool = False) -> AppContext:
     """创建状态与本地服务（不启动监听，由调用方决定窗口形态）。"""
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s %(levelname)s %(message)s")
+    # 打包成窗口程序后没有控制台，setup_logging 会自动只写文件
+    setup_logging()
     state = AppState()
     state.desktop = desktop
     log = logging.getLogger("media_toolkit")

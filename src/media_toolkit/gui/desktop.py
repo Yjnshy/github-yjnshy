@@ -30,11 +30,22 @@ class DesktopUnavailable(RuntimeError):
     """桌面窗口依赖缺失（没装 pywebview 或没有可用的 WebView2）。"""
 
 
-def _screen_logical_size() -> tuple:
-    """屏幕的「逻辑尺寸」：高 DPI（125% / 150%）下窗口按逻辑像素算。
+def alert(message: str, title: str = "Media Toolkit") -> None:
+    """弹一个系统对话框。
 
-    取不到时返回 (0, 0)，调用方回落到固定尺寸。
+    打包成窗口程序后没有控制台，启动失败时用户只会看到「什么都没发生」，
+    必须用系统弹窗把原因讲清楚。
     """
+    try:
+        import ctypes
+
+        ctypes.windll.user32.MessageBoxW(None, str(message), title, 0x10)
+    except Exception:  # noqa: BLE001 非 Windows 或受限环境，放弃弹窗
+        logger.error("%s: %s", title, message)
+
+
+def _dpi_scale() -> float:
+    """系统缩放比例（125% → 1.25）；取不到按 1.0 处理。"""
     try:
         import ctypes
 
@@ -43,21 +54,56 @@ def _screen_logical_size() -> tuple:
         hdc = user32.GetDC(0)
         dpi = gdi32.GetDeviceCaps(hdc, 88) or 96      # 88 = LOGPIXELSX
         user32.ReleaseDC(0, hdc)
-        scale = (dpi or 96) / 96
-        return (int(user32.GetSystemMetrics(0) / scale),
-                int(user32.GetSystemMetrics(1) / scale))
+        return (dpi or 96) / 96
     except Exception:  # noqa: BLE001 非 Windows 或受限环境
-        return (0, 0)
+        return 1.0
+
+
+def _work_area() -> tuple:
+    """桌面上真正能放窗口的区域（已排除任务栏），单位物理像素。
+
+    比 GetSystemMetrics 靠谱：任务栏、Dock 之类占掉的高度不会再被算进去，
+    否则窗口底部正好被任务栏切掉——这是高分屏上最常见的排版事故。
+    """
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        rect = wintypes.RECT()
+        SPI_GETWORKAREA = 0x0030
+        if ctypes.windll.user32.SystemParametersInfoW(
+                SPI_GETWORKAREA, 0, ctypes.byref(rect), 0):
+            return (rect.left, rect.top, rect.right, rect.bottom)
+    except Exception:  # noqa: BLE001
+        pass
+    return (0, 0, 0, 0)
+
+
+def _window_geometry() -> tuple:
+    """算出窗口尺寸与位置（逻辑像素），保证整个窗口落在可用区域内。
+
+    pywebview 的 width/height/x/y 都按逻辑像素处理（会再乘上 DPI 缩放），
+    所以这里统一先把物理像素的可用区域换算成逻辑像素再收敛。
+    """
+    left, top, right, bottom = _work_area()
+    if right <= left or bottom <= top:
+        return WINDOW_SIZE, (None, None)
+
+    scale = _dpi_scale() or 1.0
+    area_w = int((right - left) / scale)
+    area_h = int((bottom - top) / scale)
+    margin = 20                                    # 四周留一点呼吸空间
+
+    width = min(WINDOW_SIZE[0], max(640, area_w - margin))
+    height = min(WINDOW_SIZE[1], max(480, area_h - margin))
+    x = int(left / scale) + max(0, (area_w - width) // 2)
+    y = int(top / scale) + max(0, (area_h - height) // 2)
+    return (width, height), (x, y)
 
 
 def _window_size() -> tuple:
-    """按屏幕大小收敛窗口尺寸，避免小屏或高分屏下底部被任务栏挡住。"""
-    screen_w, screen_h = _screen_logical_size()
-    if not screen_w or not screen_h:
-        return WINDOW_SIZE
-    width = max(MIN_SIZE[0], min(WINDOW_SIZE[0], int(screen_w * 0.9)))
-    height = max(520, min(WINDOW_SIZE[1], int(screen_h * 0.82)))
-    return (width, height)
+    """只取尺寸（测试与兼容用）。"""
+    return _window_geometry()[0]
 
 
 def _load_webview():
@@ -78,10 +124,11 @@ def launch(debug: bool = False) -> None:
     app.start()
     logger.debug("桌面窗口已启动：%s", app.url)
 
-    width, height = _window_size()
+    (width, height), (x, y) = _window_geometry()
     window = webview.create_window(
         WINDOW_TITLE, app.url,
         width=width, height=height,
+        x=x, y=y,
         min_size=(min(MIN_SIZE[0], width), min(MIN_SIZE[1], height)),
         text_select=True,
     )
