@@ -46,9 +46,14 @@ copy /y config.example.yaml "dist\MediaToolkit\config.example.yaml" >nul 2>nul
 copy /y "packaging\使用说明.txt" "dist\MediaToolkit\使用说明.txt" >nul 2>nul
 
 echo.
+echo 创建桌面快捷方式…
+python packaging\make_shortcut.py
+
+echo.
 echo ==========================================
 echo   完成！产物在 dist\MediaToolkit\
 echo   双击 dist\MediaToolkit\MediaToolkit.exe 即可运行
+echo   桌面已生成「Media Toolkit」快捷方式
 echo ==========================================
 echo.
 pause

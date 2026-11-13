@@ -174,6 +174,23 @@ scripts\打包exe.bat
 
 打包后仍可用的启动参数：`MediaToolkit.exe --web`（用浏览器打开）、`--debug`（开 DevTools）。
 
+### 桌面快捷方式
+
+打包时会自动在桌面创建「Media Toolkit」快捷方式。想单独重建（比如换了安装位置）：
+
+```bat
+scripts\创建桌面快捷方式.bat
+```
+
+也可以指定目录或换个名字：
+
+```bash
+python packaging/make_shortcut.py --app-dir "D:/Apps/MediaToolkit" --name "视频下载器"
+```
+
+> 快捷方式走系统 `IShellLink` 接口生成，指向 exe 的绝对路径。
+> 如果把 `dist\MediaToolkit\` 挪走或删掉，快捷方式就会失效，需要重新创建。
+
 ### 分发给别人时
 
 1. 把 `dist\MediaToolkit\` 整个目录压缩成 zip 发出去（别只发 exe，会缺依赖）
