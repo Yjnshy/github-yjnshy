@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from media_toolkit.platforms.douyin import (
+from dly.platforms.douyin import (
     DouyinAdapter, _anchor_name, _normalize_room_payload, _room_list,
 )
 

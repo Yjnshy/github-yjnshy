@@ -1,9 +1,9 @@
-Media Toolkit —— 视频下载 & 直播录制
+帅羊羊 —— 视频下载 & 直播录制
 =====================================
 
 一、怎么启动
 ------------
-双击 MediaToolkit.exe 即可打开窗口，不需要安装 Python。
+双击 DLY.exe 即可打开窗口，不需要安装 Python。
 
 如果 Windows 弹出「已保护你的电脑」：
     点「更多信息」→「仍要运行」。
@@ -37,8 +37,8 @@ Media Toolkit —— 视频下载 & 直播录制
 
 四、文件存在哪
 --------------
-默认下载目录：本机 %LOCALAPPDATA%\MediaToolkit\downloads
-日志文件：    %LOCALAPPDATA%\MediaToolkit\logs\media_toolkit.log
+默认下载目录：本机 %LOCALAPPDATA%\DLY\downloads
+日志文件：    %LOCALAPPDATA%\DLY\logs\dly.log
 窗口里可以直接点「打开目录」跳转。
 
 想出问题好排查，就把上面的日志文件发出来。
@@ -46,7 +46,7 @@ Media Toolkit —— 视频下载 & 直播录制
 
 五、想改默认设置
 ----------------
-把 config.example.yaml 复制成 config.yaml，放在 MediaToolkit.exe 同一个目录，
+把 config.example.yaml 复制成 config.yaml，放在 DLY.exe 同一个目录，
 改完重启程序生效。常用项：output_dir（保存目录）、quality（画质）、
 record.fps（录制帧率）、record.segment_minutes（分段分钟数）。
 

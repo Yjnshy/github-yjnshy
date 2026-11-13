@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from media_toolkit.platforms.base import UA_PC, LiveInfo
-from media_toolkit.recorder import recorder as recorder_mod
-from media_toolkit.recorder.recorder import (
+from dly.platforms.base import UA_PC, LiveInfo
+from dly.recorder import recorder as recorder_mod
+from dly.recorder.recorder import (
     MAX_COOKIE_HEADER, MIN_OUTPUT_BYTES, LiveRecorder, RecordingError,
     _microseconds_to_seconds, _trim_cookie,
 )

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from media_toolkit.gui import desktop
+from dly.gui import desktop
 
 
 @pytest.fixture

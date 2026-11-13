@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "media-toolkit"
+name = "dly"
 version = "0.1.0"
 description = "多平台无水印视频下载与直播自动录制工具（抖音 / B站 / 小红书等）"
 readme = "README.md"
@@ -36,7 +36,7 @@ dev = ["pytest>=8.0"]
 build = ["pyinstaller>=6.0", "pywebview>=5.0", "pillow>=10.0"]
 
 [project.scripts]
-mtk = "media_toolkit.cli:main"
+dly = "dly.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Yjnshy/github-yjnshy"
@@ -45,4 +45,4 @@ Homepage = "https://github.com/Yjnshy/github-yjnshy"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"media_toolkit.gui" = ["assets/*.html"]
+"dly.gui" = ["assets/*.html"]

@@ -1,8 +1,13 @@
-# media-toolkit
+# 帅羊羊 DLY
+
+> 想留的视频和直播，都收进自己的盘里。
 
 多平台**无水印视频/图文下载** + **直播自动录制** 的工具，提供**桌面窗口**与命令行两套用法。
 
 支持抖音、B站、小红书及 yt-dlp 覆盖的 1000+ 站点；Cookie 从浏览器**自动提取**，无需手动 F12 复制。
+
+<sub>图标是一只羊头：双角向上张开，脸收成向下的尖 —— 既是羊，也暗合「下载」。
+想换个风格：`python packaging/make_icon.py --variant round`（圆脸萌版）或 `ram`（细角版）。</sub>
 
 ## ✨ 功能特性
 
@@ -30,10 +35,10 @@ pip install -e ".[desktop]"       # 带桌面窗口；只要命令行用 pip ins
 cp config.example.yaml config.yaml
 
 # 3. 开始用
-mtk gui                                          # 打开桌面窗口
-mtk download "https://v.douyin.com/xxxxxxx/"     # 下载抖音无水印视频
-mtk record https://live.douyin.com/123456789     # 录制一个直播间
-mtk watch                                        # 值守 config.yaml 里的所有直播间
+dly gui                                          # 打开桌面窗口
+dly download "https://v.douyin.com/xxxxxxx/"     # 下载抖音无水印视频
+dly record https://live.douyin.com/123456789     # 录制一个直播间
+dly watch                                        # 值守 config.yaml 里的所有直播间
 ```
 
 > **关于桌面窗口**：界面用系统自带的 WebView2 渲染（Win10/11 默认已装），
@@ -45,15 +50,15 @@ mtk watch                                        # 值守 config.yaml 里的所�
 
 ## 📖 使用说明
 
-### 下载 `mtk download`
+### 下载 `dly download`
 
 ```bash
-mtk download "链接1" "链接2" -q 720 -o D:/视频
-mtk download "链接" --fps 30            # 下载完成后转成 30 帧
-mtk download "链接" --fps 24 --keep-original   # 转码，同时保留原片
+dly download "链接1" "链接2" -q 720 -o D:/视频
+dly download "链接" --fps 30            # 下载完成后转成 30 帧
+dly download "链接" --fps 24 --keep-original   # 转码，同时保留原片
 ```
 
-- 支持整段分享文案：`mtk download "7.94 复制打开抖音… https://v.douyin.com/xxx/ …"`
+- 支持整段分享文案：`dly download "7.94 复制打开抖音… https://v.douyin.com/xxx/ …"`
 - `-q` 画质：`best`（默认）/ `1080` / `720` / `480` / `audio` / `mp3`
 - `--fps` 目标帧率：不填 = 保持原帧率（下载完直接存，最快）
 - `--keep-original` 转码后把原片另存为 `文件名_原画.mp4`
@@ -66,9 +71,9 @@ mtk download "链接" --fps 24 --keep-original   # 转码，同时保留原片
 ### Cookie 相关
 
 ```bash
-mtk --browser firefox download "链接"   # 临时换一个浏览器提取 Cookie
-mtk cache                              # 查看缓存状态
-mtk cache --clear                      # 换账号 / Cookie 失效时清空缓存
+dly --browser firefox download "链接"   # 临时换一个浏览器提取 Cookie
+dly cache                              # 查看缓存状态
+dly cache --clear                      # 换账号 / Cookie 失效时清空缓存
 ```
 
 获取优先级：`cookies.txt`（配置指定）→ 本地缓存（7 天）→ 浏览器自动提取。
@@ -81,14 +86,14 @@ mtk cache --clear                      # 换账号 / Cookie 失效时清空缓�
 > **关于浏览器正在运行**：Chrome/Edge 运行时会锁住 Cookie 数据库，
 > 首次提取可能需要完全退出浏览器；成功提取后会缓存 7 天，之后不受影响。
 
-### 录制 `mtk record`
+### 录制 `dly record`
 
 ```bash
-mtk record https://live.bilibili.com/6                       # 录到断流/下播为止
-mtk record https://live.bilibili.com/6 --segment 30          # 每 30 分钟切一段
-mtk record https://live.douyin.com/123456789 -o D:/录制       # 指定保存目录
-mtk record https://live.bilibili.com/6 --format mp4          # 容器格式（默认 ts）
-mtk record https://live.bilibili.com/6 --fps 30              # 边录边转成 30 帧
+dly record https://live.bilibili.com/6                       # 录到断流/下播为止
+dly record https://live.bilibili.com/6 --segment 30          # 每 30 分钟切一段
+dly record https://live.douyin.com/123456789 -o D:/录制       # 指定保存目录
+dly record https://live.bilibili.com/6 --format mp4          # 容器格式（默认 ts）
+dly record https://live.bilibili.com/6 --fps 30              # 边录边转成 30 帧
 ```
 
 立即开始录制单个直播间，实时显示已录时长与体积，Ctrl+C 立即停止（会先杀掉 ffmpeg 再退出，不留孤儿进程）。
@@ -120,12 +125,12 @@ https://www.douyin.com/root/live/311923254809
 > **不依赖 Node.js**。抖音可能不定期更换算法，若突然报「接口返回空响应」，
 > 说明签名已过期，需要同步上游实现（见下方「致谢」）。
 
-### 值守 `mtk watch`
+### 值守 `dly watch`
 
 在 `config.yaml` 的 `record.rooms` 里每行填一个直播间链接（`#` 开头暂停监控），然后：
 
 ```bash
-mtk watch
+dly watch
 ```
 
 开播自动录、下播自动停、断线自动续录，7×24 无人值守；每 60 秒播报一次录制进度。
@@ -133,7 +138,7 @@ Ctrl+C 会停掉所有正在进行的录制再退出。
 
 ## 🖥️ 桌面窗口
 
-`mtk gui`，或双击 `scripts/启动界面.bat`：
+`dly gui`，或双击 `scripts/启动界面.bat`：
 
 | 页签 | 能做什么 |
 |---|---|
@@ -145,7 +150,7 @@ Ctrl+C 会停掉所有正在进行的录制再退出。
 - 底部显示连接状态、ffmpeg 检测结果与版本号
 - 界面只监听 `127.0.0.1`，不对局域网暴露；端口被占用会自动顺延到下一个
 - **关窗口 = 退出程序**：先停录制/值守，再关本地服务，不留孤儿 ffmpeg 进程
-- `mtk gui --web` 改用系统浏览器打开（调试用），`mtk gui --debug` 打开 DevTools
+- `dly gui --web` 改用系统浏览器打开（调试用），`dly gui --debug` 打开 DevTools
 
 > 为什么界面是网页技术：Tkinter 依赖 tcl/tk，精简版 Python 常常不带；
 > PyQt 要背上百 MB 运行时。用 pywebview 套一层系统自带的 WebView2，
@@ -157,26 +162,26 @@ Ctrl+C 会停掉所有正在进行的录制再退出。
 scripts\打包exe.bat
 ```
 
-打包完成后产物在 `dist\MediaToolkit\`，把整个文件夹拷给别人，双击
-`MediaToolkit.exe` 即可运行，**对方不需要装 Python**。
+打包完成后产物在 `dist\DLY\`，把整个文件夹拷给别人，双击
+`DLY.exe` 即可运行，**对方不需要装 Python**。
 
 | 说明 | 内容 |
 |---|---|
 | 打包方式 | PyInstaller 文件夹模式（onedir），启动快、不触发杀软自解压告警 |
 | 体积 | 约 260MB，其中 ffmpeg / ffprobe 占 190MB |
-| 不带 ffmpeg | 设 `MTK_BUNDLE_FFMPEG=0` 再打包，程序会退回到系统 PATH 里的 ffmpeg |
-| 指定 ffmpeg | 设 `MTK_FFMPEG` / `MTK_FFPROBE` 指向你要打包的版本 |
-| 用户数据 | 日志与默认下载目录在 `%LOCALAPPDATA%\MediaToolkit\`（程序装在无写权限目录也能跑） |
+| 不带 ffmpeg | 设 `DLY_BUNDLE_FFMPEG=0` 再打包，程序会退回到系统 PATH 里的 ffmpeg |
+| 指定 ffmpeg | 设 `DLY_FFMPEG` / `DLY_FFPROBE` 指向你要打包的版本 |
+| 用户数据 | 日志与默认下载目录在 `%LOCALAPPDATA%\DLY\`（程序装在无写权限目录也能跑） |
 | 配置 | 把 `config.yaml` 放在 exe 同目录即可生效 |
 
 > 图标：`packaging/app.ico`；需要改设计就编辑 `packaging/make_icon.py` 后重跑它。
 > 打包后的 exe 带完整版本信息（右键属性可见），已关闭 UPX 压缩以免被误报。
 
-打包后仍可用的启动参数：`MediaToolkit.exe --web`（用浏览器打开）、`--debug`（开 DevTools）。
+打包后仍可用的启动参数：`DLY.exe --web`（用浏览器打开）、`--debug`（开 DevTools）。
 
 ### 桌面快捷方式
 
-打包时会自动在桌面创建「Media Toolkit」快捷方式。想单独重建（比如换了安装位置）：
+打包时会自动在桌面创建「帅羊羊」快捷方式。想单独重建（比如换了安装位置）：
 
 ```bat
 scripts\创建桌面快捷方式.bat
@@ -185,15 +190,15 @@ scripts\创建桌面快捷方式.bat
 也可以指定目录或换个名字：
 
 ```bash
-python packaging/make_shortcut.py --app-dir "D:/Apps/MediaToolkit" --name "视频下载器"
+python packaging/make_shortcut.py --app-dir "D:/Apps/DLY" --name "视频下载器"
 ```
 
 > 快捷方式走系统 `IShellLink` 接口生成，指向 exe 的绝对路径。
-> 如果把 `dist\MediaToolkit\` 挪走或删掉，快捷方式就会失效，需要重新创建。
+> 如果把 `dist\DLY\` 挪走或删掉，快捷方式就会失效，需要重新创建。
 
 ### 分发给别人时
 
-1. 把 `dist\MediaToolkit\` 整个目录压缩成 zip 发出去（别只发 exe，会缺依赖）
+1. 把 `dist\DLY\` 整个目录压缩成 zip 发出去（别只发 exe，会缺依赖）
 2. 提醒对方首次使用前在浏览器登录 douyin.com，程序会自动提取 Cookie
 3. 首次运行 Windows 可能弹 SmartScreen「未知发布者」——因为没买代码签名证书，
    点「更多信息 → 仍要运行」即可；这是所有未签名 exe 的通用现象
@@ -204,7 +209,7 @@ python packaging/make_shortcut.py --app-dir "D:/Apps/MediaToolkit" --name "视�
 
 | 选项 | 说明 | 默认值 |
 |---|---|---|
-| `output_dir` | 保存根目录 | 源码运行 `./downloads`；打包后 `%LOCALAPPDATA%\MediaToolkit\downloads` |
+| `output_dir` | 保存根目录 | 源码运行 `./downloads`；打包后 `%LOCALAPPDATA%\DLY\downloads` |
 | `quality` | 默认画质 | `best` |
 | `fps` | 下载后转码的目标帧率（0 = 不转码） | `0` |
 | `keep_original` | 转码后保留原片（另存 `_原画`） | `false` |
@@ -220,15 +225,15 @@ python packaging/make_shortcut.py --app-dir "D:/Apps/MediaToolkit" --name "视�
 
 ## 🔒 隐私与安全
 
-- Cookie 只在你本机内存、系统临时目录和 `~/.media-toolkit/cookie_cache.json` 中流转，**不会上传任何地方**
-- 缓存可通过 `mtk cache --clear` 随时清除
+- Cookie 只在你本机内存、系统临时目录和 `~/.dly/cookie_cache.json` 中流转，**不会上传任何地方**
+- 缓存可通过 `dly cache --clear` 随时清除
 - `config.yaml` 与 `cookies*.txt` 已被 `.gitignore` 排除，不会误提交
 - 请勿把含 Cookie 的文件发给任何人，那等同于你的账号登录态
 
 ## 🏗️ 项目结构
 
 ```
-src/media_toolkit/
+src/dly/
 ├── cli.py               # 命令行入口
 ├── core/                # 配置、日志、命名、ffmpeg、帧率转码、路径解析、跨平台兼容
 │   ├── transcode.py     # 按目标帧率重编码（下载后转码 / 录制时转码共用）
@@ -245,7 +250,7 @@ src/media_toolkit/
 
 packaging/
 ├── app_main.py          # exe 入口（异常兜底 + 写日志）
-├── media_toolkit.spec   # PyInstaller 打包配置
+├── dly.spec   # PyInstaller 打包配置
 ├── make_icon.py         # 生成 app.ico
 └── app.ico
 ```

@@ -10,8 +10,8 @@
 用法::
 
     python packaging/make_shortcut.py                        # 建到当前用户桌面
-    python packaging/make_shortcut.py --name "视频下载器"      # 自定义名称
-    python packaging/make_shortcut.py --app-dir "D:/Apps/MediaToolkit"
+    python packaging/make_shortcut.py --name "帅羊羊"      # 自定义名称
+    python packaging/make_shortcut.py --app-dir "D:/Apps/DLY"
 """
 
 from __future__ import annotations
@@ -86,17 +86,17 @@ def find_exe(app_dir: Path | None = None) -> Path:
     """定位要指向的 exe。"""
     root = Path(__file__).resolve().parent.parent
     candidates = [Path(app_dir)] if app_dir else []
-    candidates += [root / "dist" / "MediaToolkit", root]
+    candidates += [root / "dist" / "DLY", root]
     for folder in candidates:
-        exe = folder / "MediaToolkit.exe"
+        exe = folder / "DLY.exe"
         if exe.is_file():
             return exe
     raise FileNotFoundError(
-        "没找到 MediaToolkit.exe。请先运行 scripts\\打包exe.bat，"
+        "没找到 DLY.exe。请先运行 scripts\\打包exe.bat，"
         "或用 --app-dir 指定程序所在目录。")
 
 
-def create_shortcut(exe: Path, name: str = "Media Toolkit",
+def create_shortcut(exe: Path, name: str = "帅羊羊下载工具",
                     description: str = "") -> Path:
     """调用 IShellLink 在桌面创建快捷方式，返回 .lnk 路径。"""
     exe = Path(exe).resolve()
@@ -148,8 +148,8 @@ def create_shortcut(exe: Path, name: str = "Media Toolkit",
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="在桌面创建程序快捷方式")
-    parser.add_argument("--app-dir", default="", help="程序所在目录（含 MediaToolkit.exe）")
-    parser.add_argument("--name", default="Media Toolkit", help="快捷方式名称")
+    parser.add_argument("--app-dir", default="", help="程序所在目录（含 DLY.exe）")
+    parser.add_argument("--name", default="帅羊羊下载工具", help="快捷方式名称")
     parser.add_argument("--desc", default="视频无水印下载 & 直播录制", help="备注")
     args = parser.parse_args(argv)
 

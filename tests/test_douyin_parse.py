@@ -1,6 +1,6 @@
 """抖音解析纯函数的离线单元测试（不依赖网络）。"""
 
-from media_toolkit.platforms.douyin import (
+from dly.platforms.douyin import (
     _image_score, find_item, pick_image_urls,
 )
 

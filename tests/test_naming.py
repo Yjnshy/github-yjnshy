@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from media_toolkit.core.naming import build_filename, extract_urls, safe_name
+from dly.core.naming import build_filename, extract_urls, safe_name
 
 
 def test_extract_urls_from_share_text():

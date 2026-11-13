@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from media_toolkit.core import ffmpeg as ffmpeg_mod
-from media_toolkit.core import paths
+from dly.core import ffmpeg as ffmpeg_mod
+from dly.core import paths
 
 
 def test_not_frozen_by_default():

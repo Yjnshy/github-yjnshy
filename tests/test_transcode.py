@@ -10,8 +10,8 @@ import subprocess
 
 import pytest
 
-from media_toolkit.core.ffmpeg import find_ffmpeg, find_ffprobe
-from media_toolkit.core.transcode import (FPS_CHOICES, build_cmd, fps_label,
+from dly.core.ffmpeg import find_ffmpeg, find_ffprobe
+from dly.core.transcode import (FPS_CHOICES, build_cmd, fps_label,
                                           is_transcodable, normalize_fps,
                                           probe_fps, transcode)
 

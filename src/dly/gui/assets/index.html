@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>帅羊羊 — 视频下载 &amp; 直播录制</title>
+<style>
+  :root {
+    --bg: #F4F5F7;
+    --card: #FFFFFF;
+    --text: #1F2329;
+    --muted: #8A9099;
+    --border: #E5E7EB;
+    --accent: #2B6CF6;
+    --accent-dark: #1E5AE0;
+    --danger: #E23B2E;
+    --ok: #1F9D55;
+    --warn: #B7791F;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei UI",
+          "Microsoft YaHei", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    /* 整页纵向弹性布局：日志区自动吃满剩余高度，窗口多小都不溢出 */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .wrap {
+    flex: 1; display: flex; flex-direction: column; min-height: 0;
+    width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 22px 12px;
+  }
+
+  /* 顶栏 */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding: 14px 0 10px; flex: none;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .logo { width: 40px; height: 40px; flex: none; display: block; }
+  .brand h1 { margin: 0; font-size: 17px; font-weight: 600; }
+  .brand p { margin: 0; font-size: 12px; color: var(--muted); }
+  .top-actions { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+
+  /* 页签 */
+  .tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border); flex: none; }
+  .tab {
+    border: 0; background: none; cursor: pointer;
+    padding: 10px 18px; font-size: 14px; color: var(--muted);
+    border-bottom: 2px solid transparent; font-family: inherit;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+  .panel { display: none; padding-top: 16px; }
+  .panel.active {
+    display: flex; flex-direction: column; flex: 1; min-height: 0;
+  }
+
+  /* 卡片 */
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px; margin-bottom: 12px;
+    flex: none;
+  }
+  .label { font-size: 12px; color: var(--muted); margin-bottom: 6px; display: block; }
+
+  textarea, input[type="text"], input[type="number"], select {
+    width: 100%; font: inherit; color: var(--text);
+    background: #fff; border: 1px solid var(--border); border-radius: 8px;
+    padding: 9px 11px; outline: none; transition: border-color .15s, box-shadow .15s;
+  }
+  textarea { resize: vertical; min-height: 96px; line-height: 1.65; }
+  textarea:focus, input:focus, select:focus {
+    border-color: var(--accent); box-shadow: 0 0 0 3px rgba(43,108,246,.12);
+  }
+
+  .row { display: flex; gap: 10px; align-items: flex-end; margin-top: 12px; flex-wrap: wrap; }
+  .field { min-width: 120px; }
+  .field.grow { flex: 1; min-width: 240px; }
+
+  button {
+    font: inherit; cursor: pointer; border-radius: 8px;
+    border: 1px solid var(--border); background: #fff; color: var(--text);
+    padding: 9px 16px; transition: all .15s;
+  }
+  button:hover:not(:disabled) { border-color: #C9CED6; }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 500; }
+  button.primary:hover:not(:disabled) { background: var(--accent-dark); border-color: var(--accent-dark); }
+  button.danger { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 500; }
+  button.danger:hover:not(:disabled) { background: #C42F24; border-color: #C42F24; }
+  button.ghost { color: var(--muted); }
+  button.ghost:hover:not(:disabled) { color: var(--text); }
+
+  .hint { font-size: 12px; color: var(--muted); }
+  .check {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12.5px; color: var(--muted); cursor: pointer; user-select: none;
+  }
+  .check input { width: auto; margin: 0; accent-color: var(--accent); }
+
+  /* 录制状态卡 */
+  .status-card { display: flex; align-items: center; gap: 14px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #C9CED6; flex: none; }
+  .dot.live { background: var(--danger); box-shadow: 0 0 0 4px rgba(226,59,46,.15); animation: pulse 1.6s infinite; }
+  .dot.error { background: var(--danger); }
+  .dot.warn { background: var(--warn); }
+  .dot.ok { background: var(--ok); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+  .status-title { font-size: 15px; font-weight: 600; }
+  .status-sub { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* 日志 */
+  .log-card {
+    padding: 0; overflow: hidden;
+    flex: 1; min-height: 132px;
+    display: flex; flex-direction: column;
+  }
+  .log-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 16px; border-bottom: 1px solid var(--border);
+    font-size: 12px; color: var(--muted); flex: none;
+  }
+  .log {
+    margin: 0; padding: 12px 16px; flex: 1; min-height: 0; overflow-y: auto;
+    font-size: 12.5px; line-height: 1.75; white-space: pre-wrap; word-break: break-all;
+    background: #FCFCFD;
+  }
+  .log .line { margin: 0; }
+  .log .line.error { color: var(--danger); }
+  .log .line.ok { color: var(--ok); }
+  .log .line.warn { color: var(--warn); }
+  .log .line.muted { color: var(--muted); }
+
+  footer {
+    display: flex; align-items: center; gap: 10px; flex: none;
+    padding: 6px 0 0; font-size: 12px; color: var(--muted);
+  }
+  .spacer { flex: 1; }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 999px;
+    background: #EDF0F4; font-size: 11.5px; color: var(--muted);
+  }
+  .badge.ok { background: #E8F6EE; color: var(--ok); }
+  .badge.bad { background: #FDECEA; color: var(--danger); }
+
+  .overlay {
+    position: fixed; inset: 0; background: rgba(31,35,41,.55);
+    display: none; align-items: center; justify-content: center; z-index: 20;
+  }
+  .overlay.show { display: flex; }
+  .overlay .box {
+    background: #fff; border-radius: 14px; padding: 26px 30px; text-align: center;
+    max-width: 420px;
+  }
+  .overlay h2 { margin: 0 0 8px; font-size: 16px; }
+  .overlay p { margin: 0; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">
+      <!-- 与 app.ico 同一套造型：双角 + 倒三角脸 + 负空间眼睛 -->
+      <svg class="logo" viewBox="0 0 100 100" aria-hidden="true">
+        <defs>
+          <linearGradient id="logo-bg" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#1A2138"/>
+            <stop offset="1" stop-color="#0B0E1A"/>
+          </linearGradient>
+        </defs>
+        <rect width="100" height="100" rx="22" fill="url(#logo-bg)"/>
+        <g fill="none" stroke="#F6F8FC" stroke-width="9.2" stroke-linecap="round">
+          <path d="M34.5 43.5 C32.5 19.5 10.5 17.5 9.5 34.5 Q9.2 41.5 16.5 42.5"/>
+          <path d="M65.5 43.5 C67.5 19.5 89.5 17.5 90.5 34.5 Q90.8 41.5 83.5 42.5"/>
+        </g>
+        <path d="M36 46 L64 46 L50 75.5 Z" fill="#F6F8FC" stroke="#F6F8FC"
+              stroke-width="12" stroke-linejoin="round"/>
+        <circle cx="42.8" cy="54" r="3.4" fill="#12182B"/>
+        <circle cx="57.2" cy="54" r="3.4" fill="#12182B"/>
+      </svg>
+      <div>
+        <h1>帅羊羊</h1>
+        <p>多平台无水印下载 · 直播间自动录制</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <span>Cookie 来源</span>
+      <select id="browser" style="width:auto;padding:6px 8px">
+        <option value="chrome">Chrome</option>
+        <option value="edge">Edge</option>
+        <option value="firefox">Firefox</option>
+        <option value="brave">Brave</option>
+      </select>
+      <button class="ghost" onclick="checkCookie()">测试</button>
+      <button class="ghost" onclick="clearCookie()">清缓存</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="download">下载视频</button>
+    <button class="tab" data-tab="record">录制直播</button>
+    <button class="tab" data-tab="watch">无人值守</button>
+  </div>
+
+  <!-- 下载 -->
+  <section class="panel active" id="panel-download">
+    <div class="card">
+      <span class="label">链接（支持整段分享文案，可一次粘多条）</span>
+      <textarea id="dl-text" placeholder="https://v.douyin.com/xxxxxxx/&#10;也可以直接粘贴整段分享文案，例如：&#10;8.74 07/09 复制打开抖音，看看【某某】的作品 https://v.douyin.com/xxx/"></textarea>
+      <div class="row">
+        <div class="field">
+          <span class="label">画质</span>
+          <select id="dl-quality">
+            <option value="best">最佳画质</option>
+            <option value="1080">1080P</option>
+            <option value="720">720P</option>
+            <option value="480">480P</option>
+            <option value="audio">仅音频</option>
+            <option value="mp3">仅音频（MP3）</option>
+          </select>
+        </div>
+        <div class="field">
+          <span class="label">帧率</span>
+          <select id="dl-fps">
+            <option value="0">原帧率（不转码）</option>
+            <option value="60">60 fps</option>
+            <option value="50">50 fps</option>
+            <option value="30">30 fps</option>
+            <option value="25">25 fps</option>
+            <option value="24">24 fps</option>
+            <option value="15">15 fps</option>
+          </select>
+        </div>
+        <div class="field grow">
+          <span class="label">保存到</span>
+          <input type="text" id="dl-outdir">
+        </div>
+        <button class="ghost" onclick="openFolder('dl-outdir')">打开目录</button>
+      </div>
+      <div class="row">
+        <button class="primary" id="dl-btn" onclick="startDownload()">开始下载</button>
+        <label class="check">
+          <input type="checkbox" id="dl-keep"> 保留原片
+        </label>
+        <span class="hint" id="dl-hint"></span>
+      </div>
+      <p class="hint" style="margin:10px 0 0">
+        帧率选「原帧率」= 原始画质直存，最快；选具体数值会在下载完成后重新编码，
+        速度取决于电脑性能，文件名不变。
+      </p>
+    </div>
+    <div class="card log-card">
+      <div class="log-head"><span>运行日志</span><span id="dl-count"></span></div>
+      <div class="log" id="dl-log"></div>
+    </div>
+  </section>
+
+  <!-- 录制 -->
+  <section class="panel" id="panel-record">
+    <div class="card">
+      <div class="row" style="margin-top:0">
+        <div class="field grow">
+          <span class="label">直播间链接</span>
+          <input type="text" id="rec-url"
+                 placeholder="https://live.douyin.com/123456789　或　https://live.bilibili.com/6">
+        </div>
+      </div>
+      <div class="row">
+        <div class="field grow">
+          <span class="label">保存到（自动建「直播录制」子目录）</span>
+          <input type="text" id="rec-outdir">
+        </div>
+        <button class="ghost" onclick="openFolder('rec-outdir')">打开目录</button>
+      </div>
+      <div class="row">
+        <div class="field" style="min-width:170px">
+          <span class="label">帧率</span>
+          <select id="rec-fps">
+            <option value="0">原画直通（不转码）</option>
+            <option value="60">60 fps</option>
+            <option value="50">50 fps</option>
+            <option value="30">30 fps</option>
+            <option value="25">25 fps</option>
+            <option value="24">24 fps</option>
+            <option value="15">15 fps</option>
+          </select>
+        </div>
+        <div class="field" style="min-width:170px">
+          <span class="label">分段（分钟，0=不分段）</span>
+          <input type="number" id="rec-seg" min="0" value="0">
+        </div>
+      </div>
+      <div class="row">
+        <button class="primary" id="rec-start" onclick="startRecord()">开始录制</button>
+        <button class="danger" id="rec-stop" onclick="stopRecord()" disabled>停止录制</button>
+      </div>
+      <p class="hint" style="margin:10px 0 0">
+        默认「原画直通」= 原样保存，CPU 几乎不占用；指定帧率会边录边转码，
+        CPU 占用明显升高，配置较低的电脑建议保持原画。
+      </p>
+    </div>
+
+    <div class="card status-card">
+      <div class="dot" id="rec-dot"></div>
+      <div>
+        <div class="status-title" id="rec-status">空闲中</div>
+        <div class="status-sub" id="rec-detail">填入直播间链接后点击「开始录制」，随时可点「停止录制」结束</div>
+      </div>
+    </div>
+
+    <div class="card log-card">
+      <div class="log-head"><span>录制日志</span><span id="rec-count"></span></div>
+      <div class="log" id="rec-log"></div>
+    </div>
+  </section>
+
+  <!-- 值守 -->
+  <section class="panel" id="panel-watch">
+    <div class="card">
+      <span class="label">直播间列表（一行一个；# 开头的行忽略）</span>
+      <textarea id="watch-rooms" placeholder="https://live.douyin.com/123456789&#10;https://live.bilibili.com/6&#10;# 这行会被忽略"></textarea>
+      <div class="row">
+        <div class="field" style="min-width:160px">
+          <span class="label">轮询间隔（秒）</span>
+          <input type="number" id="watch-interval" min="10" value="60">
+        </div>
+        <div class="field" style="min-width:180px">
+          <span class="label">录制帧率</span>
+          <select id="watch-fps">
+            <option value="0">原画直通（不转码）</option>
+            <option value="60">60 fps</option>
+            <option value="50">50 fps</option>
+            <option value="30">30 fps</option>
+            <option value="25">25 fps</option>
+            <option value="24">24 fps</option>
+            <option value="15">15 fps</option>
+          </select>
+        </div>
+        <button class="primary" id="watch-start" onclick="startWatch()">开始值守</button>
+        <button class="danger" id="watch-stop" onclick="stopWatch()" disabled>停止值守</button>
+      </div>
+      <div class="row">
+        <span class="hint" id="watch-tip">开播自动录、下播自动停；断流会指数退避重连。</span>
+      </div>
+    </div>
+    <div class="card log-card">
+      <div class="log-head"><span>值守日志</span><span id="watch-count"></span></div>
+      <div class="log" id="watch-log"></div>
+    </div>
+  </section>
+
+  <footer>
+    <span id="conn" class="badge">连接中…</span>
+    <span id="ffmpeg-badge" class="badge">ffmpeg</span>
+    <span id="version"></span>
+    <span class="spacer"></span>
+    <button class="ghost" onclick="quitApp()">退出程序</button>
+  </footer>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="box">
+    <h2>程序已退出</h2>
+    <p>可以直接关闭这个页面了。下次使用时双击「启动界面.bat」。</p>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let lastId = 0;
+let firstLoad = true;
+let snapshot = null;
+const counts = { download: 0, record: 0, watch: 0 };
+const MAX_LINES = 600;
+/* 页签名 → DOM id 前缀（下载用 dl，录制用 rec） */
+const ID_PREFIX = { download: 'dl', record: 'rec', watch: 'watch' };
+
+/* ---------------- 页签切换 ---------------- */
+function activateTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
+  if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name);
+}
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.onclick = () => activateTab(tab.dataset.tab);
+});
+window.addEventListener('hashchange', () => {
+  const name = location.hash.replace('#', '');
+  if (['download', 'record', 'watch'].includes(name)) activateTab(name);
+});
+
+/* ---------------- 请求封装 ---------------- */
+async function api(path, body) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {})
+  });
+  let data = {};
+  try { data = await res.json(); } catch (e) { /* ignore */ }
+  if (!res.ok) throw new Error(data.error || ('请求失败 ' + res.status));
+  return data;
+}
+
+function notify(text) {
+  appendLine('download', { text, level: 'error' });
+  document.querySelector('.tab[data-tab="download"]').click();
+}
+
+/* ---------------- 日志 ---------------- */
+function appendLine(tab, ev) {
+  const prefix = ID_PREFIX[tab] || tab;
+  const box = $(prefix + '-log');
+  if (!box) return;
+  const line = document.createElement('div');
+  line.className = 'line ' + (ev.level || 'info');
+  line.textContent = ev.text;
+  box.appendChild(line);
+  counts[tab] = (counts[tab] || 0) + 1;
+  const counter = $(prefix + '-count');
+  if (counter) counter.textContent = counts[tab] + ' 条';
+  while (box.childElementCount > MAX_LINES) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+}
+
+function fmtDur(sec) {
+  const s = Math.max(0, Math.floor(sec || 0));
+  const h = String(Math.floor(s / 3600)).padStart(2, '0');
+  const m = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+  const ss = String(s % 60).padStart(2, '0');
+  return `${h}:${m}:${ss}`;
+}
+
+/* ---------------- 状态渲染 ---------------- */
+function render() {
+  if (!snapshot) return;
+  const rec = snapshot.record || {};
+  const dl = snapshot.download || {};
+  const watch = snapshot.watch || {};
+
+  $('rec-status').textContent = rec.status || '空闲中';
+  if (rec.active) {
+    $('rec-detail').textContent = `已录 ${fmtDur(rec.seconds)}　${((rec.size || 0) / 1048576).toFixed(1)} MB`;
+  } else if (rec.status === '录制失败' || rec.status === '录制异常') {
+    $('rec-detail').textContent = '详情见下方日志';
+  }
+  const dot = $('rec-dot');
+  dot.className = 'dot ' + (rec.level && rec.level !== 'idle' ? rec.level : '');
+
+  $('rec-start').disabled = !!rec.active;
+  $('rec-stop').disabled = !rec.active;
+  $('dl-btn').disabled = !!dl.active;
+  $('dl-btn').textContent = dl.active ? '下载中…' : '开始下载';
+  $('watch-start').disabled = !!watch.active;
+  $('watch-stop').disabled = !watch.active;
+
+  const ff = $('ffmpeg-badge');
+  ff.textContent = snapshot.ffmpeg ? 'ffmpeg 就绪' : '缺少 ffmpeg';
+  ff.className = 'badge ' + (snapshot.ffmpeg ? 'ok' : 'bad');
+  $('version').textContent = 'v' + snapshot.version;
+  $('watch-tip').textContent = '开播自动录、下播自动停；断流会指数退避重连。'
+    + (snapshot.desktop ? '关闭窗口即停止值守。'
+                        : '关闭浏览器页面程序会继续运行，需点下方「退出程序」。');
+}
+
+/* ---------------- 轮询 ---------------- */
+async function poll() {
+  try {
+    const res = await fetch('/api/state?after=' + lastId);
+    if (!res.ok) throw new Error('bad');
+    const data = await res.json();
+    snapshot = data.snapshot;
+    (data.events || []).forEach(ev => {
+      lastId = Math.max(lastId, ev.id);
+      appendLine(ev.tab, ev);
+    });
+    if (firstLoad) { applyDefaults(); firstLoad = false; }
+    render();
+    $('conn').textContent = '已连接';
+    $('conn').className = 'badge ok';
+    $('overlay').classList.remove('show');
+  } catch (e) {
+    $('conn').textContent = '连接已断开';
+    $('conn').className = 'badge bad';
+    $('overlay').classList.add('show');
+  }
+  setTimeout(poll, 900);
+}
+
+function applyDefaults() {
+  if (!snapshot) return;
+  $('dl-outdir').value = snapshot.default_output || '';
+  $('rec-outdir').value = snapshot.default_output || '';
+  $('dl-quality').value = snapshot.quality || 'best';
+  $('dl-keep').checked = !!snapshot.keep_original;
+  setFps('dl-fps', snapshot.fps);
+  setFps('rec-fps', snapshot.record_fps);
+  setFps('watch-fps', snapshot.record_fps);
+  $('rec-seg').value = snapshot.segment_minutes || 0;
+  $('watch-interval').value = snapshot.poll_interval || 60;
+  $('browser').value = snapshot.browser || 'chrome';
+  if ((snapshot.rooms || []).length) {
+    $('watch-rooms').value = snapshot.rooms.join('\n');
+  }
+}
+
+/* 配置文件里可能是下拉框没有的帧率（比如 45），动态补一个选项再选中 */
+function setFps(id, value) {
+  const el = $(id);
+  if (!el) return;
+  const v = String(value || 0);
+  if (!Array.from(el.options).some(o => o.value === v)) {
+    const opt = document.createElement('option');
+    opt.value = v;
+    opt.textContent = v + ' fps';
+    el.appendChild(opt);
+  }
+  el.value = v;
+}
+
+function fpsOf(id) {
+  const el = $(id);
+  return parseInt((el && el.value) || '0', 10) || 0;
+}
+
+/* ---------------- 动作 ---------------- */
+async function startDownload() {
+  const text = $('dl-text').value.trim();
+  if (!text) { $('dl-hint').textContent = '请先粘贴链接'; return; }
+  try {
+    $('dl-hint').textContent = '';
+    await api('/api/download', {
+      text,
+      quality: $('dl-quality').value,
+      fps: fpsOf('dl-fps'),
+      keep_original: $('dl-keep').checked,
+      output_dir: $('dl-outdir').value.trim()
+    });
+  } catch (e) { $('dl-hint').textContent = e.message; }
+}
+
+async function startRecord() {
+  const url = $('rec-url').value.trim();
+  if (!url) { $('rec-status').textContent = '请先填写直播间链接'; return; }
+  try {
+    await api('/api/record/start', {
+      url,
+      output_dir: $('rec-outdir').value.trim(),
+      segment: parseInt($('rec-seg').value || '0', 10),
+      fps: fpsOf('rec-fps')
+    });
+  } catch (e) { $('rec-status').textContent = e.message; }
+}
+
+async function stopRecord() {
+  try { await api('/api/record/stop'); }
+  catch (e) { appendLine('record', { text: e.message, level: 'warn' }); }
+}
+
+async function startWatch() {
+  const rooms = $('watch-rooms').value.split('\n');
+  try {
+    await api('/api/watch/start', {
+      rooms,
+      interval: parseInt($('watch-interval').value || '60', 10),
+      fps: fpsOf('watch-fps')
+    });
+  } catch (e) { appendLine('watch', { text: e.message, level: 'warn' }); }
+}
+
+async function stopWatch() {
+  try { await api('/api/watch/stop'); }
+  catch (e) { appendLine('watch', { text: e.message, level: 'warn' }); }
+}
+
+async function checkCookie() {
+  try { await api('/api/cookie/check', { browser: $('browser').value }); }
+  catch (e) { notify(e.message); }
+}
+
+async function clearCookie() {
+  try { await api('/api/cookie/clear'); }
+  catch (e) { notify(e.message); }
+}
+
+async function openFolder(fieldId) {
+  try { await api('/api/open', { path: $(fieldId).value.trim() }); }
+  catch (e) { notify(e.message); }
+}
+
+async function quitApp() {
+  if (!confirm('确定退出程序？正在录制/值守的任务会被停止。')) return;
+  try { await api('/api/quit'); } catch (e) { /* 服务已关 */ }
+  $('overlay').classList.add('show');
+}
+
+const initTab = location.hash.replace('#', '');
+if (['download', 'record', 'watch'].includes(initTab)) activateTab(initTab);
+poll();
+</script>
+</body>
+</html>

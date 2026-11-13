@@ -1,11 +1,11 @@
 @echo off
 chcp 65001 >nul
 setlocal
-title 打包 Media Toolkit 为 exe
+title 打包 帅羊羊 为 exe
 cd /d "%~dp0.."
 
 echo ==========================================
-echo   打包 Media Toolkit 桌面版
+echo   打包 帅羊羊 桌面版
 echo ==========================================
 echo.
 
@@ -32,7 +32,7 @@ echo [2/3] 生成图标…
 python packaging\make_icon.py
 
 echo [3/3] 开始打包（约 2-5 分钟，请勿关闭窗口）…
-python -m PyInstaller packaging\media_toolkit.spec --noconfirm --clean
+python -m PyInstaller packaging\dly.spec --noconfirm --clean
 if errorlevel 1 (
     echo.
     echo [错误] 打包失败，请查看上面的日志。
@@ -42,8 +42,8 @@ if errorlevel 1 (
 
 echo.
 echo 复制配置模板与使用说明…
-copy /y config.example.yaml "dist\MediaToolkit\config.example.yaml" >nul 2>nul
-copy /y "packaging\使用说明.txt" "dist\MediaToolkit\使用说明.txt" >nul 2>nul
+copy /y config.example.yaml "dist\DLY\config.example.yaml" >nul 2>nul
+copy /y "packaging\使用说明.txt" "dist\DLY\使用说明.txt" >nul 2>nul
 
 echo.
 echo 创建桌面快捷方式…
@@ -51,9 +51,9 @@ python packaging\make_shortcut.py
 
 echo.
 echo ==========================================
-echo   完成！产物在 dist\MediaToolkit\
-echo   双击 dist\MediaToolkit\MediaToolkit.exe 即可运行
-echo   桌面已生成「Media Toolkit」快捷方式
+echo   完成！产物在 dist\DLY\
+echo   双击 dist\DLY\DLY.exe 即可运行
+echo   桌面已生成「帅羊羊」快捷方式
 echo ==========================================
 echo.
 pause
