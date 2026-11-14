@@ -8,6 +8,8 @@
   否则抖音会把用户浏览器或手机上的登录态挤下线（提示「账号在别处登录」）
 - 录制结束校验落盘体积，避免「静默失败」留下一堆 0 字节文件
 - 断线由 monitor 的重连循环负责重新拉起，本类只管「录到断」
+- ``max_duration``（界面里的「录制时长」）用 ffmpeg ``-t`` 到点自行收尾；
+  ``segment_minutes``（CLI / 值守配置）仍是无限制地按时长切文件，两者互不影响
 """
 
 from __future__ import annotations
@@ -31,6 +33,10 @@ ProgressCallback = Callable[[float, int], None]
 
 # 低于该体积视为「没录到东西」，通常意味着 403、流地址过期或源站拒绝
 MIN_OUTPUT_BYTES = 32 * 1024
+
+# -t 依赖流时间戳，异常流可能不生效；超过设定时长这么多秒就用墙钟强制收尾。
+# 留一点余量让 ffmpeg 自己优雅结束（mp4 需要写 moov），正常情况不会触发。
+DURATION_GRACE_SECONDS = 5.0
 
 # 输出容器 → 分段 muxer 名
 _SEGMENT_FORMAT = {
@@ -66,7 +72,8 @@ class LiveRecorder:
                  fmt: str = "ts", segment_minutes: float = 0,
                  fps: int = 0,
                  on_progress: Optional[ProgressCallback] = None,
-                 segment_seconds: Optional[float] = None):
+                 segment_seconds: Optional[float] = None,
+                 max_duration: Optional[float] = None):
         self.ffmpeg = ffmpeg_path
         self.output_dir = Path(output_dir)
         self.fmt = (fmt or "ts").lstrip(".").lower()
@@ -78,6 +85,12 @@ class LiveRecorder:
             self.segment_seconds = max(0.0, float(raw))
         except (TypeError, ValueError):
             self.segment_seconds = 0.0
+        # 界面「录制时长」：本次 ffmpeg 进程录满这些秒就自行退出（0 = 不限时）。
+        # 与无限切文件的 segment_seconds 分开，CLI / 值守配置的行为保持不变。
+        try:
+            self.max_duration = max(0.0, float(max_duration or 0))
+        except (TypeError, ValueError):
+            self.max_duration = 0.0
         self.fps = normalize_fps(fps)
         self.on_progress = on_progress
         self._proc: Optional[subprocess.Popen] = None
@@ -126,6 +139,10 @@ class LiveRecorder:
                         f"expr:gte(t,n_forced*{seconds})"]
         else:
             cmd += ["-c", "copy"]
+        if self.max_duration:
+            # -t 是「输出选项」，必须放在 -i 之后：录满即自行收尾退出，
+            # 容器能正常写索引（mp4 的 moov），比外部 kill 安全得多。
+            cmd += ["-t", _fmt_seconds(self.max_duration)]
         if self.segment_seconds:
             cmd += [
                 "-f", "segment",
@@ -154,7 +171,7 @@ class LiveRecorder:
     def record_once(self, live: LiveInfo, part: int = 0) -> Path:
         """录制一场（或其中一段），返回产出路径。
 
-        ffmpeg 退出即返回（正常下播、断流或外部停止）。
+        ffmpeg 退出即返回（正常下播、断流、录满设定时长或外部停止）。
         没有录到有效数据时抛 :class:`RecordingError`。
         """
         if not live.stream_url:
@@ -187,12 +204,25 @@ class LiveRecorder:
         for t in pumps:
             t.start()
 
+        started = time.monotonic()
         try:
             # 用轮询代替阻塞 wait()：Ctrl+C 和外部 stop() 都能在 0.5 秒内生效
             while True:
                 if proc.poll() is not None:
                     break
                 if self._stop_requested:
+                    compat.kill_process_tree(proc)
+                    proc.wait(timeout=5)
+                    break
+                if (self.max_duration
+                        and time.monotonic() - started
+                        >= self.max_duration + DURATION_GRACE_SECONDS):
+                    # -t 依赖流时间戳，时间戳异常的流可能让 ffmpeg 赖着不退出。
+                    # 用墙钟兜底保证「到点一定停」；这里刻意不置
+                    # _stop_requested，否则续录循环会误判成用户手动停止。
+                    logger.warning(
+                        "已到设定时长 %g 秒，ffmpeg 未自行退出，强制收尾",
+                        self.max_duration)
                     compat.kill_process_tree(proc)
                     proc.wait(timeout=5)
                     break
@@ -216,7 +246,11 @@ class LiveRecorder:
             # 手动停止：即使文件偏小也保留，用户可能只是想抢录一小段
             return produced[-1] if produced else outfile
 
-        if total < MIN_OUTPUT_BYTES:
+        # 定时录几秒产出本来就小，别把正常的短视频误判成 403 删掉；
+        # 403 / 流地址失效通常连文件都写不出来（0 字节），4KB 足够区分。
+        min_bytes = (4096 if 0 < self.max_duration < 60
+                     else MIN_OUTPUT_BYTES)
+        if total < min_bytes:
             for p in produced:
                 p.unlink(missing_ok=True)
             raise RecordingError(

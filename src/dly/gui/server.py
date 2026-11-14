@@ -69,7 +69,7 @@ def parse_segment_seconds(data: Dict[str, Any]) -> float:
     except (TypeError, ValueError):
         return 0.0
     if not math.isfinite(value) or value <= 0:
-        return 0.0                      # 0 或空 = 不分段
+        return 0.0                      # 0 或空 = 不限时，录到手动停止
     seconds = max(MIN_SEGMENT_SECONDS, value * factor)
     return min(seconds, MAX_SEGMENT_SECONDS)
 
@@ -225,9 +225,10 @@ def _run_record(state: AppState, url: str, outroot: str,
                 auto_next: bool = True) -> None:
     """录制一个直播间。
 
-    ``segment`` 是分段秒数（0 = 不分段）。``auto_next`` 打开时，一段录完
-    （断流或下播导致 ffmpeg 退出）会重新探测，仍在开播就接着录下一段，
-    文件名带 ``_part02`` 后缀避免覆盖；关闭时录完一段就结束。
+    ``segment`` 是界面填写的**录制时长**（秒，0 = 不限时、一直录到手动停止）。
+    录满后 ffmpeg 会自行退出，因此「录完一段」不再只意味着断流：
+    ``auto_next`` 打开时重新探测，仍在开播就接着录下一段（文件名带
+    ``_part02``）；关闭时录完这一段就结束。
     """
     from dly.cookies.manager import CookieManager
     from dly.platforms import find_adapter
@@ -260,7 +261,9 @@ def _run_record(state: AppState, url: str, outroot: str,
         recorder = LiveRecorder(
             ffmpeg, outdir,
             fmt=config.record.format,
-            segment_seconds=segment,
+            # 界面填的时长是「录多久就停」，交给 -t 让 ffmpeg 到点自行退出。
+            # 不传 segment_seconds：那是无限切文件的 muxer，永远不会自己退出。
+            max_duration=segment,
             fps=fps,
             on_progress=lambda s, b: state.set_record(seconds=s, size=b),
         )
@@ -273,10 +276,10 @@ def _run_record(state: AppState, url: str, outroot: str,
             state.log("record", f"目标帧率：{fps}fps（边录边转码，CPU 占用较高）", "warn")
         else:
             state.log("record", "目标帧率：原画直通（不转码）")
-        state.log("record", f"分段时长：{segment:g} 秒" if segment
-                  else "分段时长：不分段（整场一个文件）")
-        state.log("record", "自动续录：开（一段结束仍在开播就接着录）"
-                  if auto_next else "自动续录：关（录完一段即停）")
+        state.log("record", f"录制时长：{segment:g} 秒（到点自动停止）" if segment
+                  else "录制时长：不限（一直录到手动点停止）")
+        state.log("record", "自动续录：开（到点后仍在开播就接着录下一段）"
+                  if auto_next else "自动续录：关（录完这一段即结束）")
 
         part = 0
         failures = 0
@@ -299,7 +302,7 @@ def _run_record(state: AppState, url: str, outroot: str,
                 state.set_record(status="已停止", level="idle")
                 break
             if not auto_next:
-                state.log("record", "已录完一段，自动续录关闭，结束录制")
+                state.log("record", "已录完这一段，自动续录关闭，结束录制")
                 state.set_record(status="已完成", level="idle")
                 break
 

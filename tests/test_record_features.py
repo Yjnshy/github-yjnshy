@@ -155,7 +155,8 @@ def test_auto_next_records_another_part(fake_record_env, monkeypatch):
 
     rec = _FakeRecorder.instances[0]
     assert rec.parts == [0, 2]              # 第二段用 _part02，不覆盖第一段
-    assert rec.kwargs["segment_seconds"] == 30
+    assert rec.kwargs["max_duration"] == 30
+    assert "segment_seconds" not in rec.kwargs   # 不能用无限分段 muxer
     assert state.record["active"] is False
     assert state.record["status"] == "已停止"
     texts = [e["text"] for e in state.events_since(0)]
@@ -173,6 +174,39 @@ def test_auto_next_off_stops_after_one_part(fake_record_env, monkeypatch):
     assert _FakeRecorder.instances[0].parts == [0]
     assert state.record["status"] == "已完成"
     assert state.record_stop.is_set() is False   # finally 里已复位
+
+
+def test_timed_recording_stops_even_with_auto_next_off(fake_record_env,
+                                                       monkeypatch):
+    """回归：填了时长且没勾续录时，只录一段就结束。
+
+    旧实现把时长交给 ffmpeg 的 -f segment，那个 muxer 到点只切下一个文件、
+    进程永不退出，「录完一段就停」的判断永远执行不到。
+    """
+    monkeypatch.setattr("dly.platforms.find_adapter",
+                        lambda *a, **k: _FakeAdapter())
+    state = _state()
+
+    srv._run_record(state, "https://live.douyin.com/123", "", 60,
+                    auto_next=False)
+
+    rec = _FakeRecorder.instances[0]
+    assert rec.parts == [0]
+    assert rec.kwargs["max_duration"] == 60
+    assert "segment_seconds" not in rec.kwargs
+    assert state.record["status"] == "已完成"
+    assert state.record["active"] is False
+
+
+def test_duration_zero_means_no_limit(fake_record_env, monkeypatch):
+    monkeypatch.setattr("dly.platforms.find_adapter",
+                        lambda *a, **k: _FakeAdapter())
+    state = _state()
+
+    srv._run_record(state, "https://live.douyin.com/123", "", 0,
+                    auto_next=True)
+
+    assert _FakeRecorder.instances[0].kwargs["max_duration"] == 0
 
 
 def test_stop_signal_breaks_between_parts(fake_record_env, monkeypatch):

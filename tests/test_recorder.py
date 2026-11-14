@@ -87,6 +87,57 @@ def test_progress_flag_present(tmp_path):
     assert "-progress" in cmd and "pipe:1" in cmd
 
 
+# ---------------------------------------------------------------- 到点自动停止
+
+def test_max_duration_adds_t_and_keeps_single_file(tmp_path):
+    """界面填的录制时长必须让 ffmpeg 自己退出，而不是无限切下一段。"""
+    rec = LiveRecorder("ffmpeg", tmp_path, max_duration=90)
+    cmd = rec.build_cmd(_live(), tmp_path / "a.ts")
+    joined = " ".join(cmd)
+
+    assert "-t 90" in joined
+    assert cmd.index("-t") > cmd.index("-i")     # -t 是输出选项
+    assert "-f segment" not in joined            # 不再用无限分段 muxer
+    assert cmd[-1] == str(tmp_path / "a.ts")     # 一个段 = 一个干净文件名
+
+
+@pytest.mark.parametrize("seconds", [1.0, 30.0, 0.5, 86400.0])
+def test_max_duration_value_is_formatted(tmp_path, seconds):
+    rec = LiveRecorder("ffmpeg", tmp_path, max_duration=seconds)
+    cmd = rec.build_cmd(_live(), tmp_path / "a.ts")
+    assert cmd[cmd.index("-t") + 1] == recorder_mod._fmt_seconds(seconds)
+
+
+def test_max_duration_zero_has_no_t(tmp_path):
+    rec = LiveRecorder("ffmpeg", tmp_path, max_duration=0)
+    assert "-t" not in rec.build_cmd(_live(), tmp_path / "a.ts")
+
+
+def test_max_duration_invalid_value_is_ignored(tmp_path):
+    rec = LiveRecorder("ffmpeg", tmp_path, max_duration="oops")
+    assert rec.max_duration == 0
+    assert "-t" not in rec.build_cmd(_live(), tmp_path / "a.ts")
+
+
+def test_max_duration_works_with_transcode(tmp_path):
+    rec = LiveRecorder("ffmpeg", tmp_path, fps=30, max_duration=120)
+    joined = " ".join(rec.build_cmd(_live(), tmp_path / "a.ts"))
+
+    assert "-t 120" in joined
+    assert "-c:v libx264" in joined
+    assert "-force_key_frames" not in joined    # 没用 segment muxer，不必强切关键帧
+
+
+def test_cli_segment_minutes_still_unlimited(tmp_path):
+    """CLI / 值守仍按分钟无限切文件，不能被这次改动带偏。"""
+    rec = LiveRecorder("ffmpeg", tmp_path, segment_minutes=30)
+    joined = " ".join(rec.build_cmd(_live(), tmp_path / "a.ts"))
+
+    assert "-f segment" in joined
+    assert "-segment_time 1800" in joined
+    assert "-t" not in joined
+
+
 # ---------------------------------------------------------------- 帧率
 
 def test_default_fps_uses_stream_copy(tmp_path):
@@ -225,3 +276,68 @@ def test_record_without_stream_url(tmp_path):
     rec = LiveRecorder("ffmpeg", tmp_path)
     with pytest.raises(RecordingError, match="流地址为空"):
         rec.record_once(_live(stream_url=""))
+
+
+# ---------------------------------------------------------------- 定时录制收尾
+
+class _StuckProc:
+    """模拟 -t 没生效、赖着不退出的 ffmpeg。"""
+
+    def __init__(self, cmd):
+        self.returncode = 0
+        self.killed = False
+        self.stdout = io.StringIO(
+            "out_time_us=1000000\ntotal_size=1024\nprogress=end\n")
+        self.stderr = io.StringIO("")
+        Path(cmd[-1]).write_bytes(b"0" * (MIN_OUTPUT_BYTES * 2))
+
+    def poll(self):
+        return 0 if self.killed else None
+
+    def wait(self, *args, **kwargs):
+        return 0
+
+
+def test_watchdog_force_stops_when_t_does_not_fire(tmp_path, monkeypatch):
+    """流时间戳异常时 ffmpeg 可能忽略 -t，墙钟兜底必须保证到点就停。"""
+    holder = {}
+
+    def fake_popen(cmd, **kw):
+        holder["proc"] = _StuckProc(cmd)
+        return holder["proc"]
+
+    monkeypatch.setattr(recorder_mod.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(recorder_mod.compat, "kill_process_tree",
+                        lambda proc: setattr(proc, "killed", True))
+    monkeypatch.setattr(recorder_mod, "DURATION_GRACE_SECONDS", 0.0)
+
+    rec = LiveRecorder("ffmpeg", tmp_path, max_duration=0.01)
+    out = rec.record_once(_live())
+
+    assert holder["proc"].killed is True        # 到点确实强制收了尾
+    assert rec.stop_requested is False          # 不能误判成用户手动停止
+    assert out.is_file()
+
+
+def test_short_timed_recording_keeps_small_output(tmp_path, monkeypatch):
+    """只录几秒、文件几 KB 属正常，别被 32KB 的 403 判定误删。"""
+    monkeypatch.setattr(
+        recorder_mod.subprocess, "Popen",
+        lambda cmd, **kw: _FakeProc(cmd, produce_bytes=5000))
+    rec = LiveRecorder("ffmpeg", tmp_path, max_duration=3)
+
+    out = rec.record_once(_live())
+    assert out.is_file()
+    assert out.stat().st_size == 5000
+
+
+def test_small_output_still_rejected_without_duration(tmp_path, monkeypatch):
+    """不限时录制的 403 防护保持原样。"""
+    monkeypatch.setattr(
+        recorder_mod.subprocess, "Popen",
+        lambda cmd, **kw: _FakeProc(cmd, produce_bytes=5000, returncode=1))
+    rec = LiveRecorder("ffmpeg", tmp_path)
+
+    with pytest.raises(RecordingError):
+        rec.record_once(_live())
+    assert not list(tmp_path.glob("*.ts"))

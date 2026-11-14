@@ -444,7 +444,7 @@
             </select>
           </div>
           <div class="field" style="min-width:232px">
-            <span class="label">分段时长（0 = 不分段）</span>
+            <span class="label">录制时长（0 = 不限时）</span>
             <div class="seg-input">
               <input type="number" id="rec-seg" min="0" step="any" value="0">
               <select id="rec-seg-unit">
@@ -459,13 +459,14 @@
           <button class="primary" id="rec-start" onclick="startRecord()">开始录制</button>
           <button class="danger" id="rec-stop" onclick="stopRecord()" disabled>停止录制</button>
           <label class="check">
-            <input type="checkbox" id="rec-auto-next" checked> 录完一段后自动续录下一段
+            <input type="checkbox" id="rec-auto-next" checked> 到点后自动续录下一段
           </label>
         </div>
         <p class="hint" style="margin:10px 0 0">
           默认「原画直通」= 原样保存，CPU 几乎不占用；指定帧率会边录边转码，
           CPU 占用明显升高，配置较低的电脑建议保持原画。<br>
-          分段时长可选秒 / 分钟 / 小时；开启自动续录后，一段录完若仍在开播会接着录下一段（文件名带 _part02）。<br>
+          录制时长可选秒 / 分钟 / 小时，录满自动停止并保存；填 0 表示不限时，需手动点「停止录制」。
+          勾选自动续录后，到点会重新检查直播间，仍在开播就接着录下一段（文件名带 _part02）。<br>
           抖音直播以匿名方式获取流地址，不会挤掉浏览器 / 手机上的登录（避免提示「账号在别处登录」）。
         </p>
       </div>
@@ -686,6 +687,7 @@ function applyDefaults() {
   setFps('dl-fps', snapshot.fps);
   setFps('rec-fps', snapshot.record_fps);
   setFps('watch-fps', snapshot.record_fps);
+  // 配置里的 segment_minutes 本是值守用的切分间隔，这里只借来当录制页的初始时长
   $('rec-seg').value = snapshot.segment_minutes || 0;
   $('rec-seg-unit').value = 'min';   // 配置文件里按分钟存，界面默认也用分钟
   $('watch-interval').value = snapshot.poll_interval || 60;
