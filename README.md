@@ -6,8 +6,8 @@
 
 支持抖音、B站、小红书及 yt-dlp 覆盖的 1000+ 站点；Cookie 从浏览器**自动提取**，无需手动 F12 复制。
 
-<sub>图标是一只羊头：双角向上张开，脸收成向下的尖 —— 既是羊，也暗合「下载」。
-想换个风格：`python packaging/make_icon.py --variant round`（圆脸萌版）或 `ram`（细角版）。</sub>
+<sub>图标是透明底的云朵羊毛球：橙角、蓝眼、粉鼻，桌面浅色/深色背景都立得住。
+源图 `packaging/icon_source.jpg`，重跑 `python packaging/make_icon.py` 即可重生成图标与界面 logo。</sub>
 
 ## ✨ 功能特性
 
@@ -174,7 +174,8 @@ scripts\打包exe.bat
 | 用户数据 | 日志与默认下载目录在 `%LOCALAPPDATA%\DLY\`（程序装在无写权限目录也能跑） |
 | 配置 | 把 `config.yaml` 放在 exe 同目录即可生效 |
 
-> 图标：`packaging/app.ico`；需要改设计就编辑 `packaging/make_icon.py` 后重跑它。
+> 图标：`packaging/app.ico`（透明底，7 档尺寸）。换源图就改 `packaging/icon_source.jpg`
+> 后重跑 `python packaging/make_icon.py`，它会同步生成 `app.ico`、`app.png` 和界面 `logo.png`。
 > 打包后的 exe 带完整版本信息（右键属性可见），已关闭 UPX 压缩以免被误报。
 
 打包后仍可用的启动参数：`DLY.exe --web`（用浏览器打开）、`--debug`（开 DevTools）。
@@ -251,7 +252,9 @@ src/dly/
 packaging/
 ├── app_main.py          # exe 入口（异常兜底 + 写日志）
 ├── dly.spec   # PyInstaller 打包配置
-├── make_icon.py         # 生成 app.ico
+├── make_icon.py         # 由 icon_source.jpg 生成 app.ico / app.png / logo.png
+├── icon_source.jpg      # 去水印后的白底插画（抠图在 make_icon.py 里做）
+├── make_shortcut.py     # 建桌面快捷方式
 └── app.ico
 ```
 

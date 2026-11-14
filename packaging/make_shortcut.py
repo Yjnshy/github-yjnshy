@@ -12,6 +12,7 @@
     python packaging/make_shortcut.py                        # 建到当前用户桌面
     python packaging/make_shortcut.py --name "帅羊羊DLY"      # 自定义名称
     python packaging/make_shortcut.py --app-dir "D:/Apps/DLY"
+    python packaging/make_shortcut.py --icon "D:/Apps/DLY/DLY_v2.ico"  # 只换图标
 """
 
 from __future__ import annotations
@@ -96,24 +97,29 @@ def find_exe(app_dir: Path | None = None) -> Path:
         "或用 --app-dir 指定程序所在目录。")
 
 
-def icon_source(exe: Path) -> Path:
+def icon_source(exe: Path, override: str = "") -> Path:
     """快捷方式图标来源。
 
     优先用与 exe 同目录的独立 ``DLY.ico``：一是图标文件路径一变，资源管理器
     必然重新读取，不会沿用旧的图标缓存；二是 exe 被重新打包后图标能立刻刷新。
+
+    ``override`` 给「只换图标、还没重新打包 exe」时用：换成一个新文件名，
+    路径一变就能跳过旧图标缓存，不用重启资源管理器。
     """
+    if override:
+        return Path(override).resolve()
     ico = Path(exe).parent / "DLY.ico"
     return ico if ico.is_file() else Path(exe)
 
 
 def create_shortcut(exe: Path, name: str = "帅羊羊DLY",
-                    description: str = "") -> Path:
+                    description: str = "", icon: str = "") -> Path:
     """调用 IShellLink 在桌面创建快捷方式，返回 .lnk 路径。"""
     exe = Path(exe).resolve()
     if not exe.is_file():
         raise FileNotFoundError(f"目标不存在：{exe}")
 
-    icon = icon_source(exe)
+    icon_path = icon_source(exe, icon)
 
     lnk = desktop_dir() / f"{name}.lnk"
     if lnk.exists():
@@ -138,7 +144,7 @@ def create_shortcut(exe: Path, name: str = "帅羊羊DLY",
             ptr, str(exe), 0)
         _vt_call(ptr, _VT_SET_WORKING_DIR, ctypes.c_wchar_p)(ptr, str(exe.parent))
         _vt_call(ptr, _VT_SET_ICON_LOCATION, ctypes.c_wchar_p, ctypes.c_int)(
-            ptr, str(icon), 0)
+            ptr, str(icon_path), 0)
         if description:
             _vt_call(ptr, _VT_SET_DESCRIPTION, ctypes.c_wchar_p)(ptr, description)
 
@@ -163,18 +169,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--app-dir", default="", help="程序所在目录（含 DLY.exe）")
     parser.add_argument("--name", default="帅羊羊DLY", help="快捷方式名称")
     parser.add_argument("--desc", default="视频无水印下载 & 直播录制", help="备注")
+    parser.add_argument("--icon", default="",
+                        help="指定 .ico 路径（换图标但还没重新打包 exe 时用）")
     args = parser.parse_args(argv)
 
     try:
         exe = find_exe(Path(args.app_dir) if args.app_dir else None)
-        lnk = create_shortcut(exe, args.name, args.desc)
+        lnk = create_shortcut(exe, args.name, args.desc, args.icon)
     except (FileNotFoundError, OSError) as exc:
         print(f"✗ {exc}", file=sys.stderr)
         return 1
 
     print(f"✓ 快捷方式：{lnk}")
     print(f"  指向：{exe}")
-    print(f"  图标：{icon_source(exe)}")
+    print(f"  图标：{icon_source(exe, args.icon)}")
     return 0
 
 

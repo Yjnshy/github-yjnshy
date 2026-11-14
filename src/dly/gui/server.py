@@ -344,6 +344,16 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, html, "text/html; charset=utf-8")
             return
 
+        if path == "/logo.png":
+            # 顶栏图标：assets 目录整体随包分发，这里只开放这一个静态文件
+            try:
+                png = files("dly.gui").joinpath("assets/logo.png").read_bytes()
+            except (FileNotFoundError, OSError):
+                self._send(404, b"", "image/png")
+                return
+            self._send(200, png, "image/png")
+            return
+
         if path == "/api/state":
             from urllib.parse import parse_qs
 

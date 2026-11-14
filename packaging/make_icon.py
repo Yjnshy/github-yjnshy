@@ -1,12 +1,15 @@
 """生成应用图标 packaging/app.ico（产物已入库）。
 
-设计：深色圆角底 + 白色云朵羊毛球（外张金角 + 黑眼 + 粉色小鼻）。
-圆润、干净，16px 缩小时仍是一颗认得出的羊头。
+默认方案 ``photo``：以 ``icon_source.jpg``（已去水印的白底插画）为源，
+把白底抠成透明、居中，再生成 7 档尺寸。16/24px 会额外加粗外轮廓。
+
+其余 ``wool*`` / ``ram*`` 方案是早期程序化绘制的候选，留作对照。
+桌面端始终是透明背景，没有深色底板。
 
 用法::
 
-    python packaging/make_icon.py                 # 默认方案（云朵羊毛球）
-    python packaging/make_icon.py --variant ram-bold  # 换成原来的粗角羊头
+    python packaging/make_icon.py                 # 默认：插画方案
+    python packaging/make_icon.py --variant wool  # 换成旧的云朵羊毛球
     python packaging/make_icon.py --sheet         # 额外输出各尺寸对比图
 """
 
@@ -16,7 +19,7 @@ import argparse
 import math
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageChops
 
 SS = 1024                                   # 超采样画布
 BG_TOP = (26, 33, 56)                       # 深墨蓝
@@ -260,7 +263,144 @@ def variant_wool_dark() -> Image.Image:
     return _wool_sheep()
 
 
+# ---------------- 插画方案：白底源图 → 透明背景 ----------------
+
+SOURCE_IMAGE = Path(__file__).parent / "icon_source.jpg"
+PHOTO_PAD = 0.06                            # 居中后四周留白比例
+
+
+def _premul_resize(img: Image.Image, size: tuple) -> Image.Image:
+    """预乘 alpha 后再缩放，避免透明像素里的白色渗进轮廓形成白边。"""
+    return img.convert("RGBa").resize(size, Image.LANCZOS).convert("RGBA")
+
+
+def _outside_mask(wall: Image.Image) -> bytearray:
+    """从四边做 span flood fill，标出「深色轮廓之外」的像素。
+
+    羊毛内部也是白的，按颜色直接抠图会把羊身一起抠空；所以把深色描边
+    当墙，只删掉与画面外连通的部分，羊身、腮红、羊角内部都保得住。
+    """
+    w, h = wall.size
+    data = wall.tobytes()                    # 255 = 墙，0 = 可通行
+    outside = bytearray(w * h)
+    stack = []
+
+    def seed(x: int, y: int) -> None:
+        i = y * w + x
+        if data[i] == 0 and not outside[i]:
+            outside[i] = 1
+            stack.append((x, y))
+
+    for x in range(w):
+        seed(x, 0)
+        seed(x, h - 1)
+    for y in range(h):
+        seed(0, y)
+        seed(w - 1, y)
+
+    while stack:
+        x, y = stack.pop()
+        row = y * w
+        left = x
+        while left > 0 and data[row + left - 1] == 0 and not outside[row + left - 1]:
+            left -= 1
+        right = x
+        while (right < w - 1 and data[row + right + 1] == 0
+               and not outside[row + right + 1]):
+            right += 1
+        outside[row + left:row + right + 1] = b"\x01" * (right - left + 1)
+        for ny in (y - 1, y + 1):
+            if not 0 <= ny < h:
+                continue
+            nrow = ny * w
+            k = left
+            while k <= right:
+                if data[nrow + k] == 0 and not outside[nrow + k]:
+                    outside[nrow + k] = 1
+                    stack.append((k, ny))
+                    while k <= right and data[nrow + k] == 0:
+                        k += 1
+                else:
+                    k += 1
+    return outside
+
+
+def _from_source() -> Image.Image:
+    """读去水印后的插画 → 抠掉白底 → 按可见内容居中成正方形。"""
+    src = Image.open(SOURCE_IMAGE).convert("RGB")
+    # 把羊毛里 JPEG 带来的淡灰噪点洗成纯白：只动「近中性 + 高亮」的像素，
+    # 腮红、蓝眼、橙色羊角都有明显色差，不受影响
+    r, g, b = src.split()
+    mx = ImageChops.lighter(ImageChops.lighter(r, g), b)
+    mn = ImageChops.darker(ImageChops.darker(r, g), b)
+    neutral = ImageChops.subtract(mx, mn).point(lambda v: 255 if v < 14 else 0)
+    bright = src.convert("L").point(lambda v: 255 if v > 225 else 0)
+    clean = ImageChops.multiply(neutral, bright)
+    src = Image.composite(Image.new("RGB", src.size, (255, 255, 255)),
+                          src, clean)
+
+    gray = src.convert("L")
+    # 深色描边当墙；MaxFilter 膨胀几像素，封住抗锯齿处的浅色细缝
+    wall = gray.point(lambda v: 255 if v < 170 else 0)
+    wall = wall.filter(ImageFilter.MaxFilter(5))
+    outside = _outside_mask(wall)
+
+    alpha = Image.frombytes("L", src.size,
+                            bytes(0 if v else 255 for v in outside))
+    # 膨胀出的「墙」会在深蓝描边外侧留一圈白底，腐蚀 2px 正好去掉它，
+    # 描边本身约 10px 厚，不会受损
+    alpha = alpha.filter(ImageFilter.MinFilter(5))
+    rgba = src.convert("RGBA")
+    rgba.putalpha(alpha)
+
+    # 注意：RGBA.getbbox() 会把透明像素的白色 RGB 也算成内容，必须看 alpha
+    bbox = alpha.getbbox()
+    if not bbox:
+        raise RuntimeError("源图抠图失败：没有留下任何不透明像素")
+    content = rgba.crop(bbox)
+    w, h = content.size
+    side = int(max(w, h) * (1 + 2 * PHOTO_PAD))
+    canvas = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+    canvas.paste(content, ((side - w) // 2, (side - h) // 2), content)
+    return _premul_resize(canvas, (SS, SS))
+
+
+def variant_photo() -> Image.Image:
+    """去水印插画（默认）：透明底，白毛球 + 深蓝描边。"""
+    return _from_source()
+
+
+def _small_photo() -> Image.Image:
+    """16/24px 专用：抹掉会糊成一团的鼻子和嘴，只留两颗拉开的眼，再加粗外轮廓。"""
+    side = 128
+    base = _premul_resize(_from_source(), (side, side))
+
+    # 只在不透明区域里把脸的下半部洗白（眼睛、鼻子、嘴、腮红都清掉）
+    patch = Image.new("RGBA", base.size, (255, 255, 255, 255))
+    box = (int(side * .28), int(side * .45),
+           int(side * .72), int(side * .78))
+    mask = Image.new("L", base.size, 0)
+    ImageDraw.Draw(mask).rectangle(box, fill=255)
+    mask = ImageChops.multiply(mask, base.getchannel("A"))
+    base.paste(patch, (0, 0), mask)
+
+    # 两颗眼睛：眼距 0.21 画布宽，16px 下也各占一格、中间留空
+    d = ImageDraw.Draw(base)
+    eye_r = side * 0.045
+    for dx in (-0.105, 0.105):
+        cx, cy = (0.5 + dx) * side, 0.515 * side
+        d.ellipse((cx - eye_r, cy - eye_r, cx + eye_r, cy + eye_r),
+                  fill=(16, 32, 60, 255))
+
+    alpha = base.getchannel("A")
+    ring = ImageChops.subtract(alpha.filter(ImageFilter.MaxFilter(3)), alpha)
+    ink = Image.new("RGBA", base.size, (26, 38, 64, 0))
+    ink.putalpha(ring)
+    return Image.alpha_composite(ink, base)
+
+
 VARIANTS = {
+    "photo": variant_photo,
     "wool": variant_wool,
     "wool-plain": variant_wool_plain,
     "wool-dark": variant_wool_dark,
@@ -268,7 +408,7 @@ VARIANTS = {
     "ram": variant_ram,
     "round": variant_round,
 }
-DEFAULT_VARIANT = "wool"
+DEFAULT_VARIANT = "photo"
 
 
 def build(variant: str = DEFAULT_VARIANT) -> Image.Image:
@@ -307,6 +447,7 @@ def _small_wool(bg: bool = True) -> Image.Image:
 
 
 SMALL_ICONS = {
+    "photo": _small_photo,
     "wool": lambda: _centered(_outline(_small_wool(bg=False)), pad=0.09),
     "wool-plain": lambda: _centered(_small_wool(bg=False), pad=0.10),
     "wool-dark": _small_wool,
@@ -360,7 +501,10 @@ def main(argv: list[str] | None = None) -> None:
     png = here / "app.png"
     save_ico(ico, full, SMALL_ICONS[args.variant]())
     full.resize((512, 512), Image.LANCZOS).save(png, format="PNG")
-    print(f"已生成 {ico} 与 {png}（方案 {args.variant}）")
+    # 界面左上角也用同一张图，保证窗口里和桌面图标是同一只羊
+    logo = here.parent / "src" / "dly" / "gui" / "assets" / "logo.png"
+    _premul_resize(full, (160, 160)).save(logo, format="PNG")
+    print(f"已生成 {ico}、{png} 与界面 logo（方案 {args.variant}）")
     if args.sheet:
         path = here / "icon_sizes.png"
         size_sheet(full.resize((512, 512), Image.LANCZOS)).save(path)
