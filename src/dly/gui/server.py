@@ -341,6 +341,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(500, f"界面资源缺失: {exc}".encode("utf-8"),
                            "text/plain; charset=utf-8")
                 return
+            # 桌面窗口的 WebView2 没有原生右键菜单，前端据此决定要不要自己画一份。
+            # 用注释占位而不是裸变量，静态打开 HTML 时也不会报 ReferenceError。
+            flag = (b"<script>window.DLY_DESKTOP=true;</script>"
+                    if getattr(self.state, "desktop", False)
+                    else b"<script>window.DLY_DESKTOP=false;</script>")
+            html = html.replace(b"<!--DLY_DESKTOP_FLAG-->", flag)
             self._send(200, html, "text/html; charset=utf-8")
             return
 
@@ -352,6 +358,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(404, b"", "image/png")
                 return
             self._send(200, png, "image/png")
+            return
+
+        if path == "/api/clipboard":
+            # 桌面窗口没有原生右键菜单，界面自己画的那份要靠这里读系统剪贴板
+            from dly.core import clipboard
+
+            text = clipboard.read_text()
+            self._json({"ok": text is not None, "text": text or ""})
             return
 
         if path == "/api/state":
@@ -505,6 +519,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True})
             except Exception as exc:  # noqa: BLE001
                 self._json({"error": str(exc)}, 500)
+            return
+
+        if path == "/api/clipboard":
+            from dly.core import clipboard
+
+            text = data.get("text")
+            ok = isinstance(text, str) and clipboard.write_text(text)
+            self._json({"ok": bool(ok)})
             return
 
         if path == "/api/quit":

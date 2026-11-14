@@ -154,6 +154,27 @@
   button.danger:hover:not(:disabled) { background: var(--danger-dark); border-color: var(--danger-dark); }
   button.ghost { color: #63656F; background: #fff; }
 
+  /* 桌面窗口的编辑右键菜单：WebView2 发布版不提供原生右键菜单，自己画一份 */
+  .ctx-menu {
+    position: fixed; z-index: 120; display: none; min-width: 178px;
+    padding: 6px; background: #fff; border: 1px solid var(--border);
+    border-radius: 11px; box-shadow: 0 12px 34px rgba(28,24,48,.18);
+    font-size: 13px; user-select: none;
+  }
+  .ctx-menu.show { display: block; }
+  .ctx-menu button {
+    display: flex; align-items: center; justify-content: space-between; gap: 22px;
+    width: 100%; padding: 7px 10px; border: 0; border-radius: 7px;
+    background: transparent; color: var(--text); font: inherit; text-align: left;
+    transition: background .12s;
+  }
+  .ctx-menu button:hover:not(.disabled) {
+    background: var(--accent-soft); border-color: transparent; color: var(--accent-ink);
+  }
+  .ctx-menu button.disabled { color: #B7B8C1; cursor: default; }
+  .ctx-menu button span { color: var(--muted); font-size: 11px; }
+  .ctx-menu .ctx-sep { height: 1px; margin: 5px 6px; background: var(--border); }
+
   .hint { font-size: 12px; color: var(--muted); }
   .check {
     display: inline-flex; align-items: center; gap: 6px;
@@ -230,6 +251,7 @@
 </style>
 </head>
 <body>
+<!--DLY_DESKTOP_FLAG-->
 
 <aside class="sidebar">
   <div class="brand">
@@ -483,6 +505,15 @@
     <h2>程序已退出</h2>
     <p>可以直接关闭这个页面了。下次使用时双击「启动界面.bat」。</p>
   </div>
+</div>
+
+<div class="ctx-menu" id="ctx-menu" role="menu" aria-label="编辑">
+  <button type="button" role="menuitem" data-act="cut">剪切<span>Ctrl+X</span></button>
+  <button type="button" role="menuitem" data-act="copy">复制<span>Ctrl+C</span></button>
+  <button type="button" role="menuitem" data-act="paste">粘贴<span>Ctrl+V</span></button>
+  <div class="ctx-sep"></div>
+  <button type="button" role="menuitem" data-act="selectall">全选<span>Ctrl+A</span></button>
+  <button type="button" role="menuitem" data-act="delete">删除<span>Del</span></button>
 </div>
 
 <script>
@@ -739,6 +770,114 @@ async function quitApp() {
   try { await api('/api/quit'); } catch (e) { /* 服务已关 */ }
   $('overlay').classList.add('show');
 }
+
+/* ---------------- 编辑右键菜单 ----------------
+   pywebview 在 WebView2 上把默认右键菜单绑在 debug 开关上，发布版的输入框
+   没有「剪切/复制/粘贴」。只在桌面窗口接管（DLY_DESKTOP 由服务端注入），
+   浏览器模式保留原生菜单。剪贴板读写走 /api/clipboard，取不到再退回浏览器 API。 */
+const CTX_FIELDS = 'textarea, input[type="text"], input[type="url"], ' +
+  'input[type="search"], input[type="tel"], input[type="email"], input[type="password"]';
+let ctxEl = null, ctxStart = 0, ctxEnd = 0;
+
+function isDesktop() { return window.DLY_DESKTOP === true; }
+
+function hideCtxMenu() {
+  const m = $('ctx-menu');
+  if (m) m.classList.remove('show');
+  ctxEl = null;
+}
+
+/* 返回 '' 表示剪贴板确实为空，null 表示两条路都取不到（不等于空） */
+async function getClipText() {
+  try {
+    const res = await fetch('/api/clipboard');
+    const data = await res.json();
+    if (data.ok) return data.text || '';
+  } catch (e) { /* 后端不可用，改用浏览器剪贴板 */ }
+  try { return (await navigator.clipboard.readText()) || ''; }
+  catch (e) { return null; }
+}
+
+async function setClipText(text) {
+  try {
+    const data = await api('/api/clipboard', { text });
+    if (data.ok) return true;
+  } catch (e) { /* 同上 */ }
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch (e) { return false; }
+}
+
+function showCtxMenu(x, y, el) {
+  const m = $('ctx-menu');
+  ctxEl = el;
+  ctxStart = el.selectionStart == null ? 0 : el.selectionStart;
+  ctxEnd = el.selectionEnd == null ? 0 : el.selectionEnd;
+  m.classList.add('show');
+  m.style.left = Math.max(4, Math.min(x, innerWidth - m.offsetWidth - 8)) + 'px';
+  m.style.top = Math.max(4, Math.min(y, innerHeight - m.offsetHeight - 8)) + 'px';
+  const hasSel = ctxEnd > ctxStart;
+  ['cut', 'copy', 'delete'].forEach(act => {
+    m.querySelector('[data-act="' + act + '"]').classList.toggle('disabled', !hasSel);
+  });
+  // 实时读一次剪贴板：确实为空就把「粘贴」置灰；读不到则保持可用，交给 Ctrl+V 兜底
+  getClipText().then(text => {
+    if (!ctxEl) return;
+    m.querySelector('[data-act="paste"]').classList.toggle('disabled', text === '');
+  });
+}
+
+function ctxReplace(text) {
+  const el = ctxEl;
+  if (!el) return;
+  el.focus();
+  try { el.setRangeText(text, ctxStart, ctxEnd, 'end'); }
+  catch (e) { el.value = text; }
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  hideCtxMenu();
+}
+
+async function ctxAction(act) {
+  const el = ctxEl;
+  if (!el) return;
+  if (act === 'cut') {
+    if (await setClipText(el.value.slice(ctxStart, ctxEnd))) ctxReplace('');
+    else hideCtxMenu();
+  } else if (act === 'copy') {
+    await setClipText(el.value.slice(ctxStart, ctxEnd));
+    hideCtxMenu();
+  } else if (act === 'paste') {
+    const text = await getClipText();
+    if (text) ctxReplace(text);
+    else hideCtxMenu();
+  } else if (act === 'selectall') {
+    el.focus(); el.select(); hideCtxMenu();
+  } else if (act === 'delete') {
+    ctxReplace('');
+  }
+}
+
+document.addEventListener('contextmenu', e => {
+  if (!isDesktop()) return;
+  const el = e.target && e.target.closest ? e.target.closest(CTX_FIELDS) : null;
+  if (!el || el.disabled || el.readOnly) return;
+  e.preventDefault();
+  showCtxMenu(e.clientX, e.clientY, el);
+});
+
+const ctxMenuEl = $('ctx-menu');
+// 菜单按下时不让输入框失焦，否则选区会被清掉
+ctxMenuEl.addEventListener('mousedown', e => e.preventDefault());
+ctxMenuEl.addEventListener('click', e => {
+  const btn = e.target.closest('[data-act]');
+  if (!btn || btn.classList.contains('disabled')) return;
+  ctxAction(btn.dataset.act);
+});
+document.addEventListener('mousedown', e => {
+  if (!e.target || !e.target.closest || !e.target.closest('#ctx-menu')) hideCtxMenu();
+});
+document.addEventListener('scroll', hideCtxMenu, true);
+window.addEventListener('blur', hideCtxMenu);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') hideCtxMenu(); });
 
 const initTab = location.hash.replace('#', '');
 if (['download', 'record', 'watch'].includes(initTab)) activateTab(initTab);
