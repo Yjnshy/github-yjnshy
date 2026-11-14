@@ -62,17 +62,35 @@ class LiveRecorder:
     """对一条直播流执行一次完整录制（直到断流或被停止）。"""
 
     def __init__(self, ffmpeg_path: str, output_dir: Path,
-                 fmt: str = "ts", segment_minutes: int = 0,
+                 fmt: str = "ts", segment_minutes: float = 0,
                  fps: int = 0,
-                 on_progress: Optional[ProgressCallback] = None):
+                 on_progress: Optional[ProgressCallback] = None,
+                 segment_seconds: Optional[float] = None):
         self.ffmpeg = ffmpeg_path
         self.output_dir = Path(output_dir)
         self.fmt = (fmt or "ts").lstrip(".").lower()
-        self.segment_minutes = max(0, int(segment_minutes))
+        # 内部一律按秒：界面可选 s / min / h，分钟只是其中一种来源。
+        # 显式传 segment_seconds（哪怕是 0）时以它为准，旧调用方传分钟会自动换算。
+        raw = (float(segment_minutes) * 60 if segment_seconds is None
+               else segment_seconds)
+        try:
+            self.segment_seconds = max(0.0, float(raw))
+        except (TypeError, ValueError):
+            self.segment_seconds = 0.0
         self.fps = normalize_fps(fps)
         self.on_progress = on_progress
         self._proc: Optional[subprocess.Popen] = None
         self._stop_requested = False
+
+    @property
+    def segment_minutes(self) -> float:
+        """旧调用方仍按分钟读取（CLI / 配置 / 测试）。"""
+        return self.segment_seconds / 60
+
+    @property
+    def stop_requested(self) -> bool:
+        """外部是否请求过停止；自动续录循环据此决定要不要开下一段。"""
+        return self._stop_requested
 
     # ------------------------------------------------------------------
     # 命令构造（独立成方法，便于单元测试）
@@ -100,17 +118,17 @@ class LiveRecorder:
                 "-pix_fmt", "yuv420p", "-r", str(self.fps),
                 "-c:a", "aac", "-b:a", "160k",
             ]
-            if self.segment_minutes:
+            if self.segment_seconds:
                 # 转码时分段按强制关键帧切，避免段边界漂移到下一个自然关键帧
-                seconds = self.segment_minutes * 60
+                seconds = _fmt_seconds(self.segment_seconds)
                 cmd += ["-force_key_frames",
                         f"expr:gte(t,n_forced*{seconds})"]
         else:
             cmd += ["-c", "copy"]
-        if self.segment_minutes:
+        if self.segment_seconds:
             cmd += [
                 "-f", "segment",
-                "-segment_time", str(self.segment_minutes * 60),
+                "-segment_time", _fmt_seconds(self.segment_seconds),
                 "-segment_format", _SEGMENT_FORMAT.get(self.fmt, self.fmt),
                 "-reset_timestamps", "1",
                 str(self.output_dir / f"{outfile.stem}_%03d.{self.fmt}"),
@@ -205,7 +223,7 @@ class LiveRecorder:
                 f"产出 {total} 字节）",
                 detail="\n".join(list(stderr_tail)[-8:]))
 
-        return produced[-1] if self.segment_minutes else outfile
+        return produced[-1] if self.segment_seconds else outfile
 
     def stop(self) -> None:
         """外部请求停止录制。"""
@@ -218,7 +236,7 @@ class LiveRecorder:
     # ------------------------------------------------------------------
 
     def _collect_outputs(self, stem: str) -> List[Path]:
-        if self.segment_minutes:
+        if self.segment_seconds:
             return sorted(self.output_dir.glob(f"{stem}_*.{self.fmt}"))
         target = self.output_dir / f"{stem}.{self.fmt}"
         return [target] if target.is_file() else []
@@ -257,6 +275,11 @@ class LiveRecorder:
                     tail.append(line)
         except (OSError, ValueError):
             pass
+
+
+def _fmt_seconds(value: float) -> str:
+    """ffmpeg 参数里的秒数：整数不带 .0，小数保留有效位，避免科学计数法。"""
+    return f"{value:g}"
 
 
 def _microseconds_to_seconds(value: str) -> float:

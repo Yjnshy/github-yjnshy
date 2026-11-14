@@ -176,6 +176,14 @@
   .ctx-menu .ctx-sep { height: 1px; margin: 5px 6px; background: var(--border); }
 
   .hint { font-size: 12px; color: var(--muted); }
+  .probe-hint { font-size: 12px; color: var(--muted); margin-top: 5px; min-height: 16px; }
+  .probe-hint.ok { color: #2E9E6B; }
+  .probe-hint.warn { color: #B98216; }
+  .probe-hint.err { color: var(--danger); }
+  /* 时长数值 + 单位下拉并排 */
+  .seg-input { display: flex; gap: 6px; }
+  .seg-input input { flex: 1; min-width: 76px; }
+  .seg-input select { width: 96px; flex: none; }
   .check {
     display: inline-flex; align-items: center; gap: 6px;
     font-size: 12.5px; color: #6E707B; cursor: pointer; user-select: none;
@@ -405,6 +413,14 @@
         </div>
         <div class="row">
           <div class="field grow">
+            <span class="label">直播间标题（自动识别，用来核对链接）</span>
+            <input type="text" id="rec-title" readonly
+                   placeholder="填入链接后自动显示直播间标题…">
+            <div class="probe-hint" id="rec-title-hint">填入链接后自动识别标题</div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field grow">
             <span class="label">保存到（自动建「直播录制」子目录）</span>
             <input type="text" id="rec-outdir">
           </div>
@@ -423,18 +439,29 @@
               <option value="15">15 fps</option>
             </select>
           </div>
-          <div class="field" style="min-width:170px">
-            <span class="label">分段（分钟，0=不分段）</span>
-            <input type="number" id="rec-seg" min="0" value="0">
+          <div class="field" style="min-width:196px">
+            <span class="label">分段时长（0 = 不分段）</span>
+            <div class="seg-input">
+              <input type="number" id="rec-seg" min="0" step="any" value="0">
+              <select id="rec-seg-unit">
+                <option value="s">秒 (s)</option>
+                <option value="min" selected>分钟 (min)</option>
+                <option value="h">小时 (h)</option>
+              </select>
+            </div>
           </div>
         </div>
         <div class="row">
           <button class="primary" id="rec-start" onclick="startRecord()">开始录制</button>
           <button class="danger" id="rec-stop" onclick="stopRecord()" disabled>停止录制</button>
+          <label class="check">
+            <input type="checkbox" id="rec-auto-next" checked> 录完一段后自动续录下一段
+          </label>
         </div>
         <p class="hint" style="margin:10px 0 0">
           默认「原画直通」= 原样保存，CPU 几乎不占用；指定帧率会边录边转码，
-          CPU 占用明显升高，配置较低的电脑建议保持原画。
+          CPU 占用明显升高，配置较低的电脑建议保持原画。<br>
+          分段时长可选秒 / 分钟 / 小时；开启自动续录后，一段录完若仍在开播会接着录下一段（文件名带 _part02）。
         </p>
       </div>
 
@@ -655,6 +682,7 @@ function applyDefaults() {
   setFps('rec-fps', snapshot.record_fps);
   setFps('watch-fps', snapshot.record_fps);
   $('rec-seg').value = snapshot.segment_minutes || 0;
+  $('rec-seg-unit').value = 'min';   // 配置文件里按分钟存，界面默认也用分钟
   $('watch-interval').value = snapshot.poll_interval || 60;
   $('browser').value = snapshot.browser || 'chrome';
   if ((snapshot.rooms || []).length) {
@@ -697,6 +725,74 @@ async function startDownload() {
   } catch (e) { $('dl-hint').textContent = e.message; }
 }
 
+/* ---------------- 直播间标题自动识别 ----------------
+   链接输入后防抖探测，结果回填只读框供核对；序号用来丢弃过期响应，
+   避免「先输错链接、后输对链接」时旧结果盖掉新的。 */
+const PROBE_DEBOUNCE_MS = 600;
+const PROBE_TIMEOUT_MS = 12000;
+let probeSeq = 0, probeTimer = null, probeCtrl = null;
+
+function setProbeHint(text, kind) {
+  const el = $('rec-title-hint');
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'probe-hint' + (kind ? ' ' + kind : '');
+}
+
+function abortProbe() {
+  if (probeCtrl) { try { probeCtrl.abort(); } catch (e) {} probeCtrl = null; }
+}
+
+function scheduleProbe() {
+  clearTimeout(probeTimer);
+  const url = $('rec-url').value.trim();
+  const seq = ++probeSeq;
+  abortProbe();
+  $('rec-title').value = '';
+  if (!/^https?:\/\/\S+$/i.test(url)) {
+    setProbeHint(url ? '链接看起来不完整，请以 http(s):// 开头'
+                     : '填入链接后自动识别标题', url ? 'warn' : '');
+    return;
+  }
+  setProbeHint('正在识别直播间…', '');
+  probeTimer = setTimeout(() => probeLive(url, seq), PROBE_DEBOUNCE_MS);
+}
+
+async function probeLive(url, seq) {
+  const ctrl = new AbortController();
+  probeCtrl = ctrl;
+  const timer = setTimeout(() => { try { ctrl.abort(); } catch (e) {} },
+                           PROBE_TIMEOUT_MS);
+  try {
+    const res = await fetch('/api/record/probe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+      signal: ctrl.signal
+    });
+    const data = await res.json();
+    if (seq !== probeSeq) return;
+    if (!data.ok) {
+      setProbeHint(data.error || '识别失败', 'err');
+      return;
+    }
+    $('rec-title').value = data.title || '（该直播间没有标题）';
+    const anchor = data.anchor ? ' · 主播 ' + data.anchor : '';
+    if (!data.is_live) setProbeHint('链接有效，但当前未开播' + anchor, 'warn');
+    else if (!data.has_stream) setProbeHint('正在直播，但暂未取到流地址' + anchor, 'warn');
+    else setProbeHint('链接有效 · 正在直播' + anchor, 'ok');
+  } catch (e) {
+    if (seq !== probeSeq) return;
+    setProbeHint(e.name === 'AbortError' ? '识别超时，可重新编辑链接再试'
+                                         : '识别失败：' + e.message, 'err');
+  } finally {
+    clearTimeout(timer);
+    if (probeCtrl === ctrl) probeCtrl = null;
+  }
+}
+
+$('rec-url').addEventListener('input', scheduleProbe);
+
 async function startRecord() {
   const url = $('rec-url').value.trim();
   if (!url) { $('rec-status').textContent = '请先填写直播间链接'; return; }
@@ -704,7 +800,9 @@ async function startRecord() {
     await api('/api/record/start', {
       url,
       output_dir: $('rec-outdir').value.trim(),
-      segment: parseInt($('rec-seg').value || '0', 10),
+      segment_value: parseFloat($('rec-seg').value || '0') || 0,
+      segment_unit: $('rec-seg-unit').value,
+      auto_next: $('rec-auto-next').checked,
       fps: fpsOf('rec-fps')
     });
   } catch (e) { $('rec-status').textContent = e.message; }
@@ -816,13 +914,18 @@ function showCtxMenu(x, y, el) {
   m.style.left = Math.max(4, Math.min(x, innerWidth - m.offsetWidth - 8)) + 'px';
   m.style.top = Math.max(4, Math.min(y, innerHeight - m.offsetHeight - 8)) + 'px';
   const hasSel = ctxEnd > ctxStart;
-  ['cut', 'copy', 'delete'].forEach(act => {
-    m.querySelector('[data-act="' + act + '"]').classList.toggle('disabled', !hasSel);
-  });
+  // 只读框（直播间标题）允许复制/全选，但不允许剪切/粘贴/删除
+  const editable = !el.readOnly;
+  m.querySelector('[data-act="copy"]').classList.toggle('disabled', !hasSel);
+  m.querySelector('[data-act="cut"]').classList.toggle('disabled', !editable || !hasSel);
+  m.querySelector('[data-act="delete"]').classList.toggle('disabled', !editable || !hasSel);
+  m.querySelector('[data-act="paste"]').classList.toggle('disabled', !editable);
   // 实时读一次剪贴板：确实为空就把「粘贴」置灰；读不到则保持可用，交给 Ctrl+V 兜底
   getClipText().then(text => {
     if (!ctxEl) return;
-    m.querySelector('[data-act="paste"]').classList.toggle('disabled', text === '');
+    const canEdit = !ctxEl.readOnly;
+    m.querySelector('[data-act="paste"]').classList.toggle(
+      'disabled', !canEdit || text === '');
   });
 }
 
@@ -839,6 +942,7 @@ function ctxReplace(text) {
 async function ctxAction(act) {
   const el = ctxEl;
   if (!el) return;
+  if (el.readOnly && act !== 'copy' && act !== 'selectall') { hideCtxMenu(); return; }
   if (act === 'cut') {
     if (await setClipText(el.value.slice(ctxStart, ctxEnd))) ctxReplace('');
     else hideCtxMenu();
@@ -859,7 +963,7 @@ async function ctxAction(act) {
 document.addEventListener('contextmenu', e => {
   if (!isDesktop()) return;
   const el = e.target && e.target.closest ? e.target.closest(CTX_FIELDS) : null;
-  if (!el || el.disabled || el.readOnly) return;
+  if (!el || el.disabled) return;
   e.preventDefault();
   showCtxMenu(e.clientX, e.clientY, el);
 });

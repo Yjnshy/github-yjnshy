@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import threading
 import time
 import webbrowser
@@ -39,8 +40,38 @@ DEFAULT_PORT = 8765
 PORT_RANGE = 20
 MAX_EVENTS = 1200
 
+# 录制时长的单位换算：界面可填 30 s / 30 min / 1 h，内部一律按秒交给 ffmpeg
+SEGMENT_UNITS = {"s": 1.0, "min": 60.0, "h": 3600.0}
+MIN_SEGMENT_SECONDS = 1.0
+MAX_SEGMENT_SECONDS = 24 * 3600
+
+# 自动续录时，连续这么多段都没录到有效数据就收手，避免无限重连刷文件
+MAX_CONTINUOUS_FAILURES = 3
+
 # 选择文件夹是模态窗口，同一时刻只允许一个（连点按钮不再叠出第二个）
 _PICK_LOCK = threading.Lock()
+
+
+def parse_segment_seconds(data: Dict[str, Any]) -> float:
+    """把界面的「数值 + 单位」换算成秒。
+
+    新前端传 ``segment_value`` / ``segment_unit``；旧前端只传 ``segment``
+    （单位固定为分钟），两条路都要认，避免老页面或脚本突然失效。
+    """
+    if "segment_value" in data or "segment_unit" in data:
+        factor = SEGMENT_UNITS.get(
+            str(data.get("segment_unit") or "min").lower(), 60.0)
+        raw = data.get("segment_value", data.get("segment", 0))
+    else:
+        factor, raw = 60.0, data.get("segment", 0)
+    try:
+        value = float(raw or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(value) or value <= 0:
+        return 0.0                      # 0 或空 = 不分段
+    seconds = max(MIN_SEGMENT_SECONDS, value * factor)
+    return min(seconds, MAX_SEGMENT_SECONDS)
 
 
 class AppState:
@@ -63,6 +94,8 @@ class AppState:
         self.monitor = None
         self.desktop = False          # 桌面窗口模式下前端会隐藏「退出程序」提示
         self._quit = threading.Event()
+        # 独立于 recorder 内部状态的停止信号：自动续录的探测间隙里也要能停下
+        self.record_stop = threading.Event()
 
     # ---- 事件流 ----
 
@@ -160,8 +193,42 @@ def _run_download(state: AppState, text: str, quality: str, outdir: str,
         state.download["active"] = False
 
 
-def _run_record(state: AppState, url: str, outroot: str, segment: int,
-                fps: int = 0) -> None:
+def probe_live(url: str) -> Dict[str, Any]:
+    """查询直播间标题 / 主播 / 开播状态，供界面自动回填核对。"""
+    from dly.cookies.manager import CookieManager
+    from dly.platforms import find_adapter
+
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return {"ok": False, "error": "链接格式不对，请以 http(s):// 开头"}
+    config = load_config()
+    adapter = find_adapter(url, CookieManager(config.cookies),
+                           proxy=config.proxy)
+    if adapter is None:
+        return {"ok": False, "error": "无法识别该链接"}
+    live = adapter.get_live_info(url)
+    if live is None:
+        return {"ok": False,
+                "error": "暂时取不到直播间信息（可能是风控或网络异常）"}
+    return {
+        "ok": True,
+        "title": live.title or "",
+        "anchor": live.anchor or "",
+        "is_live": bool(live.is_live),
+        "platform": live.platform or "",
+        "has_stream": bool(live.stream_url),
+    }
+
+
+def _run_record(state: AppState, url: str, outroot: str,
+                segment: float = 0, fps: int = 0,
+                auto_next: bool = True) -> None:
+    """录制一个直播间。
+
+    ``segment`` 是分段秒数（0 = 不分段）。``auto_next`` 打开时，一段录完
+    （断流或下播导致 ffmpeg 退出）会重新探测，仍在开播就接着录下一段，
+    文件名带 ``_part02`` 后缀避免覆盖；关闭时录完一段就结束。
+    """
     from dly.cookies.manager import CookieManager
     from dly.platforms import find_adapter
     from dly.recorder.recorder import LiveRecorder, RecordingError
@@ -193,7 +260,7 @@ def _run_record(state: AppState, url: str, outroot: str, segment: int,
         recorder = LiveRecorder(
             ffmpeg, outdir,
             fmt=config.record.format,
-            segment_minutes=segment,
+            segment_seconds=segment,
             fps=fps,
             on_progress=lambda s, b: state.set_record(seconds=s, size=b),
         )
@@ -206,10 +273,55 @@ def _run_record(state: AppState, url: str, outroot: str, segment: int,
             state.log("record", f"目标帧率：{fps}fps（边录边转码，CPU 占用较高）", "warn")
         else:
             state.log("record", "目标帧率：原画直通（不转码）")
+        state.log("record", f"分段时长：{segment:g} 秒" if segment
+                  else "分段时长：不分段（整场一个文件）")
+        state.log("record", "自动续录：开（一段结束仍在开播就接着录）"
+                  if auto_next else "自动续录：关（录完一段即停）")
 
-        path = recorder.record_once(live)
-        state.log("record", f"已保存：{path}", "ok")
-        state.set_record(status="已停止", level="idle")
+        part = 0
+        failures = 0
+        while not state.record_stop.is_set():
+            part += 1
+            try:
+                path = recorder.record_once(live, part=part if part > 1 else 0)
+                state.log("record", f"已保存：{path}", "ok")
+                failures = 0
+            except RecordingError as exc:
+                failures += 1
+                state.log("record", f"录制失败：{exc}", "error")
+                if exc.detail:
+                    state.log("record", exc.detail, "muted")
+                if not auto_next or failures >= MAX_CONTINUOUS_FAILURES:
+                    state.set_record(status="录制失败", level="error")
+                    break
+
+            if state.record_stop.is_set() or recorder.stop_requested:
+                state.set_record(status="已停止", level="idle")
+                break
+            if not auto_next:
+                state.log("record", "已录完一段，自动续录关闭，结束录制")
+                state.set_record(status="已完成", level="idle")
+                break
+
+            # ffmpeg 退出 = 断流或下播；重新探测才知道该不该接下一段
+            state.set_record(status="正在准备下一段…", level="idle")
+            state.log("record", "正在检查直播间状态…")
+            try:
+                fresh = adapter.get_live_info(url)
+            except Exception as exc:  # noqa: BLE001 探测失败按「已结束」处理
+                logger.warning("续录前探测失败：%s", exc)
+                fresh = None
+            if state.record_stop.is_set():
+                state.set_record(status="已停止", level="idle")
+                break
+            if not fresh or not fresh.is_live or not fresh.stream_url:
+                state.log("record", "直播已结束或暂时取不到流，停止自动续录", "warn")
+                state.set_record(status="已停止", level="idle")
+                break
+            live = fresh
+            state.log("record", f"自动续录：开始第 {part + 1} 段", "ok")
+            state.set_record(status=f"录制中 · {live.anchor}（第 {part + 1} 段）",
+                             level="live", seconds=0.0, size=0)
     except RecordingError as exc:
         state.log("record", f"录制失败：{exc}", "error")
         if exc.detail:
@@ -221,6 +333,7 @@ def _run_record(state: AppState, url: str, outroot: str, segment: int,
         state.set_record(status="录制异常", level="error")
     finally:
         state.recorder = None
+        state.record_stop.clear()
         state.set_record(active=False)
 
 
@@ -408,6 +521,18 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": True})
             return
 
+        if path == "/api/record/probe":
+            url = (data.get("url") or "").strip()
+            if len(url) > 500:
+                self._json({"ok": False, "error": "链接过长"})
+                return
+            try:
+                self._json(probe_live(url))
+            except Exception as exc:  # noqa: BLE001 探测失败也要给前端可读结果
+                logger.warning("探测直播间失败：%s", exc)
+                self._json({"ok": False, "error": f"识别失败：{exc}"})
+            return
+
         if path == "/api/record/start":
             url = (data.get("url") or "").strip()
             if not url:
@@ -416,14 +541,14 @@ class Handler(BaseHTTPRequestHandler):
             if self.state.record.get("active"):
                 self._json({"error": "正在录制中"}, 409)
                 return
-            try:
-                segment = max(0, int(data.get("segment") or 0))
-            except (TypeError, ValueError):
-                segment = 0
+            segment = parse_segment_seconds(data)
+            auto_next = data.get("auto_next") is not False
             outdir = (data.get("output_dir") or "").strip()
             fps = normalize_fps(data.get("fps"))
+            self.state.record_stop.clear()
             threading.Thread(target=_run_record,
-                             args=(self.state, url, outdir, segment, fps),
+                             args=(self.state, url, outdir, segment, fps,
+                                   auto_next),
                              daemon=True).start()
             self._json({"ok": True})
             return
@@ -435,6 +560,8 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.state.log("record", "正在停止录制…")
             self.state.set_record(status="正在停止…", level="idle")
+            # 先置位再停 ffmpeg：自动续录的探测间隙里也能立刻收手
+            self.state.record_stop.set()
             recorder.stop()
             self._json({"ok": True})
             return
@@ -588,6 +715,7 @@ class AppContext:
 
 def _stop_tasks(state: AppState) -> None:
     """先停任务再退进程，避免留下孤儿 ffmpeg 继续写文件。"""
+    state.record_stop.set()
     try:
         if state.recorder is not None:
             state.recorder.stop()
