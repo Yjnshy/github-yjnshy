@@ -365,9 +365,25 @@ def _from_source() -> Image.Image:
     return _premul_resize(canvas, (SS, SS))
 
 
+def _ink_edge(img: Image.Image, color=(18, 25, 44, 255)) -> Image.Image:
+    """把轮廓最外一圈的浅灰抗锯齿像素压成描边色。
+
+    JPEG 白底加上缩放抗锯齿，会在深蓝描边外侧留 1~2px 半透明浅灰，
+    深色桌面背景上会显出一圈脏白边。沿 alpha 轮廓外扩 1px、内缩 1px
+    取一条带涂成描边色，等于给图标补一圈实边，浅底深底都干净。
+    """
+    alpha = img.getchannel("A")
+    # 外侧只补 1px（别把羊画胖），内侧吃到 3px：JPEG 灰边比抗锯齿带宽得多
+    band = ImageChops.subtract(alpha.filter(ImageFilter.MaxFilter(3)),
+                               alpha.filter(ImageFilter.MinFilter(11)))
+    ink = Image.new("RGBA", img.size, color)
+    ink.putalpha(band)
+    return Image.alpha_composite(img, ink)
+
+
 def variant_photo() -> Image.Image:
     """去水印插画（默认）：透明底，白毛球 + 深蓝描边。"""
-    return _from_source()
+    return _ink_edge(_from_source())
 
 
 def _small_photo() -> Image.Image:
