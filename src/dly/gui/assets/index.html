@@ -183,7 +183,11 @@
   /* 时长数值 + 单位下拉并排 */
   .seg-input { display: flex; gap: 6px; }
   .seg-input input { flex: 1; min-width: 76px; }
-  .seg-input select { width: 96px; flex: none; }
+  /* 「分钟 (min)」比 s / h 长不少，宽度要按最长选项留足，且给原生下拉箭头留位 */
+  .seg-input select {
+    width: 128px; min-width: 128px; flex: none;
+    padding-left: 9px; padding-right: 4px;
+  }
   .check {
     display: inline-flex; align-items: center; gap: 6px;
     font-size: 12.5px; color: #6E707B; cursor: pointer; user-select: none;
@@ -439,7 +443,7 @@
               <option value="15">15 fps</option>
             </select>
           </div>
-          <div class="field" style="min-width:196px">
+          <div class="field" style="min-width:232px">
             <span class="label">分段时长（0 = 不分段）</span>
             <div class="seg-input">
               <input type="number" id="rec-seg" min="0" step="any" value="0">
@@ -461,7 +465,8 @@
         <p class="hint" style="margin:10px 0 0">
           默认「原画直通」= 原样保存，CPU 几乎不占用；指定帧率会边录边转码，
           CPU 占用明显升高，配置较低的电脑建议保持原画。<br>
-          分段时长可选秒 / 分钟 / 小时；开启自动续录后，一段录完若仍在开播会接着录下一段（文件名带 _part02）。
+          分段时长可选秒 / 分钟 / 小时；开启自动续录后，一段录完若仍在开播会接着录下一段（文件名带 _part02）。<br>
+          抖音直播以匿名方式获取流地址，不会挤掉浏览器 / 手机上的登录（避免提示「账号在别处登录」）。
         </p>
       </div>
 

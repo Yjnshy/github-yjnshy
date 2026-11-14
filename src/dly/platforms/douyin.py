@@ -18,6 +18,7 @@ import httpx
 
 from dly.platforms.base import (
     UA_MOBILE, UA_PC, LiveInfo, MediaInfo, PlatformAdapter,
+    strip_login_cookies,
 )
 from dly.platforms.douyin_sign import ab_sign
 
@@ -109,12 +110,14 @@ class DouyinAdapter(PlatformAdapter):
             return None
 
     def _client(self, cookie: str, mobile: bool = True) -> httpx.Client:
+        headers = {
+            "User-Agent": UA_MOBILE if mobile else UA_PC,
+            "Referer": "https://www.douyin.com/",
+        }
+        if cookie:
+            headers["Cookie"] = cookie
         return httpx.Client(
-            headers={
-                "User-Agent": UA_MOBILE if mobile else UA_PC,
-                "Cookie": cookie,
-                "Referer": "https://www.douyin.com/",
-            },
+            headers=headers,
             follow_redirects=True,
             timeout=25,
             proxy=self.proxy or None,
@@ -159,8 +162,15 @@ class DouyinAdapter(PlatformAdapter):
         否则接口返回空响应（风控）。签名实现见 ``douyin_sign``。
 
         流程：链接 → web_rid → 签名请求接口 → 取 room.status 与 stream_url。
+
+        这里只用匿名风控 Cookie：浏览器 Cookie 里的 sessionid 等登录凭证
+        一旦带进房间接口，服务端会判定「同账号在别处登录」，把用户浏览器
+        / 手机上的登录态挤掉。房间信息与流地址匿名即可取到。
         """
-        cookie = self.cookies.get_header(self.name)
+        raw_cookie = self.cookies.get_header(self.name)
+        cookie = strip_login_cookies(raw_cookie)
+        if raw_cookie and cookie != raw_cookie:
+            logger.debug("[douyin] 直播探测已剔除登录凭证，避免挤掉用户会话")
         web_rid, referer = self._resolve_web_rid(room_url, cookie)
         if not web_rid:
             logger.error("无法从链接解析出抖音直播间号: %s", room_url)
@@ -255,14 +265,19 @@ class DouyinAdapter(PlatformAdapter):
         query = urllib.parse.urlparse(api).query
         api = f"{api}&a_bogus={ab_sign(query, UA_PC)}"
 
-        headers = {
-            "User-Agent": UA_PC,
-            "Cookie": cookie,
-            "Referer": referer,
-        }
+        headers = {"User-Agent": UA_PC, "Referer": referer}
+        if cookie:
+            headers["Cookie"] = cookie
         try:
             with httpx.Client(timeout=20, headers=headers,
                               proxy=self.proxy or None) as client:
+                if not cookie and referer.startswith("http"):
+                    # 手上完全没有匿名 Cookie 时先访问一次房间页，让服务端
+                    # 下发 ttwid 等风控字段，否则 enter 接口常返回空响应
+                    try:
+                        client.get(referer, timeout=10)
+                    except httpx.HTTPError:
+                        pass
                 resp = client.get(api)
             if not resp.text:
                 logger.warning("[douyin] 房间接口返回空响应（触发风控），"

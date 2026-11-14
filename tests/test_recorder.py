@@ -58,7 +58,8 @@ def test_build_cmd_headers_contain_referer_and_cookie(tmp_path):
 
     assert headers.endswith("\r\n")        # ffmpeg 要求 CRLF 结尾
     assert "Referer: https://live.douyin.com/123456" in headers
-    assert "Cookie: sessionid=abc; ttwid=def" in headers
+    assert "Cookie: ttwid=def" in headers  # 匿名风控 Cookie 保留
+    assert "sessionid" not in headers      # 登录凭证不进直播请求，避免顶号
 
 
 def test_headers_omit_cookie_when_empty(tmp_path):

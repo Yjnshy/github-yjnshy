@@ -4,7 +4,8 @@
 - 输出格式默认 ts：录制中断（断电/杀进程）文件也不损坏
 - 默认 ``ffmpeg -c copy`` 纯转封装，CPU 占用几乎为零
 - 指定 ``fps`` 时改为 libx264 边录边转码（改帧率只能重新编码）
-- 拉流时透传 UA / Referer / Cookie：抖音等平台的 CDN 会校验登录态，缺了直接 403
+- 拉流时透传 UA / Referer / 匿名风控 Cookie；登录凭证一律剔除，
+  否则抖音会把用户浏览器或手机上的登录态挤下线（提示「账号在别处登录」）
 - 录制结束校验落盘体积，避免「静默失败」留下一堆 0 字节文件
 - 断线由 monitor 的重连循环负责重新拉起，本类只管「录到断」
 """
@@ -22,7 +23,7 @@ from typing import Callable, Deque, List, Optional
 from dly.core import compat
 from dly.core.naming import build_filename
 from dly.core.transcode import normalize_fps
-from dly.platforms.base import UA_PC, LiveInfo
+from dly.platforms.base import UA_PC, LiveInfo, strip_login_cookies
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +44,10 @@ _SEGMENT_FORMAT = {
 # 实测抖音的完整 Cookie 有 7~8KB，必须裁剪。
 MAX_COOKIE_HEADER = 1500
 
-# 拉流真正用得上的 Cookie（没有也能拉，但保留可提高成功率）
+# 超长 Cookie 时保留的匿名风控字段（流地址自带签名，不带登录凭证也能拉）
 _COOKIE_KEEP = (
-    "ttwid", "msToken", "sessionid", "sessionid_ss",
-    "odin_tt", "passport_csrf_token", "UIFID_TEMP", "sid_guard",
+    "ttwid", "msToken", "odin_tt", "passport_csrf_token",
+    "s_v_web_id", "__ac_nonce", "UIFID_TEMP",
 )
 
 
@@ -141,7 +142,7 @@ class LiveRecorder:
     def _headers(live: LiveInfo) -> str:
         """ffmpeg 的 -headers 要求每行以 CRLF 结尾。"""
         lines = [f"Referer: {live.referer or live.room_url}"]
-        cookie = _trim_cookie(live.cookie)
+        cookie = _trim_cookie(live.cookie, platform=live.platform)
         if cookie:
             lines.append(f"Cookie: {cookie}")
         return "\r\n".join(lines) + "\r\n"
@@ -289,13 +290,20 @@ def _microseconds_to_seconds(value: str) -> float:
         return 0.0
 
 
-def _trim_cookie(cookie: str, limit: int = MAX_COOKIE_HEADER) -> str:
-    """裁剪 Cookie 到 ffmpeg 能接受的体积。
+def _trim_cookie(cookie: str, limit: int = MAX_COOKIE_HEADER,
+                 platform: str = "") -> str:
+    """裁剪 Cookie 到 ffmpeg 能接受的体积，并剔除登录凭证。
 
     实测：完整 Cookie（7~8KB）会让 ffmpeg 报 ``overlong headers`` 直接打不开流；
     而抖音直播 CDN 实际并不校验 Cookie（流地址自带签名），裁剪不影响拉流。
+    登录凭证无论 Cookie 长短都要剔除：带进直播请求会被判为「账号在别处登录」，
+    挤掉用户在浏览器 / 手机上的会话。
     """
-    if not cookie or len(cookie) <= limit:
+    if not cookie:
+        return ""
+    if platform == "douyin":
+        cookie = strip_login_cookies(cookie)
+    if len(cookie) <= limit:
         return cookie
 
     jar = {}
