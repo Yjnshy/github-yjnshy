@@ -6,16 +6,22 @@
 <title>帅羊羊DLY — 视频下载 &amp; 直播录制</title>
 <style>
   :root {
-    --bg: #F4F5F7;
+    --bg: #FAF9F6;            /* 主区暖白 */
+    --side: #FFFFFF;          /* 侧栏纯白 */
     --card: #FFFFFF;
-    --text: #1F2329;
-    --muted: #8A9099;
-    --border: #E5E7EB;
-    --accent: #2B6CF6;
-    --accent-dark: #1E5AE0;
-    --danger: #E23B2E;
-    --ok: #1F9D55;
-    --warn: #B7791F;
+    --text: #1E2027;
+    --muted: #8B8D97;
+    --border: #EAE8E3;
+    --accent: #7C6BF2;        /* 淡紫主色 */
+    --accent-dark: #6A57E4;
+    --accent-ink: #6353DA;
+    --accent-soft: #F1EDFE;   /* 选中态 / 圆形图标底 */
+    --accent-card: #F5F2FD;   /* 主操作卡 */
+    --accent-line: #E7E0F8;
+    --danger: #E2564B;
+    --danger-dark: #C9463C;
+    --ok: #23A06B;
+    --warn: #C08A2E;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
@@ -26,89 +32,139 @@
     font: 14px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei UI",
           "Microsoft YaHei", system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
-    /* 整页纵向弹性布局：日志区自动吃满剩余高度，窗口多小都不溢出 */
     display: flex;
-    flex-direction: column;
     overflow: hidden;
   }
-  .wrap {
-    flex: 1; display: flex; flex-direction: column; min-height: 0;
-    width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 22px 12px;
-  }
 
-  /* 顶栏 */
-  .topbar {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 16px; padding: 14px 0 10px; flex: none;
+  /* ---------------- 左侧栏 ---------------- */
+  .sidebar {
+    width: 230px; flex: none;
+    background: var(--side); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    padding: 20px 12px 14px;
   }
-  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand { display: flex; align-items: center; gap: 12px; padding: 0 8px 26px; }
   .logo { width: 40px; height: 40px; flex: none; display: block; }
-  .brand h1 { margin: 0; font-size: 17px; font-weight: 600; }
-  .brand p { margin: 0; font-size: 12px; color: var(--muted); }
-  .top-actions { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
-
-  /* 页签 */
-  .tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border); flex: none; }
+  .brand-text { min-width: 0; }
+  .brand-text strong { display: block; font-size: 18px; font-weight: 700; letter-spacing: .2px; }
+  .brand-text span {
+    display: block; font-size: 11.5px; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .nav { display: flex; flex-direction: column; gap: 6px; }
   .tab {
-    border: 0; background: none; cursor: pointer;
-    padding: 10px 18px; font-size: 14px; color: var(--muted);
-    border-bottom: 2px solid transparent; font-family: inherit;
+    display: flex; align-items: center; gap: 11px; width: 100%;
+    border: 1px solid transparent; background: transparent; color: #5F626C;
+    padding: 11px 12px; border-radius: 10px;
+    font: inherit; font-size: 14px; text-align: left;
+    cursor: pointer; transition: background .15s, color .15s;
   }
-  .tab:hover { color: var(--text); }
-  .tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
-
-  .panel { display: none; padding-top: 16px; }
-  .panel.active {
-    display: flex; flex-direction: column; flex: 1; min-height: 0;
+  .tab svg { width: 18px; height: 18px; flex: none; stroke: currentColor; }
+  .tab:hover { background: #F6F5F2; color: var(--text); }
+  .tab.active {
+    background: var(--accent-soft); color: var(--accent-ink);
+    font-weight: 600; border-color: #DFD6F8;
   }
+  .side-spacer { flex: 1; }
+  .side-bottom { padding: 0 8px; }
+  .side-status { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .side-links { display: flex; gap: 8px; margin-bottom: 12px; }
+  .side-links .pill {
+    border-radius: 999px; font-size: 12px; padding: 7px 16px;
+    background: #F2F1ED; border-color: transparent; color: #55575F;
+  }
+  .side-meta { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
-  /* 卡片 */
+  /* ---------------- 右侧主区 ---------------- */
+  .main {
+    flex: 1; min-width: 0; min-height: 0;
+    display: flex; flex-direction: column;
+    padding: 26px 30px 16px;
+    overflow-y: auto;
+  }
+  .page-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 18px; flex: none; margin-bottom: 22px;
+  }
+  .page-head h1 { margin: 0; font-size: 27px; font-weight: 700; letter-spacing: -.3px; }
+  .page-head p { margin: 3px 0 0; font-size: 12.5px; color: var(--muted); }
+  .head-actions { display: flex; align-items: center; gap: 8px; flex: none; padding-top: 4px; }
+  .head-label { font-size: 12px; color: var(--muted); }
+  .head-actions select { width: auto; padding: 7px 9px; font-size: 12.5px; }
+  .head-actions button { padding: 7px 12px; font-size: 12.5px; }
+
+  .content { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .panel { display: none; }
+  .panel.active { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+
+  /* ---------------- 卡片 ---------------- */
   .card {
     background: var(--card); border: 1px solid var(--border);
-    border-radius: 12px; padding: 16px; margin-bottom: 12px;
+    border-radius: 14px; padding: 20px 22px; margin-bottom: 14px;
     flex: none;
   }
-  .label { font-size: 12px; color: var(--muted); margin-bottom: 6px; display: block; }
+  /* 主操作卡：淡紫底大圆角，呼应参考图的拖放区 */
+  .card.feature {
+    background: var(--accent-card); border-color: var(--accent-line);
+    padding: 20px 22px 20px;
+  }
+  .card-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .head-icon {
+    width: 42px; height: 42px; flex: none; border-radius: 50%;
+    background: var(--accent-soft); color: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .head-icon svg { width: 21px; height: 21px; stroke: currentColor; }
+  .card-title {
+    font-size: 14.5px; font-weight: 600; letter-spacing: .3px;
+    display: inline-block; text-decoration: none; border: 0;
+  }
+  .card-sub { font-size: 12px; color: var(--muted); margin-top: 1px; }
 
+  .label { font-size: 12px; color: #6E707B; margin-bottom: 6px; display: block; }
   textarea, input[type="text"], input[type="number"], select {
     width: 100%; font: inherit; color: var(--text);
-    background: #fff; border: 1px solid var(--border); border-radius: 8px;
+    background: #fff; border: 1px solid #DFDCD5; border-radius: 9px;
     padding: 9px 11px; outline: none; transition: border-color .15s, box-shadow .15s;
   }
-  textarea { resize: vertical; min-height: 96px; line-height: 1.65; }
+  .card.feature textarea, .card.feature input, .card.feature select {
+    border-color: #E4DDF6;
+  }
+  textarea { resize: vertical; min-height: 92px; line-height: 1.65; }
   textarea:focus, input:focus, select:focus {
-    border-color: var(--accent); box-shadow: 0 0 0 3px rgba(43,108,246,.12);
+    border-color: var(--accent); box-shadow: 0 0 0 3px rgba(124,107,242,.13);
   }
 
   .row { display: flex; gap: 10px; align-items: flex-end; margin-top: 12px; flex-wrap: wrap; }
   .field { min-width: 120px; }
-  .field.grow { flex: 1; min-width: 240px; }
+  .field.grow { flex: 1; min-width: 220px; }
 
   button {
-    font: inherit; cursor: pointer; border-radius: 8px;
+    font: inherit; cursor: pointer; border-radius: 9px;
     border: 1px solid var(--border); background: #fff; color: var(--text);
-    padding: 9px 16px; transition: all .15s;
+    padding: 9px 15px; transition: all .15s;
   }
-  button:hover:not(:disabled) { border-color: #C9CED6; }
-  button:disabled { opacity: .55; cursor: not-allowed; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 500; }
+  button:hover:not(:disabled) { border-color: #D6D3CD; background: #FCFBF9; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.primary {
+    background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600;
+  }
   button.primary:hover:not(:disabled) { background: var(--accent-dark); border-color: var(--accent-dark); }
-  button.danger { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 500; }
-  button.danger:hover:not(:disabled) { background: #C42F24; border-color: #C42F24; }
-  button.ghost { color: var(--muted); }
-  button.ghost:hover:not(:disabled) { color: var(--text); }
+  button.danger { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 600; }
+  button.danger:hover:not(:disabled) { background: var(--danger-dark); border-color: var(--danger-dark); }
+  button.ghost { color: #63656F; background: #fff; }
 
   .hint { font-size: 12px; color: var(--muted); }
   .check {
     display: inline-flex; align-items: center; gap: 6px;
-    font-size: 12.5px; color: var(--muted); cursor: pointer; user-select: none;
+    font-size: 12.5px; color: #6E707B; cursor: pointer; user-select: none;
   }
   .check input { width: auto; margin: 0; accent-color: var(--accent); }
 
   /* 录制状态卡 */
-  .status-card { display: flex; align-items: center; gap: 14px; }
+  .status-card { display: flex; align-items: center; gap: 14px; padding: 14px 20px; }
   .dot { width: 10px; height: 10px; border-radius: 50%; background: #C9CED6; flex: none; }
-  .dot.live { background: var(--danger); box-shadow: 0 0 0 4px rgba(226,59,46,.15); animation: pulse 1.6s infinite; }
+  .dot.live { background: var(--danger); box-shadow: 0 0 0 4px rgba(226,86,75,.15); animation: pulse 1.6s infinite; }
   .dot.error { background: var(--danger); }
   .dot.warn { background: var(--warn); }
   .dot.ok { background: var(--ok); }
@@ -119,7 +175,7 @@
   /* 日志 */
   .log-card {
     padding: 0; overflow: hidden;
-    flex: 1; min-height: 132px;
+    flex: 1; min-height: 128px;
     display: flex; flex-direction: column;
   }
   .log-head {
@@ -130,7 +186,7 @@
   .log {
     margin: 0; padding: 12px 16px; flex: 1; min-height: 0; overflow-y: auto;
     font-size: 12.5px; line-height: 1.75; white-space: pre-wrap; word-break: break-all;
-    background: #FCFCFD;
+    background: #FDFCFA;
   }
   .log .line { margin: 0; }
   .log .line.error { color: var(--danger); }
@@ -138,45 +194,97 @@
   .log .line.warn { color: var(--warn); }
   .log .line.muted { color: var(--muted); }
 
-  footer {
-    display: flex; align-items: center; gap: 10px; flex: none;
-    padding: 6px 0 0; font-size: 12px; color: var(--muted);
-  }
-  .spacer { flex: 1; }
   .badge {
-    display: inline-block; padding: 2px 8px; border-radius: 999px;
-    background: #EDF0F4; font-size: 11.5px; color: var(--muted);
+    display: inline-block; padding: 2px 9px; border-radius: 999px;
+    background: #F1F0EC; font-size: 11px; color: var(--muted);
   }
-  .badge.ok { background: #E8F6EE; color: var(--ok); }
-  .badge.bad { background: #FDECEA; color: var(--danger); }
+  .badge.ok { background: #E8F5EE; color: var(--ok); }
+  .badge.bad { background: #FCEDEB; color: var(--danger); }
 
   .overlay {
-    position: fixed; inset: 0; background: rgba(31,35,41,.55);
+    position: fixed; inset: 0; background: rgba(30,32,39,.5);
     display: none; align-items: center; justify-content: center; z-index: 20;
   }
   .overlay.show { display: flex; }
   .overlay .box {
-    background: #fff; border-radius: 14px; padding: 26px 30px; text-align: center;
-    max-width: 420px;
+    background: #fff; border-radius: 16px; padding: 28px 32px; text-align: center;
+    max-width: 420px; box-shadow: 0 18px 48px rgba(30,32,39,.14);
   }
   .overlay h2 { margin: 0 0 8px; font-size: 16px; }
   .overlay p { margin: 0; color: var(--muted); font-size: 13px; }
+
+  /* 窄窗口：侧栏收成图标条 */
+  @media (max-width: 900px) {
+    .sidebar { width: 64px; padding: 16px 8px 12px; }
+    .brand { justify-content: center; padding: 0 0 20px; }
+    .brand-text, .tab span, .side-status, .side-meta { display: none; }
+    .tab { justify-content: center; padding: 10px 0; }
+    .side-bottom { padding: 0; }
+    /* 图标条放不下四个字，用伪元素换成「退出」 */
+    .side-links .pill { width: 100%; padding: 8px 0; font-size: 0; }
+    .side-links .pill::after { content: "退出"; font-size: 11px; }
+    .main { padding: 18px 16px 12px; }
+    .head-label { display: none; }
+    .page-head { flex-direction: column; gap: 10px; }
+  }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="topbar">
-    <div class="brand">
-      <!-- 与 app.ico / app.png 同一张图：透明底，浅色顶栏与窗口标题栏都能用 -->
-      <img class="logo" src="logo.png" alt="" aria-hidden="true">
-      <div>
-        <h1>帅羊羊DLY</h1>
-        <p>多平台无水印下载 · 直播间自动录制</p>
-      </div>
+
+<aside class="sidebar">
+  <div class="brand">
+    <!-- 与 app.ico / app.png 同一张图：透明底 -->
+    <img class="logo" src="logo.png" alt="" aria-hidden="true">
+    <div class="brand-text">
+      <strong>帅羊羊DLY</strong>
+      <span>粘贴链接，一键下载</span>
     </div>
-    <div class="top-actions">
-      <span>Cookie 来源</span>
-      <select id="browser" style="width:auto;padding:6px 8px">
+  </div>
+
+  <nav class="nav" aria-label="主导航">
+    <button class="tab active" data-tab="download">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+      </svg>
+      <span>下载视频</span>
+    </button>
+    <button class="tab" data-tab="record">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="6" width="13" height="12" rx="2.5"/><path d="m16 11 5-3v8l-5-3z"/>
+      </svg>
+      <span>录制直播</span>
+    </button>
+    <button class="tab" data-tab="watch">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>
+      </svg>
+      <span>无人值守</span>
+    </button>
+  </nav>
+
+  <div class="side-spacer"></div>
+
+  <div class="side-bottom">
+    <div class="side-status">
+      <span id="conn" class="badge">连接中…</span>
+      <span id="ffmpeg-badge" class="badge">ffmpeg</span>
+    </div>
+    <div class="side-links">
+      <button class="pill ghost" onclick="quitApp()">退出程序</button>
+    </div>
+    <div class="side-meta"><span id="version"></span></div>
+  </div>
+</aside>
+
+<main class="main">
+  <header class="page-head">
+    <div>
+      <h1 id="page-title">下载视频</h1>
+      <p id="page-sub">粘贴分享链接，一键保存无水印视频</p>
+    </div>
+    <div class="head-actions">
+      <span class="head-label">Cookie 来源</span>
+      <select id="browser" title="Cookie 来源">
         <option value="chrome">Chrome</option>
         <option value="edge">Edge</option>
         <option value="firefox">Firefox</option>
@@ -185,169 +293,190 @@
       <button class="ghost" onclick="checkCookie()">测试</button>
       <button class="ghost" onclick="clearCookie()">清缓存</button>
     </div>
+  </header>
+
+  <div class="content">
+    <!-- 下载 -->
+    <section class="panel active" id="panel-download">
+      <div class="card feature">
+        <div class="card-head">
+          <div class="head-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 16V4m0 0-4 4m4-4 4 4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">将链接粘贴到这里</div>
+            <div class="card-sub">支持整段分享文案，一次可粘贴多条链接</div>
+          </div>
+        </div>
+        <span class="label">链接</span>
+        <textarea id="dl-text" placeholder="https://v.douyin.com/xxxxxxx/&#10;也可以直接粘贴整段分享文案，例如：&#10;8.74 07/09 复制打开抖音，看看【某某】的作品 https://v.douyin.com/xxx/"></textarea>
+        <div class="row">
+          <div class="field">
+            <span class="label">画质</span>
+            <select id="dl-quality">
+              <option value="best">最佳画质</option>
+              <option value="1080">1080P</option>
+              <option value="720">720P</option>
+              <option value="480">480P</option>
+              <option value="audio">仅音频</option>
+              <option value="mp3">仅音频（MP3）</option>
+            </select>
+          </div>
+          <div class="field">
+            <span class="label">帧率</span>
+            <select id="dl-fps">
+              <option value="0">原帧率（不转码）</option>
+              <option value="60">60 fps</option>
+              <option value="50">50 fps</option>
+              <option value="30">30 fps</option>
+              <option value="25">25 fps</option>
+              <option value="24">24 fps</option>
+              <option value="15">15 fps</option>
+            </select>
+          </div>
+          <div class="field grow">
+            <span class="label">保存到</span>
+            <input type="text" id="dl-outdir">
+          </div>
+          <button class="ghost" id="dl-pick" onclick="chooseFolder('dl-outdir', this)">选择目录</button>
+        </div>
+        <div class="row">
+          <button class="primary" id="dl-btn" onclick="startDownload()">开始下载</button>
+          <label class="check">
+            <input type="checkbox" id="dl-keep"> 保留原片
+          </label>
+          <span class="hint" id="dl-hint"></span>
+        </div>
+        <p class="hint" style="margin:10px 0 0">
+          帧率选「原帧率」= 原始画质直存，最快；选具体数值会在下载完成后重新编码，
+          速度取决于电脑性能，文件名不变。
+        </p>
+      </div>
+      <div class="card log-card">
+        <div class="log-head"><span>运行日志</span><span id="dl-count"></span></div>
+        <div class="log" id="dl-log"></div>
+      </div>
+    </section>
+
+    <!-- 录制 -->
+    <section class="panel" id="panel-record">
+      <div class="card feature">
+        <div class="card-head">
+          <div class="head-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="6" width="13" height="12" rx="2.5"/><path d="m16 11 5-3v8l-5-3z"/>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">填入直播间链接</div>
+            <div class="card-sub">支持抖音、B 站等直播间地址，随时可停止</div>
+          </div>
+        </div>
+        <div class="row" style="margin-top:0">
+          <div class="field grow">
+            <span class="label">直播间链接</span>
+            <input type="text" id="rec-url"
+                   placeholder="https://live.douyin.com/123456789　或　https://live.bilibili.com/6">
+          </div>
+        </div>
+        <div class="row">
+          <div class="field grow">
+            <span class="label">保存到（自动建「直播录制」子目录）</span>
+            <input type="text" id="rec-outdir">
+          </div>
+          <button class="ghost" id="rec-pick" onclick="chooseFolder('rec-outdir', this)">选择目录</button>
+        </div>
+        <div class="row">
+          <div class="field" style="min-width:170px">
+            <span class="label">帧率</span>
+            <select id="rec-fps">
+              <option value="0">原画直通（不转码）</option>
+              <option value="60">60 fps</option>
+              <option value="50">50 fps</option>
+              <option value="30">30 fps</option>
+              <option value="25">25 fps</option>
+              <option value="24">24 fps</option>
+              <option value="15">15 fps</option>
+            </select>
+          </div>
+          <div class="field" style="min-width:170px">
+            <span class="label">分段（分钟，0=不分段）</span>
+            <input type="number" id="rec-seg" min="0" value="0">
+          </div>
+        </div>
+        <div class="row">
+          <button class="primary" id="rec-start" onclick="startRecord()">开始录制</button>
+          <button class="danger" id="rec-stop" onclick="stopRecord()" disabled>停止录制</button>
+        </div>
+        <p class="hint" style="margin:10px 0 0">
+          默认「原画直通」= 原样保存，CPU 几乎不占用；指定帧率会边录边转码，
+          CPU 占用明显升高，配置较低的电脑建议保持原画。
+        </p>
+      </div>
+
+      <div class="card status-card">
+        <div class="dot" id="rec-dot"></div>
+        <div>
+          <div class="status-title" id="rec-status">空闲中</div>
+          <div class="status-sub" id="rec-detail">填入直播间链接后点击「开始录制」，随时可点「停止录制」结束</div>
+        </div>
+      </div>
+
+      <div class="card log-card">
+        <div class="log-head"><span>录制日志</span><span id="rec-count"></span></div>
+        <div class="log" id="rec-log"></div>
+      </div>
+    </section>
+
+    <!-- 值守 -->
+    <section class="panel" id="panel-watch">
+      <div class="card feature">
+        <div class="card-head">
+          <div class="head-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">直播间列表</div>
+            <div class="card-sub">一行一个，开播自动录、下播自动停</div>
+          </div>
+        </div>
+        <span class="label">一行一个；# 开头的行忽略</span>
+        <textarea id="watch-rooms" placeholder="https://live.douyin.com/123456789&#10;https://live.bilibili.com/6&#10;# 这行会被忽略"></textarea>
+        <div class="row">
+          <div class="field" style="min-width:160px">
+            <span class="label">轮询间隔（秒）</span>
+            <input type="number" id="watch-interval" min="10" value="60">
+          </div>
+          <div class="field" style="min-width:180px">
+            <span class="label">录制帧率</span>
+            <select id="watch-fps">
+              <option value="0">原画直通（不转码）</option>
+              <option value="60">60 fps</option>
+              <option value="50">50 fps</option>
+              <option value="30">30 fps</option>
+              <option value="25">25 fps</option>
+              <option value="24">24 fps</option>
+              <option value="15">15 fps</option>
+            </select>
+          </div>
+          <button class="primary" id="watch-start" onclick="startWatch()">开始值守</button>
+          <button class="danger" id="watch-stop" onclick="stopWatch()" disabled>停止值守</button>
+        </div>
+        <div class="row">
+          <span class="hint" id="watch-tip">开播自动录、下播自动停；断流会指数退避重连。</span>
+        </div>
+      </div>
+      <div class="card log-card">
+        <div class="log-head"><span>值守日志</span><span id="watch-count"></span></div>
+        <div class="log" id="watch-log"></div>
+      </div>
+    </section>
   </div>
-
-  <div class="tabs">
-    <button class="tab active" data-tab="download">下载视频</button>
-    <button class="tab" data-tab="record">录制直播</button>
-    <button class="tab" data-tab="watch">无人值守</button>
-  </div>
-
-  <!-- 下载 -->
-  <section class="panel active" id="panel-download">
-    <div class="card">
-      <span class="label">链接（支持整段分享文案，可一次粘多条）</span>
-      <textarea id="dl-text" placeholder="https://v.douyin.com/xxxxxxx/&#10;也可以直接粘贴整段分享文案，例如：&#10;8.74 07/09 复制打开抖音，看看【某某】的作品 https://v.douyin.com/xxx/"></textarea>
-      <div class="row">
-        <div class="field">
-          <span class="label">画质</span>
-          <select id="dl-quality">
-            <option value="best">最佳画质</option>
-            <option value="1080">1080P</option>
-            <option value="720">720P</option>
-            <option value="480">480P</option>
-            <option value="audio">仅音频</option>
-            <option value="mp3">仅音频（MP3）</option>
-          </select>
-        </div>
-        <div class="field">
-          <span class="label">帧率</span>
-          <select id="dl-fps">
-            <option value="0">原帧率（不转码）</option>
-            <option value="60">60 fps</option>
-            <option value="50">50 fps</option>
-            <option value="30">30 fps</option>
-            <option value="25">25 fps</option>
-            <option value="24">24 fps</option>
-            <option value="15">15 fps</option>
-          </select>
-        </div>
-        <div class="field grow">
-          <span class="label">保存到</span>
-          <input type="text" id="dl-outdir">
-        </div>
-        <button class="ghost" id="dl-pick" onclick="chooseFolder('dl-outdir', this)">选择目录</button>
-      </div>
-      <div class="row">
-        <button class="primary" id="dl-btn" onclick="startDownload()">开始下载</button>
-        <label class="check">
-          <input type="checkbox" id="dl-keep"> 保留原片
-        </label>
-        <span class="hint" id="dl-hint"></span>
-      </div>
-      <p class="hint" style="margin:10px 0 0">
-        帧率选「原帧率」= 原始画质直存，最快；选具体数值会在下载完成后重新编码，
-        速度取决于电脑性能，文件名不变。
-      </p>
-    </div>
-    <div class="card log-card">
-      <div class="log-head"><span>运行日志</span><span id="dl-count"></span></div>
-      <div class="log" id="dl-log"></div>
-    </div>
-  </section>
-
-  <!-- 录制 -->
-  <section class="panel" id="panel-record">
-    <div class="card">
-      <div class="row" style="margin-top:0">
-        <div class="field grow">
-          <span class="label">直播间链接</span>
-          <input type="text" id="rec-url"
-                 placeholder="https://live.douyin.com/123456789　或　https://live.bilibili.com/6">
-        </div>
-      </div>
-      <div class="row">
-        <div class="field grow">
-          <span class="label">保存到（自动建「直播录制」子目录）</span>
-          <input type="text" id="rec-outdir">
-        </div>
-        <button class="ghost" id="rec-pick" onclick="chooseFolder('rec-outdir', this)">选择目录</button>
-      </div>
-      <div class="row">
-        <div class="field" style="min-width:170px">
-          <span class="label">帧率</span>
-          <select id="rec-fps">
-            <option value="0">原画直通（不转码）</option>
-            <option value="60">60 fps</option>
-            <option value="50">50 fps</option>
-            <option value="30">30 fps</option>
-            <option value="25">25 fps</option>
-            <option value="24">24 fps</option>
-            <option value="15">15 fps</option>
-          </select>
-        </div>
-        <div class="field" style="min-width:170px">
-          <span class="label">分段（分钟，0=不分段）</span>
-          <input type="number" id="rec-seg" min="0" value="0">
-        </div>
-      </div>
-      <div class="row">
-        <button class="primary" id="rec-start" onclick="startRecord()">开始录制</button>
-        <button class="danger" id="rec-stop" onclick="stopRecord()" disabled>停止录制</button>
-      </div>
-      <p class="hint" style="margin:10px 0 0">
-        默认「原画直通」= 原样保存，CPU 几乎不占用；指定帧率会边录边转码，
-        CPU 占用明显升高，配置较低的电脑建议保持原画。
-      </p>
-    </div>
-
-    <div class="card status-card">
-      <div class="dot" id="rec-dot"></div>
-      <div>
-        <div class="status-title" id="rec-status">空闲中</div>
-        <div class="status-sub" id="rec-detail">填入直播间链接后点击「开始录制」，随时可点「停止录制」结束</div>
-      </div>
-    </div>
-
-    <div class="card log-card">
-      <div class="log-head"><span>录制日志</span><span id="rec-count"></span></div>
-      <div class="log" id="rec-log"></div>
-    </div>
-  </section>
-
-  <!-- 值守 -->
-  <section class="panel" id="panel-watch">
-    <div class="card">
-      <span class="label">直播间列表（一行一个；# 开头的行忽略）</span>
-      <textarea id="watch-rooms" placeholder="https://live.douyin.com/123456789&#10;https://live.bilibili.com/6&#10;# 这行会被忽略"></textarea>
-      <div class="row">
-        <div class="field" style="min-width:160px">
-          <span class="label">轮询间隔（秒）</span>
-          <input type="number" id="watch-interval" min="10" value="60">
-        </div>
-        <div class="field" style="min-width:180px">
-          <span class="label">录制帧率</span>
-          <select id="watch-fps">
-            <option value="0">原画直通（不转码）</option>
-            <option value="60">60 fps</option>
-            <option value="50">50 fps</option>
-            <option value="30">30 fps</option>
-            <option value="25">25 fps</option>
-            <option value="24">24 fps</option>
-            <option value="15">15 fps</option>
-          </select>
-        </div>
-        <button class="primary" id="watch-start" onclick="startWatch()">开始值守</button>
-        <button class="danger" id="watch-stop" onclick="stopWatch()" disabled>停止值守</button>
-      </div>
-      <div class="row">
-        <span class="hint" id="watch-tip">开播自动录、下播自动停；断流会指数退避重连。</span>
-      </div>
-    </div>
-    <div class="card log-card">
-      <div class="log-head"><span>值守日志</span><span id="watch-count"></span></div>
-      <div class="log" id="watch-log"></div>
-    </div>
-  </section>
-
-  <footer>
-    <span id="conn" class="badge">连接中…</span>
-    <span id="ffmpeg-badge" class="badge">ffmpeg</span>
-    <span id="version"></span>
-    <span class="spacer"></span>
-    <button class="ghost" onclick="quitApp()">退出程序</button>
-  </footer>
-</div>
+</main>
 
 <div class="overlay" id="overlay">
   <div class="box">
@@ -365,11 +494,18 @@ const counts = { download: 0, record: 0, watch: 0 };
 const MAX_LINES = 600;
 /* 页签名 → DOM id 前缀（下载用 dl，录制用 rec） */
 const ID_PREFIX = { download: 'dl', record: 'rec', watch: 'watch' };
+const PAGE_META = {
+  download: ['下载视频', '粘贴分享链接，一键保存无水印视频'],
+  record:   ['录制直播', '填入直播间地址，开播即录、随时停止'],
+  watch:    ['无人值守', '批量盯直播间，开播自动录、下播自动停']
+};
 
 /* ---------------- 页签切换 ---------------- */
 function activateTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
   document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
+  const meta = PAGE_META[name];
+  if (meta) { $('page-title').textContent = meta[0]; $('page-sub').textContent = meta[1]; }
   if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name);
 }
 document.querySelectorAll('.tab').forEach(tab => {
@@ -448,10 +584,10 @@ function render() {
   const ff = $('ffmpeg-badge');
   ff.textContent = snapshot.ffmpeg ? 'ffmpeg 就绪' : '缺少 ffmpeg';
   ff.className = 'badge ' + (snapshot.ffmpeg ? 'ok' : 'bad');
-  $('version').textContent = 'v' + snapshot.version;
+  $('version').textContent = '版本 ' + snapshot.version;
   $('watch-tip').textContent = '开播自动录、下播自动停；断流会指数退避重连。'
     + (snapshot.desktop ? '关闭窗口即停止值守。'
-                        : '关闭浏览器页面程序会继续运行，需点下方「退出程序」。');
+                        : '关闭浏览器页面程序会继续运行，需点左下方「退出程序」。');
 }
 
 /* ---------------- 轮询 ---------------- */
