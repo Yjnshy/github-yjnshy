@@ -576,6 +576,14 @@ class AppContext:
             self.server.shutdown()
         except Exception:  # noqa: BLE001 服务可能已关闭
             pass
+        finally:
+            # shutdown() 只让 serve_forever 退出，监听 socket 还开着。Windows 上
+            # SO_REUSEADDR 允许第二个服务绑同一端口，残留 socket 会把新连接接走
+            # 却没人 accept，表现为随机请求超时（反复起停服务的测试里尤其明显）。
+            try:
+                self.server.server_close()
+            except Exception:  # noqa: BLE001 关闭失败也不影响退出
+                pass
 
 
 def _stop_tasks(state: AppState) -> None:
