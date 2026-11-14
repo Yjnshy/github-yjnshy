@@ -459,14 +459,14 @@
           <button class="primary" id="rec-start" onclick="startRecord()">开始录制</button>
           <button class="danger" id="rec-stop" onclick="stopRecord()" disabled>停止录制</button>
           <label class="check">
-            <input type="checkbox" id="rec-auto-next" checked> 到点后自动续录下一段
+            <input type="checkbox" id="rec-auto-next"> 到点后自动续录下一段
           </label>
         </div>
         <p class="hint" style="margin:10px 0 0">
           默认「原画直通」= 原样保存，CPU 几乎不占用；指定帧率会边录边转码，
           CPU 占用明显升高，配置较低的电脑建议保持原画。<br>
           录制时长可选秒 / 分钟 / 小时，录满自动停止并保存；填 0 表示不限时，需手动点「停止录制」。
-          勾选自动续录后，到点会重新检查直播间，仍在开播就接着录下一段（文件名带 _part02）。<br>
+          <b>默认不勾「自动续录」= 只录这一段就结束</b>；勾选后到点会重新检查直播间，仍在开播就接着录下一段（文件名带 _part02）。<br>
           抖音直播以匿名方式获取流地址，不会挤掉浏览器 / 手机上的登录（避免提示「账号在别处登录」）。
         </p>
       </div>
@@ -630,10 +630,23 @@ function render() {
   const watch = snapshot.watch || {};
 
   $('rec-status').textContent = rec.status || '空闲中';
+  // elapsed 是后端的墙钟计时，连续不跳变；老版本接口没有该字段时回退 seconds
+  const secs = (typeof rec.elapsed === 'number') ? rec.elapsed : (rec.seconds || 0);
+  const sizeMb = ((rec.size || 0) / 1048576).toFixed(1);
   if (rec.active) {
-    $('rec-detail').textContent = `已录 ${fmtDur(rec.seconds)}　${((rec.size || 0) / 1048576).toFixed(1)} MB`;
+    const part = rec.part > 1 ? `第 ${rec.part} 段 · ` : '';
+    const goal = rec.duration > 0 ? ` / ${fmtDur(rec.duration)}` : '';
+    const auto = rec.auto_next ? ' · 到点续录' : '';
+    $('rec-detail').textContent = `${part}已录 ${fmtDur(secs)}${goal}　${sizeMb} MB${auto}`;
   } else if (rec.status === '录制失败' || rec.status === '录制异常') {
     $('rec-detail').textContent = '详情见下方日志';
+  } else if (rec.status === '已完成') {
+    $('rec-detail').textContent = `已自动停止并保存 · 共录 ${fmtDur(secs)}`
+      + (rec.part > 1 ? `（共 ${rec.part} 段）` : '');
+  } else if (rec.status === '已停止') {
+    $('rec-detail').textContent = `已停止并保存 · 共录 ${fmtDur(secs)}`;
+  } else if (!rec.status || rec.status === '空闲中') {
+    $('rec-detail').textContent = '填入直播间链接后点击「开始录制」，随时可点「停止录制」结束';
   }
   const dot = $('rec-dot');
   dot.className = 'dot ' + (rec.level && rec.level !== 'idle' ? rec.level : '');
@@ -675,7 +688,7 @@ async function poll() {
     $('conn').className = 'badge bad';
     $('overlay').classList.add('show');
   }
-  setTimeout(poll, 900);
+  setTimeout(poll, 300);   // 计时按墙钟显示，轮询快一点才不会一次跳 1~2 秒
 }
 
 function applyDefaults() {
@@ -690,6 +703,8 @@ function applyDefaults() {
   // 配置里的 segment_minutes 本是值守用的切分间隔，这里只借来当录制页的初始时长
   $('rec-seg').value = snapshot.segment_minutes || 0;
   $('rec-seg-unit').value = 'min';   // 配置文件里按分钟存，界面默认也用分钟
+  // 浏览器/WebView2 刷新时会恢复上次的勾选，显式复位，保证「默认只录一段」
+  $('rec-auto-next').checked = false;
   $('watch-interval').value = snapshot.poll_interval || 60;
   $('browser').value = snapshot.browser || 'chrome';
   if ((snapshot.rooms || []).length) {

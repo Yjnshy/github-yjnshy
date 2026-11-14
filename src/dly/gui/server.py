@@ -87,8 +87,13 @@ class AppState:
             "active": False,
             "status": "空闲中",
             "level": "idle",
-            "seconds": 0.0,
+            "seconds": 0.0,       # ffmpeg 上报的内容时长（可能跳变）
             "size": 0,
+            "part": 0,            # 当前第几段
+            "duration": 0.0,      # 本次设定的录制时长（秒，0 = 不限时）
+            "auto_next": False,   # 到点后是否自动续录
+            "started_at": None,   # 当前段开始时刻（time.monotonic）
+            "ended_at": None,     # 当前段结束时刻
         }
         self.recorder = None
         self.monitor = None
@@ -120,6 +125,25 @@ class AppState:
     def set_record(self, **kwargs: Any) -> None:
         with self._lock:
             self.record.update(kwargs)
+
+    def record_snapshot(self) -> Dict[str, Any]:
+        """给前端的录制状态：额外算出按墙钟平滑推进的 ``elapsed``。
+
+        ffmpeg 的 ``out_time_us`` 跟着直播流时间戳走，遇到缓冲、重连或
+        时间戳不连续会一次跳 1~2 秒；界面显示改用墙钟，每 0.3 秒轮询
+        就能稳定地一秒一秒走，也和「录满 N 秒自动停」的口径一致。
+        ``seconds`` 仍保留 ffmpeg 上报的内容时长，供日志与其它调用方使用。
+        """
+        with self._lock:
+            rec = dict(self.record)
+        start = rec.pop("started_at", None)
+        ended = rec.pop("ended_at", None)
+        if start is not None:
+            stop = ended if ended is not None else time.monotonic()
+            rec["elapsed"] = max(0.0, stop - start)
+        else:
+            rec["elapsed"] = rec.get("seconds", 0.0)
+        return rec
 
     # ---- 退出 ----
 
@@ -235,7 +259,8 @@ def _run_record(state: AppState, url: str, outroot: str,
     from dly.recorder.recorder import LiveRecorder, RecordingError
 
     state.set_record(active=True, status="正在获取直播流…", level="idle",
-                     seconds=0.0, size=0)
+                     seconds=0.0, size=0, part=0, duration=segment,
+                     auto_next=auto_next, started_at=None, ended_at=None)
     try:
         config = load_config()
         adapter = find_adapter(url, CookieManager(config.cookies),
@@ -285,11 +310,17 @@ def _run_record(state: AppState, url: str, outroot: str,
         failures = 0
         while not state.record_stop.is_set():
             part += 1
+            # 每段单独计时：探测直播间的时间不算进「已录时长」，
+            # 续录开新文件时显示也能从第 0 秒重新开始。
+            state.set_record(part=part, seconds=0.0, size=0,
+                             started_at=time.monotonic(), ended_at=None)
             try:
                 path = recorder.record_once(live, part=part if part > 1 else 0)
+                state.set_record(ended_at=time.monotonic())
                 state.log("record", f"已保存：{path}", "ok")
                 failures = 0
             except RecordingError as exc:
+                state.set_record(ended_at=time.monotonic())
                 failures += 1
                 state.log("record", f"录制失败：{exc}", "error")
                 if exc.detail:
@@ -302,7 +333,7 @@ def _run_record(state: AppState, url: str, outroot: str,
                 state.set_record(status="已停止", level="idle")
                 break
             if not auto_next:
-                state.log("record", "已录完这一段，自动续录关闭，结束录制")
+                state.log("record", "已录完这一段，自动停止（未开启自动续录）")
                 state.set_record(status="已完成", level="idle")
                 break
 
@@ -337,7 +368,7 @@ def _run_record(state: AppState, url: str, outroot: str,
     finally:
         state.recorder = None
         state.record_stop.clear()
-        state.set_record(active=False)
+        state.set_record(active=False, ended_at=time.monotonic())
 
 
 def _run_watch(state: AppState, rooms: List[str], interval: int,
@@ -441,7 +472,7 @@ class Handler(BaseHTTPRequestHandler):
             "ffmpeg": bool(find_ffmpeg(config.ffmpeg_path)),
             "desktop": bool(getattr(self.state, "desktop", False)),
             "download": self.state.download,
-            "record": self.state.record,
+            "record": self.state.record_snapshot(),
             "watch": self.state.watch,
         }
 
