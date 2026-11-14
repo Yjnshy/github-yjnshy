@@ -31,3 +31,8 @@ downloads/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# ---- 图标设计候选（本地草稿，不入库） ----
+packaging/icon_candidates/
+packaging/make_icon_candidates.py
+packaging/make_icon_y_variants.py
