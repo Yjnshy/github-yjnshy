@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import hashlib
 import os
+import shutil
 import sys
 from ctypes import wintypes
 from pathlib import Path
@@ -97,19 +99,37 @@ def find_exe(app_dir: Path | None = None) -> Path:
         "或用 --app-dir 指定程序所在目录。")
 
 
+def versioned_icon(exe: Path) -> Path:
+    """按图标内容生成带哈希的独立 .ico，绕开 Windows 图标缓存。
+
+    资源管理器按「图标路径」缓存图标：exe 重打包或换了图标，只要快捷方式
+    仍指向 ``DLY.ico`` 这个老路径，就会翻出缓存里的旧图。把内容哈希写进
+    文件名后，图标内容一变路径就变，必然重新读取；内容不变则复用同一文件，
+    不会每次运行都堆一个新 .ico。
+    """
+    src = Path(exe).parent / "DLY.ico"
+    if not src.is_file():
+        return Path(exe)          # 没有独立图标时退回 exe 内嵌图标
+    try:
+        digest = hashlib.sha256(src.read_bytes()).hexdigest()[:8]
+        dst = src.parent / f"DLY_{digest}.ico"
+        if not dst.is_file():
+            shutil.copyfile(src, dst)
+        return dst
+    except OSError:
+        return src                # 目录只读等情况下仍可用，只是缓存不刷新
+
+
 def icon_source(exe: Path, override: str = "") -> Path:
     """快捷方式图标来源。
 
-    优先用与 exe 同目录的独立 ``DLY.ico``：一是图标文件路径一变，资源管理器
-    必然重新读取，不会沿用旧的图标缓存；二是 exe 被重新打包后图标能立刻刷新。
-
-    ``override`` 给「只换图标、还没重新打包 exe」时用：换成一个新文件名，
-    路径一变就能跳过旧图标缓存，不用重启资源管理器。
+    默认用与 exe 同目录、按内容哈希命名的独立 .ico（见 ``versioned_icon``）。
+    ``override`` 给「只换图标、还没重新打包 exe」时用，直接指定新路径即可
+    跳过旧图标缓存，不用重启资源管理器。
     """
     if override:
         return Path(override).resolve()
-    ico = Path(exe).parent / "DLY.ico"
-    return ico if ico.is_file() else Path(exe)
+    return versioned_icon(exe)
 
 
 def create_shortcut(exe: Path, name: str = "帅羊羊DLY",

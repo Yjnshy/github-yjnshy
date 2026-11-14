@@ -32,7 +32,15 @@ echo [2/3] 生成图标…
 python packaging\make_icon.py
 
 echo [3/3] 开始打包（约 2-5 分钟，请勿关闭窗口）…
-python -m PyInstaller packaging\dly.spec --noconfirm --clean
+rem COLLECT 要清空 dist\DLY，目录里文件多时容易被安全策略拦截；先挪走旧包。
+rem PyInstaller 必须每次用全新 workpath，否则会复用缓存跳过 EXE 重建，
+rem 图标、界面资源改了也不生效。
+if exist "dist\DLY" (
+    echo     移走上一版 dist\DLY …
+    move "dist\DLY" "dist\DLY_before_pack_%RANDOM%%RANDOM%" >nul 2>nul
+)
+set "DLY_WORKPATH=build_pack_%RANDOM%%RANDOM%"
+python -m PyInstaller packaging\dly.spec --noconfirm --clean --workpath "%DLY_WORKPATH%" --distpath dist
 if errorlevel 1 (
     echo.
     echo [错误] 打包失败，请查看上面的日志。
