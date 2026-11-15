@@ -15,7 +15,7 @@
   var MOVE_MS = 430;         // 换入口：位置 / 宽度一起走 expo.out
   var HIDE_MS = 150;
   var LEAVE_DELAY = 75;      // 经过按钮间隙时不闪烁
-  var TIP_GAP = 10;          // 胶囊与图标列的间距
+  var TIP_GAP = 8;           // 胶囊与图标列的间距
 
   function easePower2Out(t) { return 1 - (1 - t) * (1 - t); }
   function easeExpoOut(t) { return t >= 1 ? 1 : 1 - Math.pow(2, -10 * t); }
@@ -187,7 +187,9 @@
       compact = sr.width < 180;
       // 宽栏：胶囊留在侧栏内，紧贴靠左的图标列；窄栏：退回浮在主区左缘
       var leftX = compact ? (sr.right + TIP_GAP) : (br.right + TIP_GAP);
-      var minWidth = compact ? 0 : Math.max(96, sr.width - leftX - 16);
+      // 胶囊贴住文字本身的宽度（下限 88px 保证四条标签观感一致），
+      // 不再撑满侧栏余量——文字少时右侧不再留一大段空白。
+      var minWidth = compact ? 0 : 88;
       tip.style.left = Math.round(leftX) + 'px';
       tip.dataset.placement = compact ? 'floating' : 'inside';
       buttons.forEach(function (b, i) {

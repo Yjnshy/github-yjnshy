@@ -332,11 +332,12 @@ def test_fluid_tip_is_inside_sidebar_and_stays_on_click(app):
     _, html = _get(ctx.url, "/")
     assert "width: 210px; flex: none;" in html          # 收窄后仍留得下并排的胶囊
     assert "align-items: flex-start; gap: 14px;" in html  # 图标列靠左
-    assert "height: 40px; width: 0; border-radius: 20px;" in html  # 胶囊同步缩小
+    assert "height: 34px; width: 0; border-radius: 17px;" in html  # 胶囊同步缩小
     _, js = _get(ctx.url, "/fluid-nav.js")
     assert "dataset.placement" in js
     assert "if (!t.closest('.tab') && !t.closest('.side-theme')) hide();" in js
-    assert "Math.max(measured, minWidth)" in js      # 胶囊填满侧栏余量
+    assert "Math.max(measured, minWidth)" in js      # 胶囊贴住文字宽度，不再撑满余量
+    assert "var minWidth = compact ? 0 : 88;" in js
     assert "show(active >= 0 ? active : 0)" in js       # 移开后回到当前页
 
 

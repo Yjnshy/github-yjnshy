@@ -127,7 +127,7 @@
     width: 210px; flex: none;
     background: var(--side); border-right: 1px solid var(--border);
     display: flex; flex-direction: column;
-    padding: 16px 8px 12px;
+    padding: 16px 8px 12px 5px;
   }
   .brand { display: flex; align-items: center; gap: 10px; padding: 0 4px 18px; }
   .logo { width: 32px; height: 32px; flex: none; display: block; }
@@ -142,9 +142,9 @@
      各入口高度的标签，切换过程中能看到上下两行同时被裁切。 */
   .nav { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
   .tab {
-    width: 46px; height: 46px; flex: none;
+    width: 40px; height: 46px; flex: none;
     display: flex; align-items: center; justify-content: center;
-    padding: 0; border: 0; border-radius: 15px;
+    padding: 0; border: 0; border-radius: 14px;
     background: transparent; color: var(--nav-idle); font: inherit;
     cursor: pointer; transition: background-color .13s ease, color .13s ease;
   }
@@ -155,7 +155,7 @@
 
   .fluid-tip {
     position: fixed; top: 0; left: 0; z-index: 120;
-    height: 40px; width: 0; border-radius: 20px; overflow: hidden;
+    height: 34px; width: 0; border-radius: 17px; overflow: hidden;
     background: var(--tip-bg); color: var(--tip-ink);
     box-shadow: 0 5px 16px var(--tip-shadow);
     opacity: 0; pointer-events: none;
@@ -163,10 +163,10 @@
   }
   .fluid-tip-track { position: absolute; top: 0; left: 0; width: 0; height: 0; }
   .fluid-tip-row {
-    position: absolute; left: 0; height: 40px; width: max-content;
+    position: absolute; left: 0; height: 34px; width: max-content;
     display: flex; align-items: center; justify-content: center;
-    padding: 0 16px; white-space: nowrap;
-    font-size: 15px; font-weight: 600; letter-spacing: -.2px;
+    padding: 0 12px; white-space: nowrap;
+    font-size: 13.5px; font-weight: 600; letter-spacing: -.2px;
   }
   .fluid-tip-row > * { flex: none; }
   .side-spacer { flex: 1; }
@@ -350,10 +350,10 @@
   /* 窗口不高时把入口和胶囊一起缩小，避免侧栏底部元素被挤出视口 */
   @media (max-height: 720px) {
     .nav { gap: 6px; }
-    .tab { width: 44px; height: 44px; border-radius: 14px; }
+    .tab { width: 40px; height: 44px; border-radius: 14px; }
     .tab svg { width: 19px; height: 19px; }
-    .fluid-tip, .fluid-tip-row { height: 36px; }
-    .fluid-tip { border-radius: 18px; }
+    .fluid-tip, .fluid-tip-row { height: 32px; }
+    .fluid-tip { border-radius: 16px; }
     .fluid-tip-row { font-size: 13px; }
   }
 
@@ -365,8 +365,8 @@
     .nav { gap: 6px; }
     .tab { width: 42px; height: 42px; border-radius: 13px; }
     .tab svg { width: 20px; height: 20px; }
-    .fluid-tip, .fluid-tip-row { height: 36px; }
-    .fluid-tip { border-radius: 18px; }
+    .fluid-tip, .fluid-tip-row { height: 32px; }
+    .fluid-tip { border-radius: 16px; }
     .fluid-tip-row { font-size: 12.5px; padding: 0 10px; }
     .side-bottom { padding: 0; }
     .main { padding: 18px 16px 12px; }
