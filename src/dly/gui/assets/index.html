@@ -126,10 +126,10 @@
 
   /* ---------------- 左侧栏 ---------------- */
   .sidebar {
-    width: 280px; flex: none;
+    width: 240px; flex: none;
     background: var(--side); border-right: 1px solid var(--border);
     display: flex; flex-direction: column;
-    padding: 16px 10px 12px;
+    padding: 16px 8px 12px;
   }
   .brand { display: flex; align-items: center; gap: 10px; padding: 0 4px 18px; }
   .logo { width: 32px; height: 32px; flex: none; display: block; }
@@ -142,15 +142,15 @@
   /* ---------------- 流体提示气泡导航 ----------------
      按钮里不再放文字：一个共享胶囊沿纵向移动，用裁切窗口揭示固定在
      各入口高度的标签，切换过程中能看到上下两行同时被裁切。 */
-  .nav { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; }
+  .nav { display: flex; flex-direction: column; align-items: flex-start; gap: 9px; }
   .tab {
-    width: 52px; height: 52px; flex: none;
+    width: 46px; height: 46px; flex: none;
     display: flex; align-items: center; justify-content: center;
-    padding: 0; border: 0; border-radius: 17px;
+    padding: 0; border: 0; border-radius: 15px;
     background: transparent; color: var(--nav-idle); font: inherit;
     cursor: pointer; transition: background-color .13s ease, color .13s ease;
   }
-  .tab svg { width: 22px; height: 22px; flex: none; stroke: currentColor; stroke-width: 1.7; }
+  .tab svg { width: 20px; height: 20px; flex: none; stroke: currentColor; stroke-width: 1.7; }
   .tab:hover { background: var(--nav-hover-bg); }
   .tab.active { background: var(--nav-active-bg); color: var(--nav-active-ink); }
   .tab:focus-visible { outline: 3px solid #E9EDF7; outline-offset: 4px; }
@@ -179,7 +179,7 @@
   .side-status { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
   .side-meta { font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
   /* 侧栏收窄后，底部像素主题开关也跟着缩小 */
-  .side-theme .pixel-toggle.mini { width: 56px; border-radius: 14px; }
+  .side-theme .pixel-toggle.mini { width: 50px; border-radius: 13px; }
 
   /* ---------------- 右侧主区 ---------------- */
   .main {

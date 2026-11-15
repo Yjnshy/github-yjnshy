@@ -184,7 +184,7 @@
         ? sidebar.getBoundingClientRect() : { right: 0, width: 0 };
       var br = buttons[0].getBoundingClientRect();
       var wasCompact = compact;
-      compact = sr.width < 240;
+      compact = sr.width < 210;
       // 宽栏：胶囊留在侧栏内，紧贴靠左的图标列；窄栏：退回浮在主区左缘
       var leftX = compact ? (sr.right + TIP_GAP) : (br.right + TIP_GAP);
       tip.style.left = Math.round(leftX) + 'px';
