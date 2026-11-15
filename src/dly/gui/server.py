@@ -509,11 +509,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, png, "image/png")
             return
 
-        if path == "/pixel-toggle.js":
-            # 主题开关的独立脚本；assets 目录整体随包分发，这里按白名单开放
+        if path in ("/pixel-toggle.js", "/fluid-nav.js"):
+            # 主题开关 / 流体导航的独立脚本；assets 整体随包分发，按白名单开放
             try:
-                script = files("dly.gui").joinpath(
-                    "assets/pixel-toggle.js").read_bytes()
+                script = files("dly.gui").joinpath("assets" + path).read_bytes()
             except (FileNotFoundError, OSError) as exc:
                 self._send(404, f"界面资源缺失: {exc}".encode("utf-8"),
                            "text/plain; charset=utf-8")

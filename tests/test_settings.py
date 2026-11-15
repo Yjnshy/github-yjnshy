@@ -302,6 +302,30 @@ def test_sidebar_theme_toggle_replaces_quit_button(app):
     assert '关闭浏览器页面服务仍在运行' in html
 
 
+def test_fluid_nav_script_is_served(app):
+    """流体导航脚本必须能从 HTTP 静态白名单取到。"""
+    ctx, _ = app
+    status, body = _get(ctx.url, "/fluid-nav.js")
+    assert status == 200
+    assert "mountFluidNav" in body
+    assert "translateY" in body
+
+
+def test_fluid_nav_dom_has_one_shared_capsule(app):
+    """四个入口共用一枚胶囊，按钮文字改由 aria-label 提供。"""
+    ctx, _ = app
+    _, html = _get(ctx.url, "/")
+    assert html.count('class="fluid-tip"') == 1
+    assert 'id="fluid-tip-track"' in html
+    assert html.count('class="fluid-tip-row"') == 4
+    assert 'src="fluid-nav.js"' in html
+    assert '<span>下载视频</span>' not in html
+    for name in ("下载视频", "录制直播", "无人值守", "设置"):
+        assert 'aria-label="%s"' % name in html
+    for key in ("Ctrl+1", "Ctrl+2", "Ctrl+3", "Ctrl+4"):
+        assert 'data-key="%s"' % key in html
+
+
 def test_settings_cards_are_single_column(app):
     """设置页卡片由两列并排改为单列。"""
     ctx, _ = app
