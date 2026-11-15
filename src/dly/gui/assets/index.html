@@ -353,6 +353,23 @@
     margin: 16px 0 8px;
   }
   .set-footer .spacer { flex: 1; }
+  /* 设置页很长，保存按钮原先只在最底部：改成顶部常驻一条，避免改完找不到 */
+  .set-bar {
+    position: sticky; top: 0; z-index: 6;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 12px; margin: 0 0 14px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; box-shadow: 0 6px 18px var(--box-shadow);
+  }
+  .set-bar .spacer { flex: 1; }
+  .set-state { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+  .set-state.dirty { color: var(--warn); }
+  .set-state.saved { color: var(--ok); }
+  .set-path {
+    font-size: 11.5px; color: var(--muted);
+    max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .set-bar button.primary.pulse { box-shadow: 0 0 0 3px var(--focus-ring); }
   .toast {
     position: fixed; right: 24px; bottom: 22px; z-index: 200;
     max-width: 340px; padding: 11px 16px; border-radius: 10px;
@@ -744,6 +761,13 @@
 
     <!-- 设置 -->
     <section class="panel" id="panel-settings">
+      <div class="set-bar">
+        <span class="set-state saved" id="set-state">✓ 已保存</span>
+        <button class="primary" id="set-save-top" onclick="saveSettings()">保存设置</button>
+        <button class="ghost" onclick="resetSettings()">放弃修改</button>
+        <span class="spacer"></span>
+        <span class="set-path" id="set-path"></span>
+      </div>
       <div class="settings-grid">
 
         <div class="card wide theme-card">
@@ -779,6 +803,9 @@
             <div class="field grow"><input type="text" id="set-outdir"></div>
             <button class="ghost" onclick="chooseFolder('set-outdir', this)">选择目录</button>
             <button class="ghost" onclick="openOutputDir()">打开</button>
+          </div>
+          <div class="hint" style="margin:2px 0 6px">
+            改动会立即同步到下载页 / 录制页；<strong>必须点「保存设置」</strong>才会写入配置文件、重启后仍生效。
           </div>
           <div class="row">
             <div class="field">
@@ -929,7 +956,7 @@
       <div class="set-footer">
         <button class="primary" id="set-save" onclick="saveSettings()">保存设置</button>
         <button class="ghost" onclick="resetSettings()">放弃修改</button>
-        <span class="hint">写入 config.yaml，重启后仍生效；保存会整理文件格式，所有配置项的值都会保留。</span>
+        <span class="hint">保存后写入 config.yaml（路径见上方），重启仍生效；未保存的修改重启会丢失。所有手写配置项的值都会保留。</span>
         <span class="spacer"></span>
         <span class="hint" id="set-hint"></span>
       </div>
@@ -981,6 +1008,8 @@ const LEVEL_RANK = { info: 0, warn: 1, error: 2 };
 
 /* ---------------- 页签切换 ---------------- */
 function activateTab(name) {
+  const activeTab = document.querySelector('.tab.active');
+  const leavingSettings = activeTab && activeTab.dataset.tab === 'settings' && name !== 'settings';
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
   document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
   const meta = PAGE_META[name];
@@ -988,6 +1017,10 @@ function activateTab(name) {
   // 设置页已有 Cookie 管理卡片，页头那组在设置页里显得重复
   $('head-actions').style.display = name === 'settings' ? 'none' : '';
   if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name);
+  // 改完设置直接切走是最容易丢修改的操作，明确提醒一次
+  if (leavingSettings && settingsDirty) {
+    setTimeout(() => toast('设置页有未保存的修改，回去点「保存设置」才会保留', 'err'), 150);
+  }
 }
 document.querySelectorAll('.tab').forEach(tab => {
   tab.onclick = () => activateTab(tab.dataset.tab);
@@ -1335,7 +1368,12 @@ async function chooseFolder(fieldId, btn) {
       path: input.value.trim(),
       title: '选择保存目录'
     });
-    if (res && res.path) input.value = res.path;
+    if (res && res.path) {
+      input.value = res.path;
+      // 程序赋值不会触发 input 事件；手动派发一次，设置页的「未保存」标记
+      // 和下载页/录制页的即时联动才会跟着生效。
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
   } catch (e) {
     notify(e.message);
   } finally {
@@ -1505,6 +1543,65 @@ function fillRooms(list) {
   (list && list.length ? list : ['']).forEach(addRoomRow);
 }
 
+/* ---------------- 设置页：未保存状态与即时联动 ----------------
+   设置页原先只有页面最底部一个保存按钮，改完目录很容易误以为已生效：
+   既不联动业务页，也没有任何「尚未保存」的提示。这里补上状态标记、
+   目录即时同步、保存后回写状态，并显示实际生效的配置文件路径。
+   主题开关是自动保存的，不参与 dirty 标记。 */
+let settingsDirty = false;
+let syncedOutputDir = '';   // 最近一次同步到下载页/录制页的默认值
+const SETTINGS_FIELDS = ['set-outdir', 'set-quality', 'set-fps', 'set-keep',
+  'set-rec-format', 'set-seg-minutes', 'set-poll', 'set-rec-fps',
+  'set-browser', 'set-sound', 'set-log-level'];
+
+function setDirtyState(dirty) {
+  settingsDirty = !!dirty;
+  const badge = $('set-state');
+  if (badge) {
+    badge.textContent = settingsDirty ? '● 有未保存的修改（重启会丢失）' : '✓ 已保存';
+    badge.className = 'set-state ' + (settingsDirty ? 'dirty' : 'saved');
+  }
+  ['set-save', 'set-save-top'].forEach(id => {
+    const btn = $(id); if (btn) btn.classList.toggle('pulse', settingsDirty);
+  });
+}
+
+function showConfigPath(p) {
+  const el = $('set-path');
+  if (el && p) { el.textContent = '配置文件：' + p; el.title = p; }
+}
+
+/* 同步默认值时不能覆盖用户在下载/录制页临时选的目录：
+   只有目标输入框仍是上一次同步的默认值，才跟随设置页改动。 */
+function syncOutputDir(value) {
+  const v = value || '';
+  ['dl-outdir', 'rec-outdir'].forEach(id => {
+    const el = $(id);
+    if (el && el.value.trim() === syncedOutputDir) el.value = v;
+  });
+  syncedOutputDir = v;
+}
+
+function bindSettingsInputs() {
+  SETTINGS_FIELDS.forEach(id => {
+    const el = $(id); if (!el) return;
+    const evt = (el.tagName === 'SELECT' || el.type === 'checkbox') ? 'change' : 'input';
+    el.addEventListener(evt, () => setDirtyState(true));
+  });
+  // 「选择目录」按钮的程序回填也会派发 input，走同一条联动
+  $('set-outdir').addEventListener('input', () => syncOutputDir($('set-outdir').value.trim()));
+  // 房间行是动态生成的，用事件委托；增删按钮也计入未保存
+  $('set-rooms').addEventListener('input', () => setDirtyState(true));
+  $('panel-settings').addEventListener('click', e => {
+    const t = e.target;
+    if (t && t.tagName === 'BUTTON' &&
+        (t.textContent.includes('添加直播间') || t.textContent.includes('删除'))) {
+      setDirtyState(true);
+    }
+  });
+  setDirtyState(false);
+}
+
 function applyUiSettings(s) {
   uiSound = s.sound !== false;
   uiLogLevel = ['info', 'warn', 'error'].includes(s.log_level) ? s.log_level : 'info';
@@ -1526,6 +1623,7 @@ function fillSettingsForm(s) {
   $('set-browser').value = s.browser || 'chrome';
   fillRooms(s.rooms || []);
   applyUiSettings(s);
+  syncedOutputDir = s.output_dir || '';
 }
 
 function readSettingsForm() {
@@ -1546,10 +1644,16 @@ function readSettingsForm() {
   };
 }
 
-/* 保存后把「默认值」同步到各业务页面，但不动用户正在填的录制时长等临时值 */
-function syncDefaultsToPages(s) {
-  $('dl-outdir').value = s.output_dir || '';
-  $('rec-outdir').value = s.output_dir || '';
+/* 保存后把「默认值」同步到各业务页面，但不动用户正在填的录制时长等临时值。
+   force=true 用于保存 / 放弃修改：这时以配置为准，直接覆盖业务页的目录。 */
+function syncDefaultsToPages(s, force) {
+  if (force) {
+    $('dl-outdir').value = s.output_dir || '';
+    $('rec-outdir').value = s.output_dir || '';
+    syncedOutputDir = s.output_dir || '';
+  } else {
+    syncOutputDir(s.output_dir || '');
+  }
   $('dl-quality').value = s.quality || 'best';
   $('dl-keep').checked = !!s.keep_original;
   setFps('dl-fps', s.fps);
@@ -1561,28 +1665,40 @@ function syncDefaultsToPages(s) {
 }
 
 async function saveSettings() {
-  const btn = $('set-save');
+  const buttons = ['set-save', 'set-save-top'].map(id => $(id)).filter(Boolean);
   const hint = $('set-hint');
-  btn.disabled = true;
+  const form = readSettingsForm();
+  buttons.forEach(b => b.disabled = true);
   hint.textContent = '正在保存…';
   try {
-    const data = await api('/api/settings', readSettingsForm());
-    const s = data.settings || readSettingsForm();
-    snapshot.settings = s;
+    const data = await api('/api/settings', form);
+    const s = data.settings || form;
+    if (snapshot) {
+      snapshot.settings = s;
+      // applyDefaults 只在首屏跑一次，这里同步更新，避免后续逻辑还拿旧默认值
+      snapshot.default_output = s.output_dir || snapshot.default_output;
+    }
     fillSettingsForm(s);
-    syncDefaultsToPages(s);
-    hint.textContent = '已保存到 ' + (data.path || 'config.yaml');
-    toast('设置已保存，并同步到各页面默认值', 'ok');
+    syncDefaultsToPages(s, true);
+    setDirtyState(false);
+    showConfigPath(data.path);
+    hint.textContent = '已保存：默认目录 ' + (s.output_dir || '（默认）')
+      + ' → ' + (data.path || 'config.yaml');
+    toast('设置已保存，重启后仍生效', 'ok');
   } catch (e) {
+    setDirtyState(true);
     hint.textContent = '保存失败：' + e.message;
     toast('保存失败：' + e.message, 'err');
   } finally {
-    btn.disabled = false;
+    buttons.forEach(b => b.disabled = false);
   }
 }
 
 function resetSettings() {
-  fillSettingsForm((snapshot && snapshot.settings) || {});
+  const s = (snapshot && snapshot.settings) || {};
+  fillSettingsForm(s);
+  syncDefaultsToPages(s, true);
+  setDirtyState(false);
   $('set-hint').textContent = '已恢复为已保存的设置';
   toast('已放弃未保存的修改', 'ok');
 }
@@ -1638,6 +1754,9 @@ const initTab = location.hash.replace('#', '');
 if (TAB_NAMES.includes(initTab)) activateTab(initTab);
 fillRooms([]);
 mountThemeToggles();
+bindSettingsInputs();
+// 把实际生效的配置文件路径显示出来，避免用户不知道改的是哪一份
+fetch('/api/settings').then(r => r.json()).then(d => showConfigPath(d.path)).catch(() => {});
 poll();
 </script>
 </body>

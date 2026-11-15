@@ -170,10 +170,15 @@ def settings_from_config(cfg: AppConfig) -> Dict[str, Any]:
 
 
 def config_file_path() -> Path:
-    """返回设置应该写到哪个文件：优先正在生效的那个，否则选一个可写位置。"""
+    """返回设置应该写到哪个文件：优先正在生效的那个，否则选一个可写位置。
+
+    一律返回绝对路径。``./config.yaml`` 这种相对路径依赖进程工作目录，
+    换一种启动方式（双击 exe / 快捷方式 / 命令行）就可能指到不同文件，
+    界面上也没法告诉用户究竟改了哪一份。
+    """
     found = _find_config_file(None)
     if found:
-        return found
+        return found.resolve()
     user = Path.home() / ".dly" / "config.yaml"
     for candidate in (paths.app_dir() / "config.yaml", user):
         try:
@@ -181,10 +186,10 @@ def config_file_path() -> Path:
             probe = candidate.parent / ".dly_write_probe"
             probe.write_text("", encoding="utf-8")
             probe.unlink()
-            return candidate
+            return candidate.resolve()
         except OSError:
             continue
-    return user                     # 实在不可写时仍给出路径，由调用方报错
+    return user.resolve()            # 实在不可写时仍给出路径，由调用方报错
 
 
 def _choice(value: Any, choices: tuple, default: str) -> str:
@@ -211,7 +216,7 @@ def save_settings(data: Dict[str, Any], path: Optional[str] = None) -> Path:
     未提供的键保持原样。非法值按默认值规整而不是直接报错，避免界面上
     一个手滑的输入把整个配置文件写坏。
     """
-    target = Path(path) if path else config_file_path()
+    target = (Path(path) if path else config_file_path()).resolve()
     raw: Dict[str, Any] = {}
     if target.is_file():
         try:

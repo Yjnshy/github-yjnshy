@@ -224,3 +224,64 @@ def test_pixel_toggle_script_is_served(app):
     status, body = _get(ctx.url, "/pixel-toggle.js")
     assert status == 200
     assert "PixelToggle" in body
+
+
+# ------------------------------------------------------- 保存目录持久化回归
+# 用户反馈：设置页改了默认目录，下载页没跟着变，重启后又回到最初目录。
+# 这里覆盖「写入位置 == 读取位置」「完整表单经 HTTP 写入后重启可读回」
+# 「主题自动保存这种局部 POST 不会抹掉目录」三条链路。
+
+FULL_FORM = {
+    "output_dir": "D:/影片",
+    "quality": "best",
+    "fps": 0,
+    "keep_original": False,
+    "browser": "chrome",
+    "record_format": "ts",
+    "segment_minutes": 0,
+    "poll_interval": 60,
+    "record_fps": 0,
+    "rooms": [],
+    "theme": "dark",
+    "sound": True,
+    "log_level": "info",
+}
+
+
+def test_config_path_is_absolute_and_reload_keeps_output_dir(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cfgmod.paths, "app_dir", lambda: tmp_path)
+    target = cfgmod.config_file_path()
+    assert target.is_absolute()
+
+    written = cfgmod.save_settings(FULL_FORM)
+    assert written == target.resolve()
+    # 模拟重启：不带任何参数重新加载，走的是默认搜索顺序
+    assert load_config().output_dir == str(Path("D:/影片"))
+    assert settings_from_config(load_config())["output_dir"] == str(Path("D:/影片"))
+
+    # 主题开关的自动保存只提交 {theme}，不能把已保存的目录抹掉
+    cfgmod.save_settings({"theme": "light"})
+    assert load_config().output_dir == str(Path("D:/影片"))
+    assert "output_dir" in written.read_text(encoding="utf-8")
+
+
+def test_post_full_form_persists_output_dir(app):
+    ctx, path = app
+    status, data = _post(ctx.url, "/api/settings", FULL_FORM)
+    assert status == 200
+    assert data["ok"] is True
+    assert Path(data["path"]).is_absolute()
+    assert data["settings"]["output_dir"] == str(Path("D:/影片"))
+    # 文件内容与「重新打开文件读取」都要拿到新目录
+    assert "output_dir" in path.read_text(encoding="utf-8")
+    assert load_config(str(path)).output_dir == str(Path("D:/影片"))
+
+
+def test_index_has_settings_guard_and_live_sync(app):
+    """界面必须能提示未保存，且目录选择结果能触发联动事件。"""
+    ctx, _ = app
+    _, html = _get(ctx.url, "/")
+    for token in ('id="set-state"', 'id="set-save-top"', 'syncOutputDir',
+                  "dispatchEvent(new Event('input'", 'settingsDirty'):
+        assert token in html, f"缺少 {token}"
