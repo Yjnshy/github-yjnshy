@@ -15,7 +15,7 @@
   var MOVE_MS = 430;         // 换入口：位置 / 宽度一起走 expo.out
   var HIDE_MS = 150;
   var LEAVE_DELAY = 75;      // 经过按钮间隙时不闪烁
-  var TIP_GAP = 14;          // 胶囊距侧栏右缘
+  var TIP_GAP = 14;          // 胶囊与图标列的间距
 
   function easePower2Out(t) { return 1 - (1 - t) * (1 - t); }
   function easeExpoOut(t) { return t >= 1 ? 1 : 1 - Math.pow(2, -10 * t); }
@@ -49,6 +49,7 @@
     var state = { y: 0, width: 0, opacity: 0 };
     var centers = [], widths = [];
     var hint = -1, active = -1;
+    var compact = false, dismissed = false;
     var tween = null, raf = 0, hideTimer = 0, dead = false;
     var cleanups = [], ro = null;
 
@@ -73,18 +74,29 @@
     }
     function killTween() {
       if (raf) cancelAnimationFrame(raf);
+      if (tween && tween.guard) clearTimeout(tween.guard);
       raf = 0;
       tween = null;
     }
     function animateTo(target, duration, ease) {
       killTween();
       var from = { y: state.y, width: state.width, opacity: state.opacity };
-      var tw = { start: clock(), duration: duration, paused: false, pauseAt: 0 };
+      var tw = { start: clock(), duration: duration, target: target, guard: 0 };
       tween = tw;
-      function frame(now) {
+      // 兜底：窗口最小化 / 后台标签 / 无头环境里 RAF 可能整段停摆，
+      // 到点直接落位，避免标签换了但胶囊还停在上一项的高度。
+      tw.guard = setTimeout(function () {
         if (dead || tween !== tw) return;
-        if (tw.paused) { raf = requestAnimationFrame(frame); return; }
-        var p = Math.min(1, (now - tw.start) / duration);
+        if (raf) cancelAnimationFrame(raf);
+        raf = 0; tw.guard = 0; tween = null;
+        state.y = target.y; state.width = target.width; state.opacity = target.opacity;
+        paint();
+      }, duration + 40);
+      function frame() {
+        if (dead || tween !== tw) return;
+        // 统一用 clock()，别混用 RAF 帧时间戳：帧时间可能早于 start，
+        // 会让 p 变负、opacity 变负，补间还会一直悬着不结束。
+        var p = Math.max(0, Math.min(1, (clock() - tw.start) / duration));
         var k = ease(p);
         // 从「当前正在渲染的值」接续，快速连续跨项不会跳回旧目标
         state.y = from.y + (target.y - from.y) * k;
@@ -106,7 +118,10 @@
 
     function show(i, immediate) {
       if (dead || i < 0 || i >= n) return;
+      // 必须在 hint = i 之前判断：否则常驻状态下每次 show 都会被自己短路
+      if (hint === i && state.opacity > 0.99 && !tween) return;
       cancelHide();
+      dismissed = false;
       hint = i;
       tip.setAttribute('aria-hidden', 'false');
       tip.setAttribute('aria-label', labels[i]);
@@ -114,7 +129,6 @@
         if (j === i) b.setAttribute('aria-describedby', tip.id);
         else b.removeAttribute('aria-describedby');
       });
-
       var h = tip.offsetHeight || 64;
       var next = { y: centers[i] - h / 2, width: widths[i], opacity: 1 };
       if (immediate || reducedMotion()) {
@@ -136,6 +150,7 @@
 
     function hide(immediate) {
       cancelHide();
+      dismissed = true;
       hint = -1;
       tip.setAttribute('aria-hidden', 'true');
       buttons.forEach(function (b) { b.removeAttribute('aria-describedby'); });
@@ -154,23 +169,37 @@
       hideTimer = setTimeout(function () {
         hideTimer = 0;
         var focused = buttons.indexOf(document.activeElement);
-        if (focused >= 0) show(focused);   // 键盘焦点还在就别收
-        else hide();
+        if (focused >= 0) { show(focused); return; }   // 键盘焦点还在就保持
+        if (compact) { hide(); return; }               // 窄栏空间不够，退回悬停模式
+        if (dismissed) return;                        // Esc 显式收起后不自动弹回
+        if (hint === active && state.opacity > 0.99) return;  // 本来就在当前页，别重启补间
+        show(active >= 0 ? active : 0);               // 常驻：回到当前选中项
       }, LEAVE_DELAY);
     }
 
     function fit() {
       if (dead) return;
       var h = tip.offsetHeight || 64;
-      var right = sidebar.getBoundingClientRect ? sidebar.getBoundingClientRect().right : 0;
-      tip.style.left = Math.round(right + TIP_GAP) + 'px';
+      var sr = sidebar.getBoundingClientRect
+        ? sidebar.getBoundingClientRect() : { right: 0, width: 0 };
+      var br = buttons[0].getBoundingClientRect();
+      var wasCompact = compact;
+      compact = sr.width < 260;
+      // 宽栏：胶囊留在侧栏内，紧贴靠左的图标列；窄栏：退回浮在主区左缘
+      var leftX = compact ? (sr.right + TIP_GAP) : (br.right + TIP_GAP);
+      tip.style.left = Math.round(leftX) + 'px';
+      tip.dataset.placement = compact ? 'floating' : 'inside';
       buttons.forEach(function (b, i) {
         var r = b.getBoundingClientRect();
         centers[i] = r.top + r.height / 2;      // 视口坐标，胶囊是 fixed
         rows[i].style.top = (centers[i] - h / 2) + 'px';
         widths[i] = Math.ceil(rows[i].getBoundingClientRect().width);
       });
-      if (hint >= 0) {
+      if (compact !== wasCompact) {
+        // 窗口跨过 900px：窄栏改回「悬停才显示」，宽栏恢复常驻
+        if (compact) hide(true);
+        else show(active >= 0 ? active : 0, true);
+      } else if (hint >= 0) {
         // 尺寸变化 / 字体加载完成后按新的真实文字宽度重新落位
         killTween();
         state.y = centers[hint] - h / 2;
@@ -224,6 +253,8 @@
     });
 
     on(document, 'pointerdown', function (e) {
+      // 宽栏常驻：点输入框、按钮或主区任意位置都不收起提示
+      if (!compact) return;
       var t = e.target;
       if (!t || !t.closest) return;
       if (t.closest('.sidebar')) {
@@ -234,13 +265,12 @@
     });
 
     on(document, 'visibilitychange', function () {
-      if (!tween) return;
-      if (document.hidden) {
-        if (!tween.paused) { tween.paused = true; tween.pauseAt = clock(); }
-      } else if (tween.paused) {
-        tween.start += clock() - tween.pauseAt;
-        tween.paused = false;
-      }
+      if (!document.hidden || !tween) return;
+      // 后台 RAF 会停摆，直接落位到目标，避免补间永远悬在半路
+      var target = tween.target;
+      killTween();
+      state.y = target.y; state.width = target.width; state.opacity = target.opacity;
+      paint();
     });
 
     var mq = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
@@ -269,6 +299,8 @@
     setActiveIndex(initial < 0 ? 0 : initial);
     fit();
     paint();
+    // 宽栏一开始就把当前页的提示淡入，之后任何点击都不会让它消失
+    if (!compact) show(initial < 0 ? 0 : initial, true);
 
     function destroy() {
       if (dead) return;
@@ -285,7 +317,12 @@
     return {
       syncActive: function (name) {
         for (var i = 0; i < n; i++) {
-          if (buttons[i].dataset.tab === name) { setActiveIndex(i); return; }
+          if (buttons[i].dataset.tab === name) {
+            setActiveIndex(i);
+            if (compact) return;      // 窄栏不自动弹出，仍靠 hover / focus
+            show(i);                 // 切页时胶囊跟着滑到新页
+            return;
+          }
         }
       },
       show: show,
@@ -297,7 +334,9 @@
         return { y: state.y, width: state.width, opacity: state.opacity,
                  hint: hint, active: active, centers: centers.slice(),
                  widths: widths.slice(), height: tip.offsetHeight,
-                 left: parseFloat(tip.style.left) || 0 };
+                 left: parseFloat(tip.style.left) || 0,
+                 compact: compact, dismissed: dismissed,
+                 placement: tip.dataset.placement || '' };
       }
     };
   }

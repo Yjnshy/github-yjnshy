@@ -326,6 +326,18 @@ def test_fluid_nav_dom_has_one_shared_capsule(app):
         assert 'data-key="%s"' % key in html
 
 
+def test_fluid_tip_is_inside_sidebar_and_stays_on_click(app):
+    """胶囊留在侧栏内，且点击主区不再把它收起。"""
+    ctx, _ = app
+    _, html = _get(ctx.url, "/")
+    assert "width: 340px; flex: none;" in html          # 侧栏留出了并排空间
+    assert "align-items: flex-start; gap: 9px;" in html  # 图标列靠左
+    _, js = _get(ctx.url, "/fluid-nav.js")
+    assert "dataset.placement" in js
+    assert "if (!compact) return;" in js                # 宽栏点击不收起
+    assert "show(active >= 0 ? active : 0)" in js       # 移开后回到当前页
+
+
 def test_settings_cards_are_single_column(app):
     """设置页卡片由两列并排改为单列。"""
     ctx, _ = app

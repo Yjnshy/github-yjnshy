@@ -126,7 +126,7 @@
 
   /* ---------------- 左侧栏 ---------------- */
   .sidebar {
-    width: 230px; flex: none;
+    width: 340px; flex: none;
     background: var(--side); border-right: 1px solid var(--border);
     display: flex; flex-direction: column;
     padding: 20px 12px 14px;
@@ -142,7 +142,7 @@
   /* ---------------- 流体提示气泡导航 ----------------
      按钮里不再放文字：一个共享胶囊沿纵向移动，用裁切窗口揭示固定在
      各入口高度的标签，切换过程中能看到上下两行同时被裁切。 */
-  .nav { display: flex; flex-direction: column; align-items: center; gap: 9px; }
+  .nav { display: flex; flex-direction: column; align-items: flex-start; gap: 9px; }
   .tab {
     width: 84px; height: 84px; flex: none;
     display: flex; align-items: center; justify-content: center;
@@ -392,7 +392,7 @@
   .theme-card .theme-copy p { margin: 0 0 12px; font-size: 12.5px; color: var(--muted); }
   .theme-switch-holder { flex: none; width: 432px; max-width: 100%; }
   .theme-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .side-theme { display: flex; justify-content: center; margin: 2px 0 12px; }
+  .side-theme { display: flex; justify-content: flex-start; margin: 2px 0 12px; }
   .side-theme .pixel-toggle { flex: none; }
   .room-row { display: flex; gap: 8px; margin-bottom: 8px; }
   .room-row input { flex: 1; min-width: 0; }
