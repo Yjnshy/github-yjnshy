@@ -330,8 +330,9 @@ def test_fluid_tip_is_inside_sidebar_and_stays_on_click(app):
     """胶囊留在侧栏内，且点击主区不再把它收起。"""
     ctx, _ = app
     _, html = _get(ctx.url, "/")
-    assert "width: 340px; flex: none;" in html          # 侧栏留出了并排空间
-    assert "align-items: flex-start; gap: 9px;" in html  # 图标列靠左
+    assert "width: 280px; flex: none;" in html          # 收窄后仍留得下并排的胶囊
+    assert "align-items: flex-start; gap: 7px;" in html  # 图标列靠左
+    assert "height: 40px; width: 0; border-radius: 20px;" in html  # 胶囊同步缩小
     _, js = _get(ctx.url, "/fluid-nav.js")
     assert "dataset.placement" in js
     assert "if (!compact) return;" in js                # 宽栏点击不收起

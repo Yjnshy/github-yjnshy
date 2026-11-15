@@ -15,7 +15,7 @@
   var MOVE_MS = 430;         // 换入口：位置 / 宽度一起走 expo.out
   var HIDE_MS = 150;
   var LEAVE_DELAY = 75;      // 经过按钮间隙时不闪烁
-  var TIP_GAP = 14;          // 胶囊与图标列的间距
+  var TIP_GAP = 10;          // 胶囊与图标列的间距
 
   function easePower2Out(t) { return 1 - (1 - t) * (1 - t); }
   function easeExpoOut(t) { return t >= 1 ? 1 : 1 - Math.pow(2, -10 * t); }
@@ -184,7 +184,7 @@
         ? sidebar.getBoundingClientRect() : { right: 0, width: 0 };
       var br = buttons[0].getBoundingClientRect();
       var wasCompact = compact;
-      compact = sr.width < 260;
+      compact = sr.width < 240;
       // 宽栏：胶囊留在侧栏内，紧贴靠左的图标列；窄栏：退回浮在主区左缘
       var leftX = compact ? (sr.right + TIP_GAP) : (br.right + TIP_GAP);
       tip.style.left = Math.round(leftX) + 'px';
