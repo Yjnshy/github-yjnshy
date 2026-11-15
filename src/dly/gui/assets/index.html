@@ -138,11 +138,6 @@
   .side-spacer { flex: 1; }
   .side-bottom { padding: 0 8px; }
   .side-status { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
-  .side-links { display: flex; gap: 8px; margin-bottom: 12px; }
-  .side-links .pill {
-    border-radius: 999px; font-size: 12px; padding: 7px 16px;
-    background: var(--pill-bg); border-color: transparent; color: var(--pill-ink);
-  }
   .side-meta { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
   /* ---------------- 右侧主区 ---------------- */
@@ -323,9 +318,6 @@
     .brand-text, .tab span, .side-status, .side-meta { display: none; }
     .tab { justify-content: center; padding: 10px 0; }
     .side-bottom { padding: 0; }
-    /* 图标条放不下四个字，用伪元素换成「退出」 */
-    .side-links .pill { width: 100%; padding: 8px 0; font-size: 0; }
-    .side-links .pill::after { content: "退出"; font-size: 11px; }
     .main { padding: 18px 16px 12px; }
     .head-label { display: none; }
     .page-head { flex-direction: column; gap: 10px; }
@@ -343,7 +335,7 @@
   .theme-card .theme-copy p { margin: 0 0 12px; font-size: 12.5px; color: var(--muted); }
   .theme-switch-holder { flex: none; width: 432px; max-width: 100%; }
   .theme-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .side-theme { display: flex; justify-content: center; margin-bottom: 14px; }
+  .side-theme { display: flex; justify-content: center; margin: 2px 0 12px; }
   .side-theme .pixel-toggle { flex: none; }
   .room-row { display: flex; gap: 8px; margin-bottom: 8px; }
   .room-row input { flex: 1; min-width: 0; }
@@ -523,16 +515,14 @@
   <div class="side-spacer"></div>
 
   <div class="side-bottom">
-    <div class="side-theme">
-      <button id="theme-toggle-mini" class="pixel-toggle mini" type="button"
-              role="switch" aria-checked="false" aria-label="切换日间/夜间主题"></button>
-    </div>
     <div class="side-status">
       <span id="conn" class="badge">连接中…</span>
       <span id="ffmpeg-badge" class="badge">ffmpeg</span>
     </div>
-    <div class="side-links">
-      <button class="pill ghost" onclick="quitApp()">退出程序</button>
+    <!-- 桌面版关窗即退出，原来的退出按钮没必要；主题开关占它的位置 -->
+    <div class="side-theme">
+      <button id="theme-toggle-mini" class="pixel-toggle mini" type="button"
+              role="switch" aria-checked="false" aria-label="切换日间/夜间主题"></button>
     </div>
     <div class="side-meta"><span id="version"></span></div>
   </div>
@@ -966,8 +956,8 @@
 
 <div class="overlay" id="overlay">
   <div class="box">
-    <h2>程序已退出</h2>
-    <p>可以直接关闭这个页面了。下次使用时双击「启动界面.bat」。</p>
+    <h2>连接已断开</h2>
+    <p>与本地服务的连接已断开，请重新启动程序后再使用。</p>
   </div>
 </div>
 
@@ -1141,8 +1131,8 @@ function render() {
   ff.className = 'badge ' + (snapshot.ffmpeg ? 'ok' : 'bad');
   $('version').textContent = '版本 ' + snapshot.version;
   $('watch-tip').textContent = '开播自动录、下播自动停；断流会指数退避重连。'
-    + (snapshot.desktop ? '关闭窗口即停止值守。'
-                        : '关闭浏览器页面程序会继续运行，需点左下方「退出程序」。');
+    + (snapshot.desktop ? '关闭窗口即停止值守并退出程序。'
+                        : '关闭浏览器页面服务仍在运行，关闭启动时的黑色命令行窗口即可退出。');
 }
 
 /* ---------------- 轮询 ---------------- */
@@ -1380,12 +1370,6 @@ async function chooseFolder(fieldId, btn) {
     picking = false;
     if (btn) { btn.disabled = false; btn.textContent = label; }
   }
-}
-
-async function quitApp() {
-  if (!confirm('确定退出程序？正在录制/值守的任务会被停止。')) return;
-  try { await api('/api/quit'); } catch (e) { /* 服务已关 */ }
-  $('overlay').classList.add('show');
 }
 
 /* ---------------- 编辑右键菜单 ----------------

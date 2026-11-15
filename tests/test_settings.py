@@ -285,3 +285,18 @@ def test_index_has_settings_guard_and_live_sync(app):
     for token in ('id="set-state"', 'id="set-save-top"', 'syncOutputDir',
                   "dispatchEvent(new Event('input'", 'settingsDirty'):
         assert token in html, f"缺少 {token}"
+
+
+def test_sidebar_theme_toggle_replaces_quit_button(app):
+    """侧栏底部主题开关占据原退出按钮位置；桌面版关窗即退出，不再需要按钮。"""
+    ctx, _ = app
+    _, html = _get(ctx.url, "/")
+    bottom = html.split('<div class="side-bottom">', 1)[1].split('</aside>', 1)[0]
+    assert 'quitApp' not in html
+    assert '>退出程序</button>' not in html
+    assert '<div class="side-links">' not in html
+    assert 'id="theme-toggle-mini"' in bottom
+    assert (bottom.index('side-status') < bottom.index('id="theme-toggle-mini"')
+            < bottom.index('side-meta'))
+    assert '关闭窗口即停止值守并退出程序' in html
+    assert '关闭浏览器页面服务仍在运行' in html

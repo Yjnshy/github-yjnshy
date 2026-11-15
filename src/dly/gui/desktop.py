@@ -118,7 +118,7 @@ def _load_webview():
 
 
 def launch(debug: bool = False) -> None:
-    """打开桌面窗口（阻塞，直到用户关窗或点「退出程序」）。"""
+    """打开桌面窗口（阻塞，直到用户关窗或收到 /api/quit 退出请求）。"""
     webview = _load_webview()
     app = create_app(desktop=True)
     app.start()
@@ -134,7 +134,7 @@ def launch(debug: bool = False) -> None:
     )
 
     def _quit_watcher() -> None:
-        """界面里点「退出程序」时关掉窗口，让 GUI 主循环能返回。"""
+        """收到退出请求时关掉窗口，让 GUI 主循环能返回。"""
         while not app.state.quit_requested:
             time.sleep(QUIT_POLL_SECONDS)
         time.sleep(0.2)

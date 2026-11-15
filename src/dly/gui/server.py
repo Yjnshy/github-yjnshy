@@ -98,7 +98,7 @@ class AppState:
         }
         self.recorder = None
         self.monitor = None
-        self.desktop = False          # 桌面窗口模式下前端会隐藏「退出程序」提示
+        self.desktop = False          # 桌面窗口模式下关窗即退出，前端不显示浏览器模式的退出提示
         self._quit = threading.Event()
         # 独立于 recorder 内部状态的停止信号：自动续录的探测间隙里也要能停下
         self.record_stop = threading.Event()
@@ -761,7 +761,7 @@ class AppContext:
         self._thread.start()
 
     def wait(self, interval: float = 0.4) -> None:
-        """阻塞到用户请求退出（关窗口或点「退出程序」）。"""
+        """阻塞到用户请求退出（关窗口或请求 /api/quit）。"""
         while not self.state.quit_requested:
             self._thread.join(timeout=interval)
 
