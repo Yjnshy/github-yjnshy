@@ -300,3 +300,12 @@ def test_sidebar_theme_toggle_replaces_quit_button(app):
             < bottom.index('side-meta'))
     assert '关闭窗口即停止值守并退出程序' in html
     assert '关闭浏览器页面服务仍在运行' in html
+
+
+def test_settings_cards_are_single_column(app):
+    """设置页卡片由两列并排改为单列。"""
+    ctx, _ = app
+    _, html = _get(ctx.url, "/")
+    assert '.settings-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }' in html
+    assert 'repeat(2, minmax(0, 1fr))' not in html
+    assert '.settings-grid .row .field { flex: 1 1 160px; }' in html
