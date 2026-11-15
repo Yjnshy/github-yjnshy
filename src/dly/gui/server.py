@@ -28,7 +28,8 @@ from urllib.parse import urlparse
 
 from dly import __version__
 from dly.core.compat import open_folder
-from dly.core.config import load_config
+from dly.core.config import (config_file_path, load_config,
+                             save_settings, settings_from_config)
 from dly.core.ffmpeg import find_ffmpeg
 from dly.core.logging import setup_logging
 from dly.core.transcode import FPS_CHOICES, normalize_fps
@@ -469,6 +470,7 @@ class Handler(BaseHTTPRequestHandler):
             "poll_interval": config.record.poll_interval,
             "browser": config.cookies.browser,
             "rooms": config.record.rooms,
+            "settings": settings_from_config(config),
             "ffmpeg": bool(find_ffmpeg(config.ffmpeg_path)),
             "desktop": bool(getattr(self.state, "desktop", False)),
             "download": self.state.download,
@@ -507,12 +509,31 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, png, "image/png")
             return
 
+        if path == "/pixel-toggle.js":
+            # 主题开关的独立脚本；assets 目录整体随包分发，这里按白名单开放
+            try:
+                script = files("dly.gui").joinpath(
+                    "assets/pixel-toggle.js").read_bytes()
+            except (FileNotFoundError, OSError) as exc:
+                self._send(404, f"界面资源缺失: {exc}".encode("utf-8"),
+                           "text/plain; charset=utf-8")
+                return
+            self._send(200, script, "application/javascript; charset=utf-8")
+            return
+
         if path == "/api/clipboard":
             # 桌面窗口没有原生右键菜单，界面自己画的那份要靠这里读系统剪贴板
             from dly.core import clipboard
 
             text = clipboard.read_text()
             self._json({"ok": text is not None, "text": text or ""})
+            return
+
+        if path == "/api/settings":
+            self._json({
+                "settings": settings_from_config(load_config()),
+                "path": str(config_file_path()),
+            })
             return
 
         if path == "/api/state":
@@ -536,6 +557,20 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
         data = self._read_json()
+
+        if path == "/api/settings":
+            try:
+                target = save_settings(data)
+            except (OSError, ValueError) as exc:
+                logger.warning("保存设置失败：%s", exc)
+                self._json({"error": f"保存设置失败：{exc}"}, 500)
+                return
+            self._json({
+                "ok": True,
+                "settings": settings_from_config(load_config()),
+                "path": str(target),
+            })
+            return
 
         if path == "/api/download":
             text = (data.get("text") or "").strip()

@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import yaml
 
@@ -41,6 +41,15 @@ class RecordConfig:
 
 
 @dataclass
+class UiConfig:
+    """界面偏好：设置页可改，前端也会用 localStorage 先渲染避免闪白。"""
+
+    theme: str = "system"             # system / light / dark
+    sound: bool = True                # 任务完成提示音
+    log_level: str = "info"           # 界面日志最低显示级别 info / warn / error
+
+
+@dataclass
 class AppConfig:
     output_dir: str = ""              # 空 = 按运行方式推导默认目录
     quality: str = "best"
@@ -51,6 +60,7 @@ class AppConfig:
     ffprobe_path: str = ""
     cookies: CookieConfig = field(default_factory=CookieConfig)
     record: RecordConfig = field(default_factory=RecordConfig)
+    ui: UiConfig = field(default_factory=UiConfig)
 
 
 def _default_config_paths() -> List[Path]:
@@ -104,6 +114,14 @@ def load_config(explicit_path: Optional[str] = None) -> AppConfig:
             rooms=[r for r in (rc.get("rooms") or [])
                    if isinstance(r, str) and r.strip() and not r.strip().startswith("#")],
         )
+        ui = raw.get("ui") or {}
+        cfg.ui = UiConfig(
+            theme=ui.get("theme", "system")
+            if ui.get("theme") in ("system", "light", "dark") else "system",
+            sound=bool(ui.get("sound", True)),
+            log_level=ui.get("log_level", "info")
+            if ui.get("log_level") in ("info", "warn", "error") else "info",
+        )
 
     # 环境变量覆盖
     cfg.output_dir = os.environ.get("DLY_OUTPUT_DIR", cfg.output_dir)
@@ -118,3 +136,149 @@ def load_config(explicit_path: Optional[str] = None) -> AppConfig:
     cfg.output_dir = (paths.resolve_path(cfg.output_dir) if cfg.output_dir
                       else str(paths.default_output_dir()))
     return cfg
+
+
+# ---------------------------------------------------------------- 设置页持久化
+#
+# 界面把配置读成一个扁平字典，保存时只覆盖白名单里的键，其余（proxy、
+# ffmpeg_path、cookies_file、max_retries 等）原样保留；Cookie 明文一律不写。
+
+QUALITY_CHOICES = ("best", "1080", "720", "480", "audio", "mp3")
+BROWSER_CHOICES = ("chrome", "edge", "firefox", "brave")
+FORMAT_CHOICES = ("ts", "mp4", "mkv", "flv")
+THEME_CHOICES = ("system", "light", "dark")
+LOG_LEVEL_CHOICES = ("info", "warn", "error")
+
+
+def settings_from_config(cfg: AppConfig) -> Dict[str, Any]:
+    """把 AppConfig 摊平成设置页 / 前端默认值用的字典。"""
+    return {
+        "output_dir": cfg.output_dir,
+        "quality": cfg.quality,
+        "fps": cfg.fps,
+        "keep_original": cfg.keep_original,
+        "browser": cfg.cookies.browser,
+        "record_format": cfg.record.format,
+        "segment_minutes": cfg.record.segment_minutes,
+        "poll_interval": cfg.record.poll_interval,
+        "record_fps": cfg.record.fps,
+        "rooms": list(cfg.record.rooms),
+        "theme": cfg.ui.theme,
+        "sound": cfg.ui.sound,
+        "log_level": cfg.ui.log_level,
+    }
+
+
+def config_file_path() -> Path:
+    """返回设置应该写到哪个文件：优先正在生效的那个，否则选一个可写位置。"""
+    found = _find_config_file(None)
+    if found:
+        return found
+    user = Path.home() / ".dly" / "config.yaml"
+    for candidate in (paths.app_dir() / "config.yaml", user):
+        try:
+            candidate.parent.mkdir(parents=True, exist_ok=True)
+            probe = candidate.parent / ".dly_write_probe"
+            probe.write_text("", encoding="utf-8")
+            probe.unlink()
+            return candidate
+        except OSError:
+            continue
+    return user                     # 实在不可写时仍给出路径，由调用方报错
+
+
+def _choice(value: Any, choices: tuple, default: str) -> str:
+    text = str(value or "").strip()
+    return text if text in choices else default
+
+
+def _number(value: Any, low: int, high: int, default: int) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(low, min(high, number))
+
+
+def _section(raw: Dict[str, Any], name: str) -> Dict[str, Any]:
+    current = raw.get(name)
+    return dict(current) if isinstance(current, dict) else {}
+
+
+def save_settings(data: Dict[str, Any], path: Optional[str] = None) -> Path:
+    """局部更新 config.yaml 并原子写回；返回实际写入的路径。
+
+    未提供的键保持原样。非法值按默认值规整而不是直接报错，避免界面上
+    一个手滑的输入把整个配置文件写坏。
+    """
+    target = Path(path) if path else config_file_path()
+    raw: Dict[str, Any] = {}
+    if target.is_file():
+        try:
+            loaded = yaml.safe_load(target.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                raw = loaded
+        except (OSError, yaml.YAMLError):
+            raw = {}
+
+    cfg = load_config(str(target)) if target.is_file() else AppConfig()
+    current = settings_from_config(cfg)
+
+    if "output_dir" in data:
+        raw["output_dir"] = str(data["output_dir"] or "").strip()[:500]
+    if "quality" in data:
+        raw["quality"] = _choice(data["quality"], QUALITY_CHOICES,
+                                 current["quality"])
+    if "fps" in data:
+        raw["fps"] = _number(data["fps"], 0, 120, 0)
+    if "keep_original" in data:
+        raw["keep_original"] = bool(data["keep_original"])
+    if "browser" in data:
+        cookies = _section(raw, "cookies")
+        cookies["browser"] = _choice(data["browser"], BROWSER_CHOICES,
+                                     current["browser"])
+        raw["cookies"] = cookies
+
+    record = _section(raw, "record")
+    if "record_format" in data:
+        record["format"] = _choice(data["record_format"], FORMAT_CHOICES,
+                                   current["record_format"])
+    if "segment_minutes" in data:
+        record["segment_minutes"] = _number(data["segment_minutes"],
+                                            0, 1440, 0)
+    if "poll_interval" in data:
+        record["poll_interval"] = _number(data["poll_interval"], 10, 3600, 60)
+    if "record_fps" in data:
+        record["fps"] = _number(data["record_fps"], 0, 120, 0)
+    if "rooms" in data:
+        rooms = data["rooms"]
+        if isinstance(rooms, str):
+            rooms = rooms.splitlines()
+        cleaned = []
+        for item in rooms if isinstance(rooms, (list, tuple)) else []:
+            if not isinstance(item, str):
+                continue
+            text = item.strip()
+            if text and not text.startswith("#") and len(text) <= 500:
+                cleaned.append(text)
+        record["rooms"] = cleaned[:200]
+    if record:
+        raw["record"] = record
+
+    ui = _section(raw, "ui")
+    if "theme" in data:
+        ui["theme"] = _choice(data["theme"], THEME_CHOICES, "system")
+    if "sound" in data:
+        ui["sound"] = bool(data["sound"])
+    if "log_level" in data:
+        ui["log_level"] = _choice(data["log_level"], LOG_LEVEL_CHOICES, "info")
+    if ui:
+        raw["ui"] = ui
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    text = ("# 帅羊羊DLY 设置（界面设置页维护，所有配置项的值都会保留）\n"
+            + yaml.safe_dump(raw, allow_unicode=True, sort_keys=False))
+    tmp = target.with_name(target.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, target)
+    return target

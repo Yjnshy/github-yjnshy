@@ -46,3 +46,9 @@ record:
   rooms:
     # - "https://live.douyin.com/123456789"
     # - "https://live.bilibili.com/6"
+
+# 界面偏好（也可以在软件的「设置」页里改，会自动写回本文件）
+ui:
+  theme: "system"        # system = 跟随系统 / light = 白天 / dark = 夜间
+  sound: true            # 任务完成时的轻提示音
+  log_level: "info"      # 界面日志最低显示级别：info / warn / error
