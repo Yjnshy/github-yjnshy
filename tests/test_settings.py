@@ -322,20 +322,21 @@ def test_fluid_nav_dom_has_one_shared_capsule(app):
     assert '<span>下载视频</span>' not in html
     for name in ("下载视频", "录制直播", "无人值守", "设置"):
         assert 'aria-label="%s"' % name in html
-    for key in ("Ctrl+1", "Ctrl+2", "Ctrl+3", "Ctrl+4"):
-        assert 'data-key="%s"' % key in html
+    assert 'fluid-tip-key' not in html      # 提示里不再显示快捷键
+    assert 'Ctrl+1' not in html
 
 
 def test_fluid_tip_is_inside_sidebar_and_stays_on_click(app):
     """胶囊留在侧栏内，且点击主区不再把它收起。"""
     ctx, _ = app
     _, html = _get(ctx.url, "/")
-    assert "width: 240px; flex: none;" in html          # 收窄后仍留得下并排的胶囊
-    assert "align-items: flex-start; gap: 9px;" in html  # 图标列靠左
+    assert "width: 210px; flex: none;" in html          # 收窄后仍留得下并排的胶囊
+    assert "align-items: flex-start; gap: 14px;" in html  # 图标列靠左
     assert "height: 40px; width: 0; border-radius: 20px;" in html  # 胶囊同步缩小
     _, js = _get(ctx.url, "/fluid-nav.js")
     assert "dataset.placement" in js
-    assert "if (!compact) return;" in js                # 宽栏点击不收起
+    assert "if (!t.closest('.tab') && !t.closest('.side-theme')) hide();" in js
+    assert "Math.max(measured, minWidth)" in js      # 胶囊填满侧栏余量
     assert "show(active >= 0 ? active : 0)" in js       # 移开后回到当前页
 
 

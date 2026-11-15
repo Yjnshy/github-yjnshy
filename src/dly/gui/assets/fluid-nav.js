@@ -184,16 +184,22 @@
         ? sidebar.getBoundingClientRect() : { right: 0, width: 0 };
       var br = buttons[0].getBoundingClientRect();
       var wasCompact = compact;
-      compact = sr.width < 210;
+      compact = sr.width < 180;
       // 宽栏：胶囊留在侧栏内，紧贴靠左的图标列；窄栏：退回浮在主区左缘
       var leftX = compact ? (sr.right + TIP_GAP) : (br.right + TIP_GAP);
+      var minWidth = compact ? 0 : Math.max(96, sr.width - leftX - 16);
       tip.style.left = Math.round(leftX) + 'px';
       tip.dataset.placement = compact ? 'floating' : 'inside';
       buttons.forEach(function (b, i) {
         var r = b.getBoundingClientRect();
         centers[i] = r.top + r.height / 2;      // 视口坐标，胶囊是 fixed
         rows[i].style.top = (centers[i] - h / 2) + 'px';
-        widths[i] = Math.ceil(rows[i].getBoundingClientRect().width);
+        // 先恢复 max-content 再量，避免上一次设的宽度污染测量。
+        // 胶囊按侧栏余量取最小宽度，文字在整枚胶囊里居中，右侧不留空档。
+        rows[i].style.width = '';
+        var measured = Math.ceil(rows[i].getBoundingClientRect().width);
+        widths[i] = Math.max(measured, minWidth);
+        rows[i].style.width = widths[i] + 'px';
       });
       if (compact !== wasCompact) {
         // 窗口跨过 900px：窄栏改回「悬停才显示」，宽栏恢复常驻
@@ -253,15 +259,16 @@
     });
 
     on(document, 'pointerdown', function (e) {
-      // 宽栏常驻：点输入框、按钮或主区任意位置都不收起提示
-      if (!compact) return;
       var t = e.target;
       if (!t || !t.closest) return;
       if (t.closest('.sidebar')) {
-        if (!t.closest('.tab')) hide();
+        // 点侧栏空白（不是功能按钮、也不是主题开关）就收起提示；
+        // 点右侧主内容（输入框等）保持常驻，符合之前的要求。
+        if (!t.closest('.tab') && !t.closest('.side-theme')) hide();
         return;
       }
-      if (t !== tip && !tip.contains(t)) hide();
+      // 窄栏是悬停模式，点组件外部仍然收起
+      if (compact && t !== tip && !tip.contains(t)) hide();
     });
 
     on(document, 'visibilitychange', function () {
