@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>帅羊羊DLY — 视频下载 &amp; 直播录制</title>
+<link rel="icon" type="image/png" href="logo.png">
 <style>
   :root {
     --bg: #FAF9F6;            /* 主区暖白 */
@@ -22,6 +23,75 @@
     --danger-dark: #C9463C;
     --ok: #23A06B;
     --warn: #C08A2E;
+
+    /* 中性色也走变量，夜间模式只覆盖这一处，不用逐条改选择器 */
+    --surface-2: #FFFFFF;      /* 输入框 / 按钮 / 弹出层 */
+    --hover: #F6F5F2;
+    --border-strong: #DFDCD5;
+    --tab-ink: #5F626C;
+    --muted-ink: #6E707B;
+    --pill-bg: #F2F1ED;
+    --pill-ink: #55575F;
+    --badge-bg: #F1F0EC;
+    --badge-ok-bg: #E8F5EE;
+    --badge-bad-bg: #FCEDEB;
+    --log-bg: #FDFCFA;
+    --feature-line: #E4DDF6;
+    --active-line: #DFD6F8;
+    --focus-ring: rgba(124,107,242,.13);
+    --shadow: rgba(28,24,48,.18);
+    --scrim: rgba(30,32,39,.5);
+    --box-shadow: rgba(30,32,39,.14);
+    --dot-idle: #C9CED6;
+    --btn-hover-bg: #FCFBF9;
+    --btn-hover-line: #D6D3CD;
+    --disabled-ink: #B7B8C1;
+  }
+
+  /* ---------------- 夜间配色 ---------------- */
+  html[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #15161A;
+    --side: #1B1D22;
+    --card: #202228;
+    --text: #ECEEF3;
+    --muted: #9297A3;
+    --border: #32353E;
+    --accent: #9A8BFF;
+    --accent-dark: #8877F5;
+    --accent-ink: #B7ABFF;
+    --accent-soft: #2C2842;
+    --accent-card: #232137;
+    --accent-line: #3A3459;
+    --danger: #F07065;
+    --danger-dark: #DE5E53;
+    --ok: #4CC792;
+    --warn: #E0AE55;
+    --surface-2: #262932;
+    --hover: #2C3039;
+    --border-strong: #3C414C;
+    --tab-ink: #A7ACB7;
+    --muted-ink: #A0A5B0;
+    --pill-bg: #2B2F38;
+    --pill-ink: #C5C9D2;
+    --badge-bg: #2B2F38;
+    --badge-ok-bg: #1D3B31;
+    --badge-bad-bg: #3D2628;
+    --log-bg: #191B21;
+    --feature-line: #3D3760;
+    --active-line: #473D74;
+    --focus-ring: rgba(154,139,255,.24);
+    --shadow: rgba(0,0,0,.55);
+    --scrim: rgba(0,0,0,.62);
+    --box-shadow: rgba(0,0,0,.55);
+    --dot-idle: #5A606C;
+    --btn-hover-bg: #30343E;
+    --btn-hover-line: #474C57;
+    --disabled-ink: #6B707B;
+  }
+  /* 透明底 PNG 的深色描边在暗背景上会吃掉轮廓，垫一层浅底 */
+  html[data-theme="dark"] .logo {
+    background: #E9E9EF; border-radius: 12px; padding: 3px;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
@@ -54,16 +124,16 @@
   .nav { display: flex; flex-direction: column; gap: 6px; }
   .tab {
     display: flex; align-items: center; gap: 11px; width: 100%;
-    border: 1px solid transparent; background: transparent; color: #5F626C;
+    border: 1px solid transparent; background: transparent; color: var(--tab-ink);
     padding: 11px 12px; border-radius: 10px;
     font: inherit; font-size: 14px; text-align: left;
     cursor: pointer; transition: background .15s, color .15s;
   }
   .tab svg { width: 18px; height: 18px; flex: none; stroke: currentColor; }
-  .tab:hover { background: #F6F5F2; color: var(--text); }
+  .tab:hover { background: var(--hover); color: var(--text); }
   .tab.active {
     background: var(--accent-soft); color: var(--accent-ink);
-    font-weight: 600; border-color: #DFD6F8;
+    font-weight: 600; border-color: var(--active-line);
   }
   .side-spacer { flex: 1; }
   .side-bottom { padding: 0 8px; }
@@ -71,7 +141,7 @@
   .side-links { display: flex; gap: 8px; margin-bottom: 12px; }
   .side-links .pill {
     border-radius: 999px; font-size: 12px; padding: 7px 16px;
-    background: #F2F1ED; border-color: transparent; color: #55575F;
+    background: var(--pill-bg); border-color: transparent; color: var(--pill-ink);
   }
   .side-meta { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
@@ -121,18 +191,18 @@
   }
   .card-sub { font-size: 12px; color: var(--muted); margin-top: 1px; }
 
-  .label { font-size: 12px; color: #6E707B; margin-bottom: 6px; display: block; }
+  .label { font-size: 12px; color: var(--muted-ink); margin-bottom: 6px; display: block; }
   textarea, input[type="text"], input[type="number"], select {
     width: 100%; font: inherit; color: var(--text);
-    background: #fff; border: 1px solid #DFDCD5; border-radius: 9px;
+    background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 9px;
     padding: 9px 11px; outline: none; transition: border-color .15s, box-shadow .15s;
   }
   .card.feature textarea, .card.feature input, .card.feature select {
-    border-color: #E4DDF6;
+    border-color: var(--feature-line);
   }
   textarea { resize: vertical; min-height: 92px; line-height: 1.65; }
   textarea:focus, input:focus, select:focus {
-    border-color: var(--accent); box-shadow: 0 0 0 3px rgba(124,107,242,.13);
+    border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus-ring);
   }
 
   .row { display: flex; gap: 10px; align-items: flex-end; margin-top: 12px; flex-wrap: wrap; }
@@ -141,10 +211,10 @@
 
   button {
     font: inherit; cursor: pointer; border-radius: 9px;
-    border: 1px solid var(--border); background: #fff; color: var(--text);
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
     padding: 9px 15px; transition: all .15s;
   }
-  button:hover:not(:disabled) { border-color: #D6D3CD; background: #FCFBF9; }
+  button:hover:not(:disabled) { border-color: var(--btn-hover-line); background: var(--btn-hover-bg); }
   button:disabled { opacity: .5; cursor: not-allowed; }
   button.primary {
     background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600;
@@ -152,13 +222,13 @@
   button.primary:hover:not(:disabled) { background: var(--accent-dark); border-color: var(--accent-dark); }
   button.danger { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 600; }
   button.danger:hover:not(:disabled) { background: var(--danger-dark); border-color: var(--danger-dark); }
-  button.ghost { color: #63656F; background: #fff; }
+  button.ghost { color: var(--pill-ink); background: var(--surface-2); }
 
   /* 桌面窗口的编辑右键菜单：WebView2 发布版不提供原生右键菜单，自己画一份 */
   .ctx-menu {
     position: fixed; z-index: 120; display: none; min-width: 178px;
-    padding: 6px; background: #fff; border: 1px solid var(--border);
-    border-radius: 11px; box-shadow: 0 12px 34px rgba(28,24,48,.18);
+    padding: 6px; background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 11px; box-shadow: 0 12px 34px var(--shadow);
     font-size: 13px; user-select: none;
   }
   .ctx-menu.show { display: block; }
@@ -171,7 +241,7 @@
   .ctx-menu button:hover:not(.disabled) {
     background: var(--accent-soft); border-color: transparent; color: var(--accent-ink);
   }
-  .ctx-menu button.disabled { color: #B7B8C1; cursor: default; }
+  .ctx-menu button.disabled { color: var(--disabled-ink); cursor: default; }
   .ctx-menu button span { color: var(--muted); font-size: 11px; }
   .ctx-menu .ctx-sep { height: 1px; margin: 5px 6px; background: var(--border); }
 
@@ -190,13 +260,13 @@
   }
   .check {
     display: inline-flex; align-items: center; gap: 6px;
-    font-size: 12.5px; color: #6E707B; cursor: pointer; user-select: none;
+    font-size: 12.5px; color: var(--muted-ink); cursor: pointer; user-select: none;
   }
   .check input { width: auto; margin: 0; accent-color: var(--accent); }
 
   /* 录制状态卡 */
   .status-card { display: flex; align-items: center; gap: 14px; padding: 14px 20px; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; background: #C9CED6; flex: none; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--dot-idle); flex: none; }
   .dot.live { background: var(--danger); box-shadow: 0 0 0 4px rgba(226,86,75,.15); animation: pulse 1.6s infinite; }
   .dot.error { background: var(--danger); }
   .dot.warn { background: var(--warn); }
@@ -219,7 +289,7 @@
   .log {
     margin: 0; padding: 12px 16px; flex: 1; min-height: 0; overflow-y: auto;
     font-size: 12.5px; line-height: 1.75; white-space: pre-wrap; word-break: break-all;
-    background: #FDFCFA;
+    background: var(--log-bg);
   }
   .log .line { margin: 0; }
   .log .line.error { color: var(--danger); }
@@ -229,19 +299,19 @@
 
   .badge {
     display: inline-block; padding: 2px 9px; border-radius: 999px;
-    background: #F1F0EC; font-size: 11px; color: var(--muted);
+    background: var(--badge-bg); font-size: 11px; color: var(--muted);
   }
-  .badge.ok { background: #E8F5EE; color: var(--ok); }
-  .badge.bad { background: #FCEDEB; color: var(--danger); }
+  .badge.ok { background: var(--badge-ok-bg); color: var(--ok); }
+  .badge.bad { background: var(--badge-bad-bg); color: var(--danger); }
 
   .overlay {
-    position: fixed; inset: 0; background: rgba(30,32,39,.5);
+    position: fixed; inset: 0; background: var(--scrim);
     display: none; align-items: center; justify-content: center; z-index: 20;
   }
   .overlay.show { display: flex; }
   .overlay .box {
-    background: #fff; border-radius: 16px; padding: 28px 32px; text-align: center;
-    max-width: 420px; box-shadow: 0 18px 48px rgba(30,32,39,.14);
+    background: var(--surface-2); border-radius: 16px; padding: 28px 32px; text-align: center;
+    max-width: 420px; box-shadow: 0 18px 48px var(--box-shadow);
   }
   .overlay h2 { margin: 0 0 8px; font-size: 16px; }
   .overlay p { margin: 0; color: var(--muted); font-size: 13px; }
@@ -260,7 +330,138 @@
     .head-label { display: none; }
     .page-head { flex-direction: column; gap: 10px; }
   }
+
+  /* ---------------- 设置页 ---------------- */
+  #panel-settings.active { display: block; overflow-y: auto; padding-right: 4px; }
+  .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .settings-grid .card { margin-bottom: 0; }
+  .settings-grid .card.wide { grid-column: 1 / -1; }
+  @media (max-width: 1080px) { .settings-grid { grid-template-columns: 1fr; } }
+  .theme-card { display: flex; align-items: center; gap: 26px; flex-wrap: wrap; }
+  .theme-card .theme-copy { flex: 1; min-width: 220px; }
+  .theme-card .theme-copy h3 { margin: 0 0 6px; font-size: 15px; font-weight: 600; }
+  .theme-card .theme-copy p { margin: 0 0 12px; font-size: 12.5px; color: var(--muted); }
+  .theme-switch-holder { flex: none; width: 432px; max-width: 100%; }
+  .theme-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .side-theme { display: flex; justify-content: center; margin-bottom: 14px; }
+  .side-theme .pixel-toggle { flex: none; }
+  .room-row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .room-row input { flex: 1; min-width: 0; }
+  .room-row button { flex: none; padding: 8px 12px; font-size: 12.5px; }
+  .set-footer {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin: 16px 0 8px;
+  }
+  .set-footer .spacer { flex: 1; }
+  .toast {
+    position: fixed; right: 24px; bottom: 22px; z-index: 200;
+    max-width: 340px; padding: 11px 16px; border-radius: 10px;
+    background: var(--text); color: var(--bg); font-size: 13px;
+    box-shadow: 0 10px 30px var(--shadow);
+    opacity: 0; transform: translateY(10px); pointer-events: none;
+    transition: opacity .2s ease, transform .2s ease;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.err { background: var(--danger); color: #fff; }
+  .toast.ok { background: var(--ok); color: #fff; }
+
+  /* ---------------- 主题切换过渡 ---------------- */
+  body, .sidebar, .card, .log, .ctx-menu, .overlay .box, .badge, .pill,
+  input, textarea, select, button {
+    transition: background-color .2s ease, border-color .2s ease,
+                color .2s ease, box-shadow .2s ease;
+  }
+  html[data-theme="dark"] .tab.active { border-color: var(--active-line); }
 </style>
+<script>
+/* 主题必须在首帧之前定下来，否则夜间模式会先闪一下白底。
+   localStorage 只做「立刻可用」的缓存，config.yaml 才是跨浏览器/桌面的权威值。 */
+(function () {
+  var KEY = 'dly.theme';
+  var media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  var listeners = [];
+  var stored = null;
+  try { stored = localStorage.getItem(KEY); } catch (e) { /* 隐私模式 */ }
+  var manual = (stored === 'light' || stored === 'dark') ? stored : null;
+  var state = { mode: manual || 'system', resolved: '', server: 'system' };
+
+  function resolve(mode) {
+    if (mode === 'light' || mode === 'dark') return mode;
+    return (media && media.matches) ? 'dark' : 'light';
+  }
+  function apply(resolved) {
+    if (state.resolved === resolved) return;
+    state.resolved = resolved;
+    document.documentElement.setAttribute('data-theme', resolved);
+    document.documentElement.style.colorScheme = resolved;
+    listeners.slice().forEach(function (fn) {
+      try { fn(state); } catch (e) { /* 单个订阅者出错不影响其它 */ }
+    });
+  }
+  function remember(mode) {
+    try {
+      if (mode === 'system') localStorage.removeItem(KEY);
+      else localStorage.setItem(KEY, mode);
+    } catch (e) { /* 忽略 */ }
+  }
+  apply(resolve(state.mode));
+
+  if (media && media.addEventListener) {
+    media.addEventListener('change', function () {
+      if (state.mode === 'system') apply(resolve('system'));
+    });
+  }
+
+  window.DLYTheme = {
+    isDark: function () { return state.resolved === 'dark'; },
+    mode: function () { return state.mode; },
+    resolved: function () { return state.resolved; },
+    subscribe: function (fn) {
+      listeners.push(fn);
+      try { fn(state); } catch (e) { /* 忽略 */ }
+      return function () {
+        var i = listeners.indexOf(fn);
+        if (i >= 0) listeners.splice(i, 1);
+      };
+    },
+    /* 设置页手动切换 / 恢复跟随系统 */
+    set: function (mode, userInitiated) {
+      if (['system', 'light', 'dark'].indexOf(mode) < 0) return;
+      state.mode = mode;
+      state.server = mode;
+      remember(mode);
+      apply(resolve(mode));
+      if (userInitiated) {
+        fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ theme: mode })
+        }).catch(function () { /* 后端不可用时至少本地生效 */ });
+      }
+    },
+    /* 首次拿到 /api/state 时用服务端配置校准一次，之后不再覆盖用户操作 */
+    syncFromServer: function (theme) {
+      if (theme !== 'light' && theme !== 'dark' && theme !== 'system') return;
+      state.server = theme;
+      // 服务端还是「跟随系统」而本地有手动选择：多半是上次写入没成功，
+      // 以用户的手动选择为准并补写回去，而不是把界面强行改回系统色。
+      if (theme === 'system' && state.mode !== 'system') {
+        fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ theme: state.mode })
+        }).catch(function () { /* 忽略 */ });
+        return;
+      }
+      if (theme !== state.mode) {
+        state.mode = theme;
+        remember(theme);
+        apply(resolve(theme));
+      }
+    }
+  };
+})();
+</script>
 </head>
 <body>
 <!--DLY_DESKTOP_FLAG-->
@@ -294,11 +495,21 @@
       </svg>
       <span>无人值守</span>
     </button>
+    <button class="tab" data-tab="settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 0 1-4 0v-.09A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3a2 2 0 0 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3a2 2 0 0 1 4 0v.09A1.7 1.7 0 0 0 15.4 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.14.36.4.68.75.88.3.17.65.27 1 .28H21a2 2 0 0 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z"/>
+      </svg>
+      <span>设置</span>
+    </button>
   </nav>
 
   <div class="side-spacer"></div>
 
   <div class="side-bottom">
+    <div class="side-theme">
+      <button id="theme-toggle-mini" class="pixel-toggle mini" type="button"
+              role="switch" aria-checked="false" aria-label="切换日间/夜间主题"></button>
+    </div>
     <div class="side-status">
       <span id="conn" class="badge">连接中…</span>
       <span id="ffmpeg-badge" class="badge">ffmpeg</span>
@@ -316,7 +527,7 @@
       <h1 id="page-title">下载视频</h1>
       <p id="page-sub">粘贴分享链接，一键保存无水印视频</p>
     </div>
-    <div class="head-actions">
+    <div class="head-actions" id="head-actions">
       <span class="head-label">Cookie 来源</span>
       <select id="browser" title="Cookie 来源">
         <option value="chrome">Chrome</option>
@@ -530,6 +741,199 @@
         <div class="log" id="watch-log"></div>
       </div>
     </section>
+
+    <!-- 设置 -->
+    <section class="panel" id="panel-settings">
+      <div class="settings-grid">
+
+        <div class="card wide theme-card">
+          <div class="theme-switch-holder">
+            <button id="theme-toggle" class="pixel-toggle" type="button"
+                    role="switch" aria-checked="false" aria-label="切换日间/夜间主题"></button>
+          </div>
+          <div class="theme-copy">
+            <h3>外观主题</h3>
+            <p id="theme-state">正在读取主题…</p>
+            <p>点按或拖动滑块都能切换；聚焦后用空格 / 回车也可以。首次跟随系统，手动切换后会记住。</p>
+            <div class="theme-actions">
+              <button class="ghost" onclick="followSystemTheme()">恢复跟随系统</button>
+              <span class="hint">白天 = 开关滑块在右侧</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="head-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              </svg>
+            </div>
+            <div>
+              <div class="card-title">保存与画质</div>
+              <div class="card-sub">下载页与录制页的初始默认值</div>
+            </div>
+          </div>
+          <span class="label">默认保存目录</span>
+          <div class="row" style="margin-top:0">
+            <div class="field grow"><input type="text" id="set-outdir"></div>
+            <button class="ghost" onclick="chooseFolder('set-outdir', this)">选择目录</button>
+            <button class="ghost" onclick="openOutputDir()">打开</button>
+          </div>
+          <div class="row">
+            <div class="field">
+              <span class="label">默认画质</span>
+              <select id="set-quality">
+                <option value="best">最佳画质</option>
+                <option value="1080">1080P</option>
+                <option value="720">720P</option>
+                <option value="480">480P</option>
+                <option value="audio">仅音频</option>
+                <option value="mp3">仅音频（MP3）</option>
+              </select>
+            </div>
+            <div class="field">
+              <span class="label">下载帧率</span>
+              <select id="set-fps">
+                <option value="0">原帧率（不转码）</option>
+                <option value="60">60 fps</option><option value="50">50 fps</option>
+                <option value="30">30 fps</option><option value="25">25 fps</option>
+                <option value="24">24 fps</option><option value="15">15 fps</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <label class="check"><input type="checkbox" id="set-keep"> 转码后保留原片</label>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="head-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="6" width="13" height="12" rx="2.5"/><path d="m16 11 5-3v8l-5-3z"/>
+              </svg>
+            </div>
+            <div>
+              <div class="card-title">录制默认值</div>
+              <div class="card-sub">录制页与无人值守页的初始参数</div>
+            </div>
+          </div>
+          <div class="row" style="margin-top:0">
+            <div class="field">
+              <span class="label">封装格式</span>
+              <select id="set-rec-format">
+                <option value="ts">ts（推荐，中断不损坏）</option>
+                <option value="mp4">mp4</option>
+                <option value="mkv">mkv</option>
+                <option value="flv">flv</option>
+              </select>
+            </div>
+            <div class="field">
+              <span class="label">录制帧率</span>
+              <select id="set-rec-fps">
+                <option value="0">原画直通（不转码）</option>
+                <option value="60">60 fps</option><option value="50">50 fps</option>
+                <option value="30">30 fps</option><option value="25">25 fps</option>
+                <option value="24">24 fps</option><option value="15">15 fps</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <span class="label">默认录制时长（分钟，0 = 不限时）</span>
+              <input type="number" id="set-seg-minutes" min="0" step="1" value="0">
+            </div>
+            <div class="field">
+              <span class="label">值守轮询间隔（秒）</span>
+              <input type="number" id="set-poll" min="10" value="60">
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="head-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7v5l3 2"/><path d="M17 3v4h4"/>
+              </svg>
+            </div>
+            <div>
+              <div class="card-title">Cookie 管理</div>
+              <div class="card-sub">下载解析用的浏览器登录态来源</div>
+            </div>
+          </div>
+          <span class="label">Cookie 来源浏览器</span>
+          <select id="set-browser">
+            <option value="chrome">Chrome</option>
+            <option value="edge">Edge</option>
+            <option value="firefox">Firefox</option>
+            <option value="brave">Brave</option>
+          </select>
+          <div class="row">
+            <button class="ghost" onclick="checkCookie('set-browser')">测试提取</button>
+            <button class="ghost" onclick="clearCookie()">清空缓存</button>
+            <span class="hint">测试结果会显示在下载页日志里</span>
+          </div>
+        </div>
+
+        <div class="card wide">
+          <div class="card-head">
+            <div class="head-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>
+              </svg>
+            </div>
+            <div>
+              <div class="card-title">无人值守房间列表</div>
+              <div class="card-sub">一行一个直播间，不用再手改 config.yaml</div>
+            </div>
+          </div>
+          <div id="set-rooms"></div>
+          <div class="row">
+            <button class="ghost" onclick="addRoomRow('')">+ 添加直播间</button>
+            <span class="hint"># 开头的行会被忽略；保存后同步到「无人值守」页</span>
+          </div>
+        </div>
+
+        <div class="card wide">
+          <div class="card-head">
+            <div class="head-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M11 5 6 9H3v6h3l5 4z"/><path d="M16 9a4 4 0 0 1 0 6"/><path d="M19 6a8 8 0 0 1 0 12"/>
+              </svg>
+            </div>
+            <div>
+              <div class="card-title">提示音与日志</div>
+              <div class="card-sub">任务完成提醒与界面日志过滤</div>
+            </div>
+          </div>
+          <div class="row" style="margin-top:0">
+            <label class="check"><input type="checkbox" id="set-sound"> 任务完成时播放轻提示音</label>
+          </div>
+          <div class="row">
+            <div class="field">
+              <span class="label">界面日志最低显示级别</span>
+              <select id="set-log-level">
+                <option value="info">全部（含普通信息）</option>
+                <option value="warn">只看警告与错误</option>
+                <option value="error">只看错误</option>
+              </select>
+            </div>
+            <button class="ghost" onclick="clearLogs()">清空界面日志</button>
+            <span class="hint">只影响界面显示，磁盘日志文件仍完整记录</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="set-footer">
+        <button class="primary" id="set-save" onclick="saveSettings()">保存设置</button>
+        <button class="ghost" onclick="resetSettings()">放弃修改</button>
+        <span class="hint">写入 config.yaml，重启后仍生效；保存会整理文件格式，所有配置项的值都会保留。</span>
+        <span class="spacer"></span>
+        <span class="hint" id="set-hint"></span>
+      </div>
+    </section>
   </div>
 </main>
 
@@ -549,6 +953,9 @@
   <button type="button" role="menuitem" data-act="delete">删除<span>Del</span></button>
 </div>
 
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="pixel-toggle.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 let lastId = 0;
@@ -561,8 +968,16 @@ const ID_PREFIX = { download: 'dl', record: 'rec', watch: 'watch' };
 const PAGE_META = {
   download: ['下载视频', '粘贴分享链接，一键保存无水印视频'],
   record:   ['录制直播', '填入直播间地址，开播即录、随时停止'],
-  watch:    ['无人值守', '批量盯直播间，开播自动录、下播自动停']
+  watch:    ['无人值守', '批量盯直播间，开播自动录、下播自动停'],
+  settings: ['设置', '默认参数、主题与常用维护都在这里']
 };
+const TAB_NAMES = Object.keys(PAGE_META);
+
+/* 界面偏好：由 /api/state 的 snapshot.settings 下发，保存后本地立即生效 */
+let uiSound = true;
+let uiLogLevel = 'info';
+let themeSynced = false;
+const LEVEL_RANK = { info: 0, warn: 1, error: 2 };
 
 /* ---------------- 页签切换 ---------------- */
 function activateTab(name) {
@@ -570,6 +985,8 @@ function activateTab(name) {
   document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
   const meta = PAGE_META[name];
   if (meta) { $('page-title').textContent = meta[0]; $('page-sub').textContent = meta[1]; }
+  // 设置页已有 Cookie 管理卡片，页头那组在设置页里显得重复
+  $('head-actions').style.display = name === 'settings' ? 'none' : '';
   if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name);
 }
 document.querySelectorAll('.tab').forEach(tab => {
@@ -577,7 +994,7 @@ document.querySelectorAll('.tab').forEach(tab => {
 });
 window.addEventListener('hashchange', () => {
   const name = location.hash.replace('#', '');
-  if (['download', 'record', 'watch'].includes(name)) activateTab(name);
+  if (TAB_NAMES.includes(name)) activateTab(name);
 });
 
 /* ---------------- 请求封装 ---------------- */
@@ -595,11 +1012,39 @@ async function api(path, body) {
 
 function notify(text) {
   appendLine('download', { text, level: 'error' });
-  document.querySelector('.tab[data-tab="download"]').click();
+  if (typeof toast === 'function') toast(text, 'err');
 }
 
 /* ---------------- 日志 ---------------- */
+let chimeCtx = null;
+
+/* 任务完成的轻提示音：只在设置里开启、且有用户手势解锁过音频时才会响 */
+function playChime() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  try {
+    if (!chimeCtx) chimeCtx = new AC();
+    if (chimeCtx.state === 'suspended') chimeCtx.resume();
+    const t = chimeCtx.currentTime;
+    const osc = chimeCtx.createOscillator();
+    const gain = chimeCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, t);
+    osc.frequency.exponentialRampToValueAtTime(1320, t + 0.13);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.045, t + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+    osc.connect(gain); gain.connect(chimeCtx.destination);
+    osc.start(t); osc.stop(t + 0.17);
+  } catch (e) { /* 音频不可用就静默 */ }
+}
+
 function appendLine(tab, ev) {
+  const level = ev.level || 'info';
+  if ((LEVEL_RANK[level] || 0) < (LEVEL_RANK[uiLogLevel] || 0)) return;
+  if (uiSound && (level === 'ok' || /完成|已保存|下载成功|已自动停止/.test(ev.text || ''))) {
+    playChime();
+  }
   const prefix = ID_PREFIX[tab] || tab;
   const box = $(prefix + '-log');
   if (!box) return;
@@ -710,6 +1155,11 @@ function applyDefaults() {
   if ((snapshot.rooms || []).length) {
     $('watch-rooms').value = snapshot.rooms.join('\n');
   }
+  fillSettingsForm(snapshot.settings || {});
+  if (!themeSynced) {
+    themeSynced = true;
+    window.DLYTheme.syncFromServer((snapshot.settings || {}).theme || 'system');
+  }
 }
 
 /* 配置文件里可能是下拉框没有的帧率（比如 45），动态补一个选项再选中 */
@@ -815,6 +1265,10 @@ async function probeLive(url, seq) {
 
 $('rec-url').addEventListener('input', scheduleProbe);
 
+/* 页头与设置页各有一份 Cookie 来源下拉，保持显示一致 */
+$('browser').addEventListener('change', e => { $('set-browser').value = e.target.value; });
+$('set-browser').addEventListener('change', e => { $('browser').value = e.target.value; });
+
 async function startRecord() {
   const url = $('rec-url').value.trim();
   if (!url) { $('rec-status').textContent = '请先填写直播间链接'; return; }
@@ -851,14 +1305,19 @@ async function stopWatch() {
   catch (e) { appendLine('watch', { text: e.message, level: 'warn' }); }
 }
 
-async function checkCookie() {
-  try { await api('/api/cookie/check', { browser: $('browser').value }); }
-  catch (e) { notify(e.message); }
+async function checkCookie(selectId) {
+  const sel = $(selectId || 'browser');
+  try {
+    await api('/api/cookie/check', { browser: sel.value });
+    toast('已开始测试 Cookie 提取，结果见下载页日志', 'ok');
+  } catch (e) { notify(e.message); }
 }
 
 async function clearCookie() {
-  try { await api('/api/cookie/clear'); }
-  catch (e) { notify(e.message); }
+  try {
+    await api('/api/cookie/clear');
+    toast('Cookie 缓存已清空', 'ok');
+  } catch (e) { notify(e.message); }
 }
 
 let picking = false;
@@ -1005,8 +1464,180 @@ document.addEventListener('scroll', hideCtxMenu, true);
 window.addEventListener('blur', hideCtxMenu);
 document.addEventListener('keydown', e => { if (e.key === 'Escape') hideCtxMenu(); });
 
+/* ---------------- 轻提示 ---------------- */
+let toastTimer = null;
+function toast(text, kind) {
+  const el = $('toast');
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'toast show' + (kind ? ' ' + kind : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = 'toast'; }, 2800);
+}
+
+/* ---------------- 设置页 ---------------- */
+function addRoomRow(value) {
+  const box = $('set-rooms');
+  if (!box) return;
+  const row = document.createElement('div');
+  row.className = 'room-row';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = value || '';
+  input.placeholder = 'https://live.douyin.com/123456789';
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'ghost';
+  del.textContent = '删除';
+  del.onclick = () => row.remove();
+  row.appendChild(input);
+  row.appendChild(del);
+  box.appendChild(row);
+}
+
+function roomRows() {
+  return Array.from(document.querySelectorAll('#set-rooms input'))
+    .map(i => i.value.trim()).filter(Boolean);
+}
+
+function fillRooms(list) {
+  $('set-rooms').innerHTML = '';
+  (list && list.length ? list : ['']).forEach(addRoomRow);
+}
+
+function applyUiSettings(s) {
+  uiSound = s.sound !== false;
+  uiLogLevel = ['info', 'warn', 'error'].includes(s.log_level) ? s.log_level : 'info';
+  $('set-sound').checked = uiSound;
+  $('set-log-level').value = uiLogLevel;
+}
+
+function fillSettingsForm(s) {
+  if (!s || !Object.keys(s).length) return;
+  $('set-outdir').value = s.output_dir || '';
+  $('set-quality').value = s.quality || 'best';
+  setFps('set-fps', s.fps);
+  setFps('set-rec-fps', s.record_fps);
+  $('set-keep').checked = !!s.keep_original;
+  $('set-rec-format').value = s.record_format || 'ts';
+  if (!$('set-rec-format').value) $('set-rec-format').value = 'ts';
+  $('set-seg-minutes').value = s.segment_minutes || 0;
+  $('set-poll').value = s.poll_interval || 60;
+  $('set-browser').value = s.browser || 'chrome';
+  fillRooms(s.rooms || []);
+  applyUiSettings(s);
+}
+
+function readSettingsForm() {
+  return {
+    output_dir: $('set-outdir').value.trim(),
+    quality: $('set-quality').value,
+    fps: parseInt($('set-fps').value || '0', 10) || 0,
+    keep_original: $('set-keep').checked,
+    record_format: $('set-rec-format').value,
+    segment_minutes: parseInt($('set-seg-minutes').value || '0', 10) || 0,
+    poll_interval: parseInt($('set-poll').value || '60', 10) || 60,
+    record_fps: parseInt($('set-rec-fps').value || '0', 10) || 0,
+    browser: $('set-browser').value,
+    rooms: roomRows(),
+    theme: window.DLYTheme.mode(),
+    sound: $('set-sound').checked,
+    log_level: $('set-log-level').value
+  };
+}
+
+/* 保存后把「默认值」同步到各业务页面，但不动用户正在填的录制时长等临时值 */
+function syncDefaultsToPages(s) {
+  $('dl-outdir').value = s.output_dir || '';
+  $('rec-outdir').value = s.output_dir || '';
+  $('dl-quality').value = s.quality || 'best';
+  $('dl-keep').checked = !!s.keep_original;
+  setFps('dl-fps', s.fps);
+  setFps('rec-fps', s.record_fps);
+  setFps('watch-fps', s.record_fps);
+  $('watch-interval').value = s.poll_interval || 60;
+  $('browser').value = s.browser || 'chrome';
+  $('watch-rooms').value = (s.rooms || []).join('\n');
+}
+
+async function saveSettings() {
+  const btn = $('set-save');
+  const hint = $('set-hint');
+  btn.disabled = true;
+  hint.textContent = '正在保存…';
+  try {
+    const data = await api('/api/settings', readSettingsForm());
+    const s = data.settings || readSettingsForm();
+    snapshot.settings = s;
+    fillSettingsForm(s);
+    syncDefaultsToPages(s);
+    hint.textContent = '已保存到 ' + (data.path || 'config.yaml');
+    toast('设置已保存，并同步到各页面默认值', 'ok');
+  } catch (e) {
+    hint.textContent = '保存失败：' + e.message;
+    toast('保存失败：' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function resetSettings() {
+  fillSettingsForm((snapshot && snapshot.settings) || {});
+  $('set-hint').textContent = '已恢复为已保存的设置';
+  toast('已放弃未保存的修改', 'ok');
+}
+
+async function openOutputDir() {
+  try {
+    await api('/api/open', { path: $('set-outdir').value.trim() });
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+function clearLogs() {
+  ['dl-log', 'rec-log', 'watch-log'].forEach(id => {
+    const el = $(id); if (el) el.innerHTML = '';
+  });
+  Object.keys(counts).forEach(k => { counts[k] = 0; });
+  ['dl-count', 'rec-count', 'watch-count'].forEach(id => {
+    const el = $(id); if (el) el.textContent = '';
+  });
+  toast('界面日志已清空', 'ok');
+}
+
+function followSystemTheme() {
+  window.DLYTheme.set('system', true);
+  toast('已恢复跟随系统主题', 'ok');
+}
+
+/* ---------------- 主题开关（设置页 + 侧栏，共两套实例） ---------------- */
+const themeToggles = [];
+function mountThemeToggles() {
+  if (!window.PixelToggle || !window.DLYTheme) return;
+  ['theme-toggle', 'theme-toggle-mini'].forEach(id => {
+    const btn = $(id);
+    if (!btn) return;
+    themeToggles.push(new window.PixelToggle(btn, {
+      checked: !window.DLYTheme.isDark(),
+      sound: true,
+      onCheckedChange: checked => window.DLYTheme.set(checked ? 'light' : 'dark', true)
+    }));
+  });
+  window.DLYTheme.subscribe(state => {
+    const day = state.resolved === 'light';
+    // 程序化同步不回调 onCheckedChange，两个实例不会互相触发主题写入
+    themeToggles.forEach(t => { if (t.checked !== day) t.setChecked(day, false); });
+    const label = $('theme-state');
+    if (label) {
+      label.textContent = '当前：' + (day ? '白天模式' : '夜间模式') +
+        '（' + (state.mode === 'system' ? '跟随系统' : '手动选择') + '）';
+    }
+  });
+}
+
 const initTab = location.hash.replace('#', '');
-if (['download', 'record', 'watch'].includes(initTab)) activateTab(initTab);
+if (TAB_NAMES.includes(initTab)) activateTab(initTab);
+fillRooms([]);
+mountThemeToggles();
 poll();
 </script>
 </body>
