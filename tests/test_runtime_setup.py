@@ -179,15 +179,18 @@ def test_manual_cookie_ui_is_wired():
     assert "'set-manual-cookie'" in html
 
 
-def test_open_interface_uses_edge_app_window(monkeypatch):
-    """浏览器模式用 Edge 应用窗口，确保双击后有可见界面。"""
+def test_open_interface_uses_browser_app_window(monkeypatch):
+    """浏览器模式用真实安装路径开应用窗口，确保双击后有可见界面。"""
     from dly.gui import server
 
     calls = []
+    monkeypatch.setattr(server, "browser_exe",
+                        lambda name: "C:/fake/msedge.exe" if name == "msedge.exe" else "")
     monkeypatch.setattr(server.subprocess, "Popen",
                         lambda args, **kw: calls.append(args))
     assert server.open_interface("http://127.0.0.1:8765/") is True
-    assert calls and any("--app=http://127.0.0.1:8765/" in str(a) for a in calls[0])
+    assert calls and calls[0][0] == "C:/fake/msedge.exe"
+    assert "--app=http://127.0.0.1:8765/" in calls[0]
 
 
 def test_existing_instance_detected(tmp_path):

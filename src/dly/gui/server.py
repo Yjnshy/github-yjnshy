@@ -30,6 +30,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
+try:                       # 非 Windows 跑测试时不应该炸
+    import winreg
+except ImportError:        # pragma: no cover
+    winreg = None  # type: ignore[assignment]
+
 from dly import __version__
 from dly.core.compat import open_folder
 from dly.core.config import (config_file_path, load_config,
@@ -838,32 +843,53 @@ def create_app(desktop: bool = False) -> AppContext:
     return AppContext(state, _make_server(state), desktop=desktop)
 
 
+def browser_exe(name: str) -> str:
+    """按浏览器进程名找实际 exe 路径；优先注册表 App Paths（可能在 D 盘）。"""
+    if sys.platform != "win32" or winreg is None:
+        return ""
+    try:
+        key = winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            rf"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{name}",
+            0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY)
+        value, _ = winreg.QueryValueEx(key, None)
+        if value and Path(value).is_file():
+            return str(value)
+    except OSError:
+        pass
+    roots = [os.environ.get("ProgramFiles(x86)", ""),
+             os.environ.get("ProgramFiles", ""),
+             r"C:\Program Files (x86)", r"C:\Program Files",
+             r"D:\Program Files (x86)", r"D:\Program Files"]
+    folder = "Microsoft/Edge/Application" if name == "msedge.exe" else "Google/Chrome/Application"
+    for root in roots:
+        if not root:
+            continue
+        candidate = Path(root) / folder / name
+        if candidate.is_file():
+            return str(candidate)
+    return ""
+
+
 def open_interface(url: str) -> bool:
-    """打开界面：Windows 上优先用 Edge 应用窗口，失败再退回系统默认浏览器。
+    """打开界面：Windows 上优先用 Edge / Chrome 应用窗口，失败再退回默认浏览器。
 
     浏览器模式的 webbrowser.open 在部分环境里返回 True 但看不到窗口；
-    Edge 的 ``--app`` 模式会开一个独立应用窗口（没有地址栏标签），
-    视觉上和桌面窗口一致，也不需要装 WebView2 / .NET。
+    ``--app`` 模式会开一个独立应用窗口（没有地址栏标签），视觉上和桌面
+    窗口一致，也不需要装 WebView2 / .NET。
     """
     if sys.platform == "win32":
-        roots = [os.environ.get("ProgramFiles(x86)", ""),
-                 os.environ.get("ProgramFiles", ""),
-                 r"C:\Program Files (x86)", r"C:\Program Files"]
-        for root in roots:
-            if not root:
-                continue
-            edge = Path(root) / "Microsoft" / "Edge" / "Application" / "msedge.exe"
-            if not edge.is_file():
+        for name in ("msedge.exe", "chrome.exe"):
+            exe = browser_exe(name)
+            if not exe:
                 continue
             try:
-                subprocess.Popen([str(edge), f"--app={url}",
-                                  "--window-size=1180,860"],
+                subprocess.Popen([exe, f"--app={url}", "--window-size=1180,860"],
                                  close_fds=True)
-                logger.info("已用 Edge 应用窗口打开界面：%s", url)
+                logger.info("已用 %s 应用窗口打开界面：%s", name, url)
                 return True
             except OSError:
-                logger.debug("Edge 启动失败，退回默认浏览器", exc_info=True)
-                break
+                logger.debug("%s 启动失败，继续尝试", name, exc_info=True)
     return bool(webbrowser.open(url))
 
 
