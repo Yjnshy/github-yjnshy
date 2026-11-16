@@ -288,18 +288,20 @@ def test_index_has_settings_guard_and_live_sync(app):
 
 
 def test_sidebar_theme_toggle_replaces_quit_button(app):
-    """侧栏底部主题开关占据原退出按钮位置；桌面版关窗即退出，不再需要按钮。"""
+    """桌面版关窗即退出不再要按钮；浏览器模式保留隐藏的退出入口。"""
     ctx, _ = app
     _, html = _get(ctx.url, "/")
     bottom = html.split('<div class="side-bottom">', 1)[1].split('</aside>', 1)[0]
     assert 'quitApp' not in html
-    assert '>退出程序</button>' not in html
+    # 退出按钮只在浏览器模式显示（初始 hidden，由 snapshot.desktop 切换）
+    assert 'id="quit-btn" class="quit-btn" type="button" hidden' in bottom
+    assert "quit-btn').hidden = !!snapshot.desktop" in html
     assert '<div class="side-links">' not in html
     assert 'id="theme-toggle-mini"' in bottom
-    assert (bottom.index('side-status') < bottom.index('id="theme-toggle-mini"')
-            < bottom.index('side-meta'))
+    assert (bottom.index('side-status') < bottom.index('id="quit-btn"')
+            < bottom.index('id="theme-toggle-mini"') < bottom.index('side-meta'))
     assert '关闭窗口即停止值守并退出程序' in html
-    assert '关闭浏览器页面服务仍在运行' in html
+    assert '关闭浏览器页面且没有任务在跑时，程序会自动退出' in html
 
 
 def test_fluid_nav_script_is_served(app):
@@ -348,3 +350,18 @@ def test_settings_cards_are_single_column(app):
     assert '.settings-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }' in html
     assert 'repeat(2, minmax(0, 1fr))' not in html
     assert '.settings-grid .row .field { flex: 1 1 160px; }' in html
+
+
+def test_frozen_fallback_switches_to_browser_mode():
+    """打包版桌面窗口起不来时应退回浏览器模式（空闲自退），而不是直接退出。"""
+    import pathlib as _p
+    root = _p.Path(__file__).resolve().parents[1]
+    init = (root / "src" / "dly" / "gui" / "__init__.py").read_text(encoding="utf-8")
+    server = (root / "src" / "dly" / "gui" / "server.py").read_text(encoding="utf-8")
+    html = (root / "src" / "dly" / "gui" / "assets" / "index.html").read_text(encoding="utf-8")
+    assert "launch_web(open_browser=True, idle_exit_seconds=150)" in init
+    assert "idle_exit_seconds: float = 0.0" in server
+    assert "state.busy()" in server                 # 有任务在跑绝不自动退出
+    assert 'if idle >= idle_exit_seconds' in server
+    assert '<button id="quit-btn" class="quit-btn" type="button" hidden>退出程序</button>' in html
+    assert "quit-btn').hidden = !!snapshot.desktop" in html

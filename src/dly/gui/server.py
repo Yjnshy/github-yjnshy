@@ -99,6 +99,7 @@ class AppState:
         self.recorder = None
         self.monitor = None
         self.desktop = False          # 桌面窗口模式下关窗即退出，前端不显示浏览器模式的退出提示
+        self.last_request = time.monotonic()   # 最近一次收到 HTTP 请求的时刻（浏览器模式空闲自退用）
         self._quit = threading.Event()
         # 独立于 recorder 内部状态的停止信号：自动续录的探测间隙里也要能停下
         self.record_stop = threading.Event()
@@ -150,6 +151,11 @@ class AppState:
 
     def request_quit(self) -> None:
         self._quit.set()
+
+    def busy(self) -> bool:
+        """有没有下载 / 录制 / 值守任务正在跑（空闲自退时要看）。"""
+        return bool(self.download.get("active") or self.watch.get("active")
+                    or self.record.get("active"))
 
     @property
     def quit_requested(self) -> bool:
@@ -481,6 +487,7 @@ class Handler(BaseHTTPRequestHandler):
     # ---- GET ----
 
     def do_GET(self) -> None:  # noqa: N802
+        self.state.last_request = time.monotonic()
         path = urlparse(self.path).path
         if path in ("/", "/index.html"):
             try:
@@ -554,6 +561,7 @@ class Handler(BaseHTTPRequestHandler):
     # ---- POST ----
 
     def do_POST(self) -> None:  # noqa: N802
+        self.state.last_request = time.monotonic()
         path = urlparse(self.path).path
         data = self._read_json()
 
@@ -805,8 +813,14 @@ def create_app(desktop: bool = False) -> AppContext:
     return AppContext(state, _make_server(state), desktop=desktop)
 
 
-def launch(open_browser: bool = True) -> None:
-    """浏览器模式：启动服务并打开系统浏览器（阻塞直到用户退出）。"""
+def launch(open_browser: bool = True,
+           idle_exit_seconds: float = 0.0) -> None:
+    """浏览器模式：启动服务并打开系统浏览器（阻塞直到用户退出）。
+
+    ``idle_exit_seconds`` 大于 0 时启用空闲自退：超过该时长没收到任何请求
+    且没有任务在跑，就自动退出。给打包版桌面窗口启动失败退回浏览器模式用——
+    打包版没有控制台窗口，用户关掉浏览器页面后进程必须能自己收尾。
+    """
     app = create_app(desktop=False)
     app.start()
     print(f"界面已启动：{app.url}")
@@ -814,6 +828,24 @@ def launch(open_browser: bool = True) -> None:
 
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(app.url)).start()
+
+    if idle_exit_seconds > 0:
+        state = app.state
+
+        def _idle_watcher() -> None:
+            """页面关掉后轮询停止；空闲且无任务时替用户把进程退干净。"""
+            interval = 10.0
+            while not state.quit_requested:
+                time.sleep(interval)
+                idle = time.monotonic() - state.last_request
+                # 页面隐藏时浏览器会把定时器节流到约 1 次/分钟，阈值要留足余量
+                if idle >= idle_exit_seconds and not state.busy():
+                    state.log("download", "浏览器页面已关闭且无任务在跑，程序自动退出。")
+                    state.request_quit()
+                    return
+
+        threading.Thread(target=_idle_watcher, daemon=True,
+                         name="idle-exit-watcher").start()
 
     try:
         app.wait()

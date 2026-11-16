@@ -390,6 +390,13 @@
   .theme-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .side-theme { display: flex; justify-content: flex-start; margin: 2px 0 12px; }
   .side-theme .pixel-toggle { flex: none; }
+  .quit-btn {
+    display: block; width: 100%; margin: 0 0 10px; padding: 7px 10px;
+    border: 1px solid var(--border); border-radius: 9px;
+    background: var(--surface-2); color: var(--muted);
+    font: inherit; font-size: 12.5px; cursor: pointer;
+  }
+  .quit-btn:hover { color: var(--danger); border-color: var(--danger); }
   .room-row { display: flex; gap: 8px; margin-bottom: 8px; }
   .room-row input { flex: 1; min-width: 0; }
   .room-row button { flex: none; padding: 8px 12px; font-size: 12.5px; }
@@ -567,6 +574,8 @@
       <span id="conn" class="badge">连接中…</span>
       <span id="ffmpeg-badge" class="badge">ffmpeg</span>
     </div>
+    <!-- 浏览器模式（--web 或桌面窗口起不来回退）才显示的退出入口 -->
+    <button id="quit-btn" class="quit-btn" type="button" hidden>退出程序</button>
     <!-- 桌面版关窗即退出，原来的退出按钮没必要；主题开关占它的位置 -->
     <div class="side-theme">
       <button id="theme-toggle-mini" class="pixel-toggle mini" type="button"
@@ -1092,6 +1101,11 @@ async function api(path, body) {
   return data;
 }
 
+// 浏览器模式的退出入口：桌面版隐藏（关窗即退），见 render() 里的 hidden 切换
+$('quit-btn').addEventListener('click', () => {
+  api('/api/quit').catch(() => {});   // 服务收到后会自己退出，页面随之断开
+});
+
 function notify(text) {
   appendLine('download', { text, level: 'error' });
   if (typeof toast === 'function') toast(text, 'err');
@@ -1189,9 +1203,10 @@ function render() {
   ff.textContent = snapshot.ffmpeg ? 'ffmpeg 就绪' : '缺少 ffmpeg';
   ff.className = 'badge ' + (snapshot.ffmpeg ? 'ok' : 'bad');
   $('version').textContent = '版本 ' + snapshot.version;
+  $('quit-btn').hidden = !!snapshot.desktop;   // 浏览器模式才显示退出入口
   $('watch-tip').textContent = '开播自动录、下播自动停；断流会指数退避重连。'
     + (snapshot.desktop ? '关闭窗口即停止值守并退出程序。'
-                        : '关闭浏览器页面服务仍在运行，关闭启动时的黑色命令行窗口即可退出。');
+                        : '关闭浏览器页面且没有任务在跑时，程序会自动退出；也可点左下角「退出程序」。');
 }
 
 /* ---------------- 轮询 ---------------- */
