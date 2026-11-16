@@ -46,10 +46,13 @@ COOKIE_REQUIRED = {"douyin", "xiaohongshu"}
 def _explain_cookie_error(message: str, browser: str) -> str:
     """把 yt-dlp 的原始报错翻译成用户能照做的建议。"""
     text = message.lower()
-    if "decrypt with dpapi" in text or "app-bound" in text:
-        return (f"{browser} 的 Cookie 受系统级加密（App-Bound Encryption）保护，"
-                "第三方程序无法解密。建议改用 Chrome / Firefox 登录同一账号，"
-                "或导出一份 cookies.txt 并在配置里指定 cookies.cookies_file。")
+    if ("decrypt with dpapi" in text or "app-bound" in text
+            or "could not decrypt" in text or "no key found" in text):
+        return (f"{browser} 的 Cookie 受系统级加密（App-Bound Encryption / v20）保护，"
+                "Windows 不允许第三方程序解密，这是浏览器厂商的安全限制，"
+                "程序无法绕过。请在那台电脑的浏览器里装 Cookie 导出扩展"
+                "（如「Cookie-Editor」），登录后导出 Netscape 格式的 cookies.txt，"
+                "再到设置页点「选择 cookies.txt」导入即可。")
     if "could not copy" in text:
         return (f"{browser} 正在运行并锁住了 Cookie 数据库，"
                 "请完全退出该浏览器（任务管理器确认无残留进程）后重试。")
@@ -92,6 +95,7 @@ class CookieManager:
         # 没有负缓存会反复解密浏览器数据库（很慢）并刷屏告警
         self._failed: Dict[str, str] = {}
         self._temp_files: List[str] = []
+        self.last_error = ""   # 最近一次取 Cookie 的可读原因，供界面日志展示
 
     # ---- 对外接口 ----
 
@@ -104,6 +108,7 @@ class CookieManager:
             logger.debug("[%s] Cookie 不可用（已缓存失败状态）", platform)
             return ""
 
+        self.last_error = ""
         header = (self._from_file(platform)
                   or self._from_disk_cache(platform)
                   or self._from_browser(platform))
@@ -116,13 +121,13 @@ class CookieManager:
                 logger.debug("[%s] 未取到 Cookie，该平台匿名可访问，继续", platform)
                 return header
             logger.warning(
-                "[%s] 未能获取 Cookie，可能原因：\n"
+                "[%s] 未能获取 Cookie：%s\n"
                 "  1. 浏览器里没有登录该平台（先登录再试）\n"
                 "  2. 浏览器正在运行，锁住了 Cookie 数据库（完全退出浏览器）\n"
-                "  3. Edge/新版 Chrome 启用了系统级加密，第三方无法解密"
-                "（改用 Chrome、Firefox，或导出 cookies.txt 后配置 cookies.cookies_file）\n"
+                "  3. Edge/新版 Chrome 的 App-Bound 加密无法被第三方解密"
+                "（在设置页选择 cookies.txt 导入）\n"
                 "（本次运行内不再重试，如需重试请执行 dly cache --clear 或重启）",
-                platform)
+                platform, self.last_error or "浏览器与 cookies 文件均未取到")
         return header
 
     def write_netscape_file(self, platform: str) -> Optional[str]:
@@ -232,21 +237,35 @@ class CookieManager:
         preferred = (self._config.browser or "edge").lower()
         browsers = [preferred] + [b for b in ("edge", "chrome", "firefox", "brave")
                                   if b != preferred]
+        errors = []
         for browser in browsers:
-            header = self._via_ytdlp(browser, domain)
+            header, err = self._via_ytdlp(browser, domain)
             if header:
                 logger.info("[%s] 已从 %s 浏览器提取 Cookie", platform, browser)
                 self._save_disk_cache(platform, header)
                 return header
-        return self._via_browser_cookie3(preferred, domain)
+            if err:
+                errors.append(err)
+        fallback, err = self._via_browser_cookie3(preferred, domain)
+        if fallback:
+            return fallback
+        if err:
+            errors.append(err)
+        # 同类报错只留一条，优先展示能指导用户操作的建议
+        hints = [e for e in errors if _explain_cookie_error(e, preferred)]
+        self.last_error = (hints[0] if hints else
+                           (errors[0] if errors else "浏览器与 cookies 文件均未取到"))
+        if hints:
+            self.last_error = _explain_cookie_error(hints[0], preferred)
+        return ""
 
     @staticmethod
-    def _via_ytdlp(browser: str, domain: str) -> str:
-        """复用 yt-dlp 内置的浏览器 Cookie 解密（支持新版 Chrome 加密）。"""
+    def _via_ytdlp(browser: str, domain: str) -> tuple:
+        """复用 yt-dlp 内置的浏览器 Cookie 解密；返回 (cookie头, 错误文本)。"""
         try:
             from yt_dlp import YoutubeDL
         except ImportError:
-            return ""
+            return "", ""
         try:
             with YoutubeDL({
                 "quiet": True,
@@ -256,29 +275,28 @@ class CookieManager:
             }) as ydl:
                 jar = ydl.cookiejar
         except Exception as exc:
-            logger.debug("[%s] Cookie 提取失败: %s", browser, exc)
-            hint = _explain_cookie_error(str(exc), browser)
-            if hint:
-                logger.debug(hint)
-            return ""
+            message = str(exc)
+            logger.debug("[%s] Cookie 提取失败: %s", browser, message)
+            return "", message
         items = [
             f"{c.name}={c.value}" for c in jar
             if domain.lstrip(".") in (c.domain or "")
         ]
-        return "; ".join(items)
+        return "; ".join(items), ""
 
     @staticmethod
-    def _via_browser_cookie3(browser: str, domain: str) -> str:
+    def _via_browser_cookie3(browser: str, domain: str) -> tuple:
         try:
             import browser_cookie3  # type: ignore
         except ImportError:
-            return ""
+            return "", ""
         loader = getattr(browser_cookie3, browser, None)
         if loader is None:
-            return ""
+            return "", ""
         try:
             jar: http.cookiejar.CookieJar = loader(domain_name=domain)
         except Exception as exc:
-            logger.debug("browser-cookie3 提取失败: %s", exc)
-            return ""
-        return "; ".join(f"{c.name}={c.value}" for c in jar)
+            message = str(exc)
+            logger.debug("browser-cookie3 提取失败: %s", message)
+            return "", message
+        return "; ".join(f"{c.name}={c.value}" for c in jar), ""

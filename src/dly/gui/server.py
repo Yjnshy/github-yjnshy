@@ -420,7 +420,9 @@ def _run_cookie_check(state: AppState, browser: str) -> None:
                 state.log("download",
                           f"{platform}：成功（{len(header)} 字符，{note}）", "ok")
             else:
-                state.log("download", f"{platform}：未取到（详见上方提示）", "warn")
+                state.log("download", f"{platform}：未取到", "warn")
+                if manager.last_error:
+                    state.log("download", f"  原因：{manager.last_error}", "warn")
         manager.cleanup()
     except Exception as exc:  # noqa: BLE001
         state.log("download", f"Cookie 检测异常：{exc}", "error")
@@ -706,6 +708,25 @@ class Handler(BaseHTTPRequestHandler):
                                      (data.get("title") or "选择保存目录").strip())
             except Exception as exc:  # noqa: BLE001 弹窗失败不该拖垮服务
                 logger.exception("选择目录失败")
+                self._json({"error": str(exc)}, 500)
+                return
+            finally:
+                _PICK_LOCK.release()
+            self._json({"path": picked, "cancelled": not picked})
+            return
+
+        if path == "/api/pick-cookie-file":
+            # 导出 cookies.txt 后在这里选回来，路径存设置里，文件本身不入库
+            from dly.core.folder_dialog import pick_file
+
+            if not _PICK_LOCK.acquire(blocking=False):
+                self._json({"error": "已经有一个选择窗口开着"}, 409)
+                return
+            try:
+                picked = pick_file((data.get("path") or "").strip(),
+                                   "选择 cookies.txt")
+            except Exception as exc:  # noqa: BLE001 弹窗失败不该拖垮服务
+                logger.exception("选择 Cookie 文件失败")
                 self._json({"error": str(exc)}, 500)
                 return
             finally:

@@ -162,18 +162,63 @@ def missing_components() -> List[str]:
     return missing
 
 
-def confirm_install(missing: List[str]) -> bool:
+def _bundled_installer_dir() -> Path:
+    """随包携带的安装包目录（exe 旁的 runtime/，源码运行时用 packaging/runtime）。"""
+    if getattr(sys, "frozen", False):
+        base = Path(sys.executable).resolve().parent
+    else:
+        base = Path(__file__).resolve().parents[2] / "packaging"
+    return base / "runtime"
+
+
+def installer_path(name: str) -> Optional[Path]:
+    """优先返回随包携带的安装包路径；没有则 None（调用方再去下载）。"""
+    filename = INSTALLERS[name][1]
+    bundled = _bundled_installer_dir() / filename
+    return bundled if bundled.is_file() else None
+
+
+def looks_like_runtime_failure(exc_text: str) -> bool:
+    """桌面报错是不是 .NET / WebView2 这类环境问题。
+
+    朋友那台机器注册表显示 .NET 4.8 已装，但桌面仍报
+    ``Failed to resolve Python.Runtime.Loader.Initialize`` —— 说明"齐全"
+    不代表可用，这种错误必须让用户有机会强制修复安装一次。
+    """
+    text = (exc_text or "").lower()
+    return any(token in text for token in (
+        "python.runtime", "pythonnet", "webview2", "clr", ".net",
+        "desktop", "failed to resolve",
+    ))
+
+
+def repair_targets() -> List[str]:
+    """强制修复时装哪几样：两样都装，避免反复试错。"""
+    return ["dotnet48", "webview2"]
+
+
+def confirm_install(missing: List[str], repair: bool = False) -> bool:
     """问用户要不要自动安装；返回是否点了「是」。"""
     if not missing:
         return False
     names = "、".join(LABELS.get(m, m) for m in missing)
-    size = {1: "约 110~150MB", 2: "约 260MB"}.get(len(missing), "约 260MB")
-    text = (
-        f"检测到这台电脑缺少桌面窗口所需的系统组件：\n\n{names}\n\n"
-        f"是否现在自动下载并安装？（{size}，需要联网）\n\n"
-        "安装时会弹出「用户账户控制」提示，请点「是」；装完程序会自动重新打开。\n"
-        "选「否」则改用浏览器模式继续运行 —— 功能完全相同，只是界面在浏览器里。"
-    )
+    if repair:
+        text = (
+            "系统里虽然检测到了运行环境，但桌面窗口仍然启动失败。\n"
+            "这通常说明已安装的版本损坏或不完整，需要重新安装一次。\n\n"
+            f"是否重新安装/修复：{names}？\n\n"
+            "安装包已经随程序一起带了，不需要联网下载；\n"
+            "安装时会弹出「用户账户控制」，请点「是」（这是 Windows 要求，绕不过去）。\n"
+            "装完程序会自动重新打开。选「否」则改用浏览器模式继续运行。"
+        )
+    else:
+        size = {1: "约 110~150MB", 2: "约 260MB"}.get(len(missing), "约 260MB")
+        text = (
+            f"检测到这台电脑缺少桌面窗口所需的系统组件：\n\n{names}\n\n"
+            f"是否现在自动下载并安装？（{size}，需要联网）\n\n"
+            "安装时会弹出「用户账户控制」提示，请点「是」；装完程序会自动重新打开。\n"
+            "选「否」则改用浏览器模式继续运行 —— 功能完全相同，只是界面在浏览器里。"
+        )
     try:
         res = ctypes.windll.user32.MessageBoxW(
             None, text, "帅羊羊DLY - 缺少运行环境", 0x04 | 0x30)   # 是/否 + 问号
@@ -244,18 +289,25 @@ def install(missing: List[str], temp_dir: Optional[Path] = None) -> bool:
         label = LABELS.get(name, name)
         dest = work / filename
 
-        note = _Note(f"正在下载 {label} 安装包…\n\n约 1~3 分钟，请勿关闭本程序。")
-        got = _download(url, dest) or _download(url, dest)   # 失败重试一次
-        note.close()
+        note = None
+        bundled = installer_path(name)
+        if bundled:
+            got = True
+            logger.info("%s 使用随包安装包：%s", label, bundled)
+        else:
+            note = _Note(f"正在下载 {label} 安装包…\n\n约 1~3 分钟，请勿关闭本程序。")
+            got = _download(url, dest) or _download(url, dest)   # 失败重试一次
+            note.close()
         if not got:
             logger.warning("%s 下载失败", label)
             continue
 
+        source = bundled or dest
         note = _Note(
             f"正在安装 {label}…\n\n"
             "屏幕上可能暂时没有变化，这是静默安装的正常表现，通常 1~3 分钟。\n"
             "若弹出「用户账户控制」，请点「是」。")
-        code = _run_elevated(dest, params)
+        code = _run_elevated(source, params)
         note.close()
         if code is None:
             logger.warning("%s 安装被取消（UAC 未确认）", label)

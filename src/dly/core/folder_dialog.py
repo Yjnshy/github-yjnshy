@@ -40,12 +40,17 @@ IID_ISHELL_ITEM = "{43826d1e-e718-42ee-bc55-a1e261c37bfe}"
 FOS_PICKFOLDERS = 0x00000020
 FOS_FORCEFILESYSTEM = 0x00000040
 FOS_PATHMUSTEXIST = 0x00000800
+FOS_FILEMUSTEXIST = 0x00001000
 FOS_NOCHANGEDIR = 0x00000008
 
 # IShellItem::GetDisplayName 的 SIGDN_FILESYSPATH
 SIGDN_FILESYSPATH = 0x80058000
 
 _S_OK = 0
+
+
+class _COMDLG_FILTERSPEC(ctypes.Structure):
+    _fields_ = [("pszName", ctypes.c_wchar_p), ("pszSpec", ctypes.c_wchar_p)]
 
 
 class _GUID(ctypes.Structure):
@@ -164,6 +169,81 @@ def _windows_pick_folder(initial: str, title: str) -> str:
             ole32.CoUninitialize()
 
 
+def _windows_pick_file(initial: str, title: str) -> str:
+    """Windows 原生「选择文件」对话框；取消返回空串。"""
+    ole32 = ctypes.windll.ole32
+    hr = ole32.CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE)
+    initialized = hr in (0, 1)
+
+    dialog = ctypes.c_void_p()
+    try:
+        clsid = _guid(CLSID_FILE_OPEN_DIALOG)
+        iid = _guid(IID_IFILE_OPEN_DIALOG)
+        if ole32.CoCreateInstance(ctypes.byref(clsid), None, CLSCTX_INPROC_SERVER,
+                                  ctypes.byref(iid),
+                                  ctypes.byref(dialog)) < 0:
+            return ""
+        ptr = dialog.value
+
+        get_options = _method(ptr, 10, ctypes.POINTER(ctypes.c_uint32))
+        options = ctypes.c_uint32(0)
+        if get_options(ptr, ctypes.byref(options)) == _S_OK:
+            options.value |= (FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST
+                              | FOS_FILEMUSTEXIST | FOS_NOCHANGEDIR)
+            _method(ptr, 9, ctypes.c_uint32)(ptr, options.value)
+
+        if title:
+            _method(ptr, 17, ctypes.c_wchar_p)(ptr, title)
+        _method(ptr, 18, ctypes.c_wchar_p)(ptr, "选择文件")
+
+        # 文件类型过滤：只显示 cookies.txt / *.txt，默认 *.txt
+        specs = (_COMDLG_FILTERSPEC * 2)(
+            _COMDLG_FILTERSPEC("cookies.txt", "*.txt"),
+            _COMDLG_FILTERSPEC("所有文件", "*.*"))
+        _method(ptr, 8, ctypes.c_uint32,
+                ctypes.POINTER(_COMDLG_FILTERSPEC))(ptr, 2, specs)
+        _method(ptr, 6, ctypes.c_uint32)(ptr, 0)   # SetFileTypeIndex
+
+        if initial and os.path.isfile(initial):
+            folder = os.path.dirname(os.path.abspath(initial))
+            item = _shell_item(folder)
+            if item:
+                _method(ptr, 12, ctypes.c_void_p)(ptr, item)   # SetFolder
+                _release(item)
+        elif initial and os.path.isdir(initial):
+            item = _shell_item(initial)
+            if item:
+                _method(ptr, 12, ctypes.c_void_p)(ptr, item)
+                _release(item)
+
+        hwnd = ctypes.windll.user32.GetForegroundWindow()
+        if _method(ptr, 3, wintypes.HWND)(ptr, hwnd) != _S_OK:
+            return ""
+
+        picked = ctypes.c_void_p()
+        if _method(ptr, 20, ctypes.POINTER(ctypes.c_void_p))(
+                ptr, ctypes.byref(picked)) != _S_OK or not picked.value:
+            return ""
+        try:
+            buf = ctypes.c_void_p()
+            if _method(picked.value, 5, ctypes.c_uint32,
+                       ctypes.POINTER(ctypes.c_void_p))(
+                    picked.value, SIGDN_FILESYSPATH, ctypes.byref(buf)) != _S_OK:
+                return ""
+            try:
+                return ctypes.wstring_at(buf.value) if buf.value else ""
+            finally:
+                ole32.CoTaskMemFree(buf)
+        finally:
+            _release(picked.value)
+    except (AttributeError, OSError):
+        return ""
+    finally:
+        _release(dialog.value)
+        if initialized:
+            ole32.CoUninitialize()
+
+
 def _darwin_pick_folder(initial: str, title: str) -> str:
     script = f'POSIX path of (choose folder with prompt "{title}")'
     try:
@@ -196,3 +276,14 @@ def pick_folder(initial: str = "", title: str = "选择文件夹") -> str:
     if sys.platform == "darwin":
         return _darwin_pick_folder(initial, title)
     return _linux_pick_folder(initial, title)
+
+
+def pick_file(initial: str = "", title: str = "选择文件") -> str:
+    """弹系统选择文件对话框，返回绝对路径；用户取消返回空串。
+
+    和 ``pick_folder`` 一样走 Windows 原生 IFileOpenDialog，浏览器模式也能用，
+    不依赖 pywebview 的 GUI 线程。非 Windows 平台目前没有实现，返回空串。
+    """
+    if not IS_WINDOWS:
+        return ""
+    return _windows_pick_file(os.path.expanduser(str(initial or "").strip()), title)

@@ -15,10 +15,11 @@
 请先在电脑浏览器（默认 Chrome）里打开 douyin.com 并登录。
 程序会自动读取浏览器的登录状态，不需要手动复制 Cookie。
 
-想换浏览器：窗口右上角选 Chrome / Edge / Firefox / Brave，再点「测试」。
-注意：Edge 在新版本里启用了应用绑定加密，第三方程序读不到它的 Cookie，
-所以默认用 Chrome，这是系统安全机制的限制，不是程序的问题。
-
+想用 Edge 登录态：新版 Edge / Chrome 启用了应用绑定加密（App-Bound Encryption），
+Windows 不允许第三方程序直接读取 Cookie，这是浏览器厂商的安全限制，程序绕不过去。
+解决办法：在浏览器装一个 Cookie 导出扩展（如 Cookie-Editor），登录目标网站后导出
+Netscape 格式的 cookies.txt，再到本程序「设置 → Cookie 管理 → 选择文件」导入并保存，
+之后下载就会优先用这份 Cookie，不必再管浏览器来源。
 
 三、四个页签分别做什么
 ----------------------

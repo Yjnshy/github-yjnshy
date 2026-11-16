@@ -55,6 +55,13 @@ copy /y "packaging\使用说明.txt" "dist\DLY\使用说明.txt" >nul 2>nul
 copy /y "packaging\app.ico" "dist\DLY\DLY.ico" >nul 2>nul
 
 echo.
+echo 复制随包运行环境安装包（离线修复用）…
+if exist "packaging\runtime" (
+    if not exist "dist\DLY\runtime" mkdir "dist\DLY\runtime"
+    copy /y "packaging\runtime\*.exe" "dist\DLY\runtime\" >nul 2>nul
+)
+
+echo.
 echo 创建桌面快捷方式…
 python packaging\make_shortcut.py
 

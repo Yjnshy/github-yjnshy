@@ -36,3 +36,6 @@ desktop.ini
 packaging/icon_candidates/
 packaging/make_icon_candidates.py
 packaging/make_icon_y_variants.py
+
+# ---- 随包携带的系统运行时安装包（体积大，只本地生成） ----
+packaging/runtime/*.exe

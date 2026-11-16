@@ -959,6 +959,13 @@
             <button class="ghost" onclick="clearCookie()">清空缓存</button>
             <span class="hint">测试结果会显示在下载页日志里</span>
           </div>
+          <div class="row">
+            <label for="set-cookies-file">cookies.txt</label>
+            <input id="set-cookies-file" type="text" placeholder="浏览器导出的 Netscape 格式 cookies.txt（可选）" />
+            <button class="ghost" onclick="chooseCookieFile()">选择文件</button>
+          </div>
+          <div class="hint">Edge / 新版 Chrome 的登录态受系统级加密保护，程序无法直接读取。
+            遇到读不到 Cookie 时，装个 Cookie 导出扩展导出 cookies.txt，在这里选一次即可，不需要再选浏览器。</div>
         </div>
 
         <div class="card wide">
@@ -1417,6 +1424,27 @@ async function clearCookie() {
   } catch (e) { notify(e.message); }
 }
 
+/* 选一份浏览器导出的 cookies.txt，路径回填后点「保存设置」生效 */
+async function chooseCookieFile() {
+  if (picking) return;
+  picking = true;
+  const btn = document.querySelector('[onclick="chooseCookieFile()"]');
+  if (btn) btn.disabled = true;
+  try {
+    const data = await api('/api/pick-cookie-file',
+                           { path: $('set-cookies-file').value.trim() });
+    if (!data.cancelled && data.path) {
+      $('set-cookies-file').value = data.path;
+      setDirtyState(true);
+      toast('已选择，记得点「保存设置」', 'ok');
+    }
+  } catch (e) { notify(e.message); }
+  finally {
+    picking = false;
+    if (btn) btn.disabled = false;
+  }
+}
+
 let picking = false;
 
 /* 弹系统「选择文件夹」窗口，把结果回填到输入框。
@@ -1679,6 +1707,7 @@ function fillSettingsForm(s) {
   $('set-seg-minutes').value = s.segment_minutes || 0;
   $('set-poll').value = s.poll_interval || 60;
   $('set-browser').value = s.browser || 'chrome';
+  if ($('set-cookies-file')) $('set-cookies-file').value = s.cookies_file || '';
   fillRooms(s.rooms || []);
   applyUiSettings(s);
   syncedOutputDir = s.output_dir || '';
@@ -1695,6 +1724,7 @@ function readSettingsForm() {
     poll_interval: parseInt($('set-poll').value || '60', 10) || 60,
     record_fps: parseInt($('set-rec-fps').value || '0', 10) || 0,
     browser: $('set-browser').value,
+    cookies_file: $('set-cookies-file').value.trim(),
     rooms: roomRows(),
     theme: window.DLYTheme.mode(),
     sound: $('set-sound').checked,

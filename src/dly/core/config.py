@@ -158,6 +158,7 @@ def settings_from_config(cfg: AppConfig) -> Dict[str, Any]:
         "fps": cfg.fps,
         "keep_original": cfg.keep_original,
         "browser": cfg.cookies.browser,
+        "cookies_file": cfg.cookies.cookies_file,
         "record_format": cfg.record.format,
         "segment_minutes": cfg.record.segment_minutes,
         "poll_interval": cfg.record.poll_interval,
@@ -242,6 +243,14 @@ def save_settings(data: Dict[str, Any], path: Optional[str] = None) -> Path:
         cookies = _section(raw, "cookies")
         cookies["browser"] = _choice(data["browser"], BROWSER_CHOICES,
                                      current["browser"])
+        raw["cookies"] = cookies
+    if "cookies_file" in data:
+        # 只存用户选中的路径，文件本身绝不入库 / 上传
+        value = str(data["cookies_file"] or "").strip()[:500]
+        if value and not Path(value).is_file():
+            value = ""          # 路径失效就清空，避免界面显示一个假文件
+        cookies = _section(raw, "cookies")
+        cookies["cookies_file"] = value
         raw["cookies"] = cookies
 
     record = _section(raw, "record")

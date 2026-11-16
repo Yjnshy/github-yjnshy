@@ -50,9 +50,9 @@ def test_frozen_fallback_calls_runtime_setup():
     """打包版启动失败要先尝试自动装运行时，装不了才退浏览器模式。"""
     init = (Path(__file__).resolve().parents[1]
             / "src" / "dly" / "gui" / "__init__.py").read_text(encoding="utf-8")
-    assert "_try_install_runtimes()" in init
+    assert "_try_install_runtimes(str(exc))" in init
     assert "runtime_setup.missing_components()" in init
-    assert "runtime_setup.confirm_install(missing)" in init
+    assert "runtime_setup.confirm_install(targets, repair=repair)" in init
     assert "runtime_setup.relaunch()" in init
     assert "launch_web(open_browser=True, idle_exit_seconds=150)" in init
 
@@ -91,3 +91,57 @@ def test_version_matches_pyproject():
         encoding="utf-8")
     declared = re.search(r'^version = "([^"]+)"', pyproject, re.M).group(1)
     assert dly.__version__ == declared
+
+
+def test_bundled_installer_lookup(tmp_path, monkeypatch):
+    """随包带的安装包优先，找不到才走网络下载。"""
+    import dly.gui.runtime_setup as rs
+    monkeypatch.setattr(rs, "_bundled_installer_dir", lambda: tmp_path)
+    assert rs.installer_path("dotnet48") is None
+    fake = tmp_path / rs.INSTALLERS["dotnet48"][1]
+    fake.write_bytes(b"x")
+    assert rs.installer_path("dotnet48") == fake
+
+
+def test_detect_runtime_failure_text():
+    """注册表显示已装但 pythonnet 仍失败时，必须给强制修复机会。"""
+    import dly.gui.runtime_setup as rs
+    assert rs.looks_like_runtime_failure(
+        "桌面窗口启动失败：Failed to resolve Python.Runtime.Loader.Initialize")
+    assert not rs.looks_like_runtime_failure("磁盘空间不足")
+    assert set(rs.repair_targets()) == {"dotnet48", "webview2"}
+
+
+def test_cookie_file_roundtrip(tmp_path, monkeypatch):
+    """cookies.txt 路径要能保存并读回；不存在的文件会被清空。"""
+    from dly.core.config import AppConfig, save_settings, settings_from_config
+    from dly.core import config as cfgmod
+
+    monkeypatch.setattr(cfgmod, "config_file_path", lambda: tmp_path / "config.yaml")
+    cookie_file = tmp_path / "cookies.txt"
+    cookie_file.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
+    saved = tmp_path / "config.yaml"
+    save_settings({"cookies_file": str(cookie_file)})
+    assert settings_from_config(cfgmod.load_config(str(saved)))["cookies_file"] == str(cookie_file)
+    save_settings({"cookies_file": str(tmp_path / "missing.txt")})
+    assert settings_from_config(cfgmod.load_config(str(saved)))["cookies_file"] == ""
+
+
+def test_cookie_error_explains_app_bound():
+    """Edge 的 App-Bound 加密必须给出 cookies.txt 导入指引。"""
+    from dly.cookies.manager import _explain_cookie_error
+    hint = _explain_cookie_error("Failed to decrypt with DPAPI (app-bound)", "edge")
+    assert "App-Bound" in hint and "cookies.txt" in hint and "设置页" in hint
+
+
+def test_cookie_file_picker_endpoint_exists():
+    """设置页要能弹系统文件框选回 cookies.txt。"""
+    import pathlib
+    server = (pathlib.Path(__file__).resolve().parents[1]
+              / "src" / "dly" / "gui" / "server.py").read_text(encoding="utf-8")
+    html = (pathlib.Path(__file__).resolve().parents[1]
+            / "src" / "dly" / "gui" / "assets" / "index.html").read_text(encoding="utf-8")
+    assert 'path == "/api/pick-cookie-file"' in server
+    assert 'from dly.core.folder_dialog import pick_file' in server
+    assert 'id="set-cookies-file"' in html
+    assert "chooseCookieFile()" in html
