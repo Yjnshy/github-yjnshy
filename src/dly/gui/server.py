@@ -878,6 +878,15 @@ def open_interface(url: str) -> bool:
     ``--app`` 模式会开一个独立应用窗口（没有地址栏标签），视觉上和桌面
     窗口一致，也不需要装 WebView2 / .NET。
     """
+    env = None
+    if getattr(sys, "frozen", False) and sys.platform == "win32":
+        # PyInstaller 会把 _internal 放到 PATH 最前面，里面有一堆 api-ms-win-*.dll；
+        # 浏览器子进程继承后可能加载到错误版本并秒退（表现为双击"没反应"）。
+        env = os.environ.copy()
+        parts = [p for p in env.get("PATH", "").split(os.pathsep)
+                 if "_internal" not in p.lower() and "_mei" not in p.lower()]
+        env["PATH"] = os.pathsep.join(parts)
+        env.pop("PYINSTALLER_RESET_ENVIRONMENT", None)
     if sys.platform == "win32":
         # Chrome 的 --app 窗口最可靠；Edge 在部分机器上只弹空白窗口，放兜底
         for name in ("chrome.exe", "msedge.exe"):
@@ -886,7 +895,7 @@ def open_interface(url: str) -> bool:
                 continue
             try:
                 subprocess.Popen([exe, f"--app={url}", "--window-size=1180,860"],
-                                 close_fds=True)
+                                 close_fds=True, env=env)
                 logger.info("已用 %s 应用窗口打开界面：%s", name, url)
                 return True
             except OSError:

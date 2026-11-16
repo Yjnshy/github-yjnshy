@@ -73,9 +73,13 @@ def test_download_failure_returns_false(tmp_path):
     assert not (tmp_path / "x.exe").exists()
 
 
-def test_run_elevated_missing_exe_returns_none(tmp_path):
-    """文件不存在时提权启动会失败，必须安全返回 None（不弹 UAC）。"""
-    assert runtime_setup._run_elevated(tmp_path / "not_here.exe", "/q") is None
+def test_run_elevated_missing_exe_returns_none(tmp_path, monkeypatch):
+    """提权启动失败时必须安全返回 None，不弹 UAC（模拟系统拒绝）。"""
+    import dly.gui.runtime_setup as rs
+
+    monkeypatch.setattr(rs.ctypes.windll.shell32, "ShellExecuteExW",
+                        lambda *args: 0)
+    assert rs._run_elevated(tmp_path / "not_here.exe", "/q") is None
 
 
 def test_download_failure_returns_false(tmp_path):
@@ -85,9 +89,13 @@ def test_download_failure_returns_false(tmp_path):
     assert not (tmp_path / "x.exe").exists()
 
 
-def test_run_elevated_missing_exe_returns_none(tmp_path):
-    """文件不存在时提权启动会失败，必须安全返回 None（不弹 UAC）。"""
-    assert runtime_setup._run_elevated(tmp_path / "not_here.exe", "/q") is None
+def test_run_elevated_missing_exe_returns_none(tmp_path, monkeypatch):
+    """提权启动失败时必须安全返回 None，不弹 UAC（模拟系统拒绝）。"""
+    import dly.gui.runtime_setup as rs
+
+    monkeypatch.setattr(rs.ctypes.windll.shell32, "ShellExecuteExW",
+                        lambda *args: 0)
+    assert rs._run_elevated(tmp_path / "not_here.exe", "/q") is None
 
 
 def test_version_matches_pyproject():
