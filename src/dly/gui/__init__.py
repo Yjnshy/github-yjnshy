@@ -11,7 +11,9 @@
 from __future__ import annotations
 
 import logging
+import sys
 
+from dly.core import paths
 from dly.gui.desktop import DesktopUnavailable, alert
 from dly.gui.server import launch as launch_web
 
@@ -24,6 +26,13 @@ def launch(debug: bool = False, web: bool = False) -> None:
     """启动界面：默认独立桌面窗口，``web=True`` 或缺少依赖时用浏览器。"""
     if web:
         launch_web()
+        return
+    if sys.platform == "win32" and paths.is_frozen():
+        # 打包版的 pythonnet 在部分电脑上加载 CLR 失败（两样运行时都装了
+        # 也一样）。直接用 Chrome/Edge 应用窗口承载界面：独立窗口、无地址栏，
+        # 完全不依赖 .NET / WebView2，也不再弹任何运行时提示。
+        logger.info("使用浏览器应用窗口作为独立界面")
+        launch_web(open_browser=True, idle_exit_seconds=150)
         return
     try:
         from dly.gui.desktop import launch as launch_desktop
