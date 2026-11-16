@@ -879,7 +879,8 @@ def open_interface(url: str) -> bool:
     窗口一致，也不需要装 WebView2 / .NET。
     """
     if sys.platform == "win32":
-        for name in ("msedge.exe", "chrome.exe"):
+        # Chrome 的 --app 窗口最可靠；Edge 在部分机器上只弹空白窗口，放兜底
+        for name in ("chrome.exe", "msedge.exe"):
             exe = browser_exe(name)
             if not exe:
                 continue
