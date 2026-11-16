@@ -167,10 +167,12 @@ def create_shortcut(exe: Path, name: str = "帅羊羊DLY",
         _vt_call(ptr, _VT_SET_WORKING_DIR, ctypes.c_wchar_p)(ptr, str(exe.parent))
         if arguments:
             _vt_call(ptr, _VT_SET_ARGUMENTS, ctypes.c_wchar_p)(ptr, arguments)
-        # IShellLink 的图标位置必须带资源索引（,0），否则 Explorer 会把它
-        # 当成无效图标并显示空白文件图标。
+        # SetIconLocation(路径, 索引)：路径只放 .ico 文件本身，索引单独传。
+        # 早前把 ",0" 拼进路径字符串里（写成 "xxx.ico,0"），虽然多数情况
+        # 资源管理器能容错解析，但存进去的路径本身是非法的，图标缓存一旦
+        # 记住就长期显示空白。这里按规范分开传。
         _vt_call(ptr, _VT_SET_ICON_LOCATION, ctypes.c_wchar_p, ctypes.c_int)(
-            ptr, f"{icon_path},0", 0)
+            ptr, str(icon_path), 0)
         if description:
             _vt_call(ptr, _VT_SET_DESCRIPTION, ctypes.c_wchar_p)(ptr, description)
 
