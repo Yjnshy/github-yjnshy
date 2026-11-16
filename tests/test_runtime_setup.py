@@ -195,11 +195,12 @@ def test_open_interface_uses_browser_app_window(monkeypatch):
     calls = []
     monkeypatch.setattr(server, "browser_exe",
                         lambda name: "C:/fake/msedge.exe" if name == "msedge.exe" else "")
-    monkeypatch.setattr(server.subprocess, "Popen",
-                        lambda args, **kw: calls.append(args))
+    import ctypes
+    monkeypatch.setattr(ctypes.windll.shell32, "ShellExecuteW",
+                        lambda *args: calls.append(args) or 42)
     assert server.open_interface("http://127.0.0.1:8765/") is True
-    assert calls and calls[0][0] == "C:/fake/msedge.exe"
-    assert "--app=http://127.0.0.1:8765/" in calls[0]
+    assert calls and calls[0][2] == "C:/fake/msedge.exe"
+    assert "--app=" in calls[0][3]
 
 
 def test_existing_instance_detected(tmp_path):
