@@ -133,63 +133,13 @@ def icon_source(exe: Path, override: str = "") -> Path:
     return versioned_icon(exe)
 
 
-LAUNCHER_NAME = "启动DLY.cmd"
-
-# 只用 ASCII：cmd 按系统 ANSI 代码页读批处理，中文注释容易变乱码
-_CMD = """@echo off
-rem DLY launcher (auto-generated, do not edit)
-rem Starts DLY.exe from cmd so Explorer never triggers the SmartScreen
-rem "unrecognized app" prompt that an unsigned exe gets on double click.
-cd /d "%~dp0"
-start "" "%~dp0DLY.exe"
-"""
+LAUNCHER_NAME = "启动DLY.lnk"
 
 
-def launcher_script(exe: Path) -> Path:
-    """在 exe 同目录写出 .cmd 启动器（内容固定，已存在则不重复写）。
-
-    不用 VBS：部分机器（含本机，WSH 开了 UseWINSAFER）里 wscript 拉起后
-    会挂住，什么都不发生。cmd 在哪台机器上都在。
-    """
-    path = Path(exe).parent / LAUNCHER_NAME
-    try:
-        current = ""
-        if path.is_file():
-            current = path.read_text(encoding="ascii", errors="ignore")
-        if current.replace("\r\n", "\n") != _CMD:
-            with open(path, "w", encoding="ascii", errors="ignore",
-                      newline="\r\n") as fh:
-                fh.write(_CMD)
-    except OSError:
-        pass
-    return path
-
-
-def create_shortcut(exe: Path, name: str = "帅羊羊DLY",
-                    description: str = "", icon: str = "",
-                    arguments: str = "", launcher: bool = False) -> Path:
-    """调用 IShellLink 在桌面创建快捷方式，返回 .lnk 路径。
-
-    ``launcher=True`` 时不直接指向 DLY.exe，而是经同目录的 .cmd 启动器：
-    未签名的 exe 由资源管理器直接执行会触发 SmartScreen 的「无法识别的
-    应用」（本机每次双击都弹），而由 cmd 调 CreateProcess 拉起则不会。
-    """
-    exe = Path(exe).resolve()
-    if not exe.is_file():
-        raise FileNotFoundError(f"目标不存在：{exe}")
-
-    icon_path = icon_source(exe, icon)
-    if launcher:
-        # 显式指向 cmd.exe：不经文件关联，行为最可预测
-        target = (Path(os.environ.get("SystemRoot", r"C:\Windows"))
-                  / "System32" / "cmd.exe")
-        workdir = exe.parent
-        arguments = f'/c "{launcher_script(exe)}"'
-    else:
-        target = exe
-        workdir = exe.parent
-
-    lnk = desktop_dir() / f"{name}.lnk"
+def _write_link(lnk: Path, target: Path, workdir: Path, arguments: str = "",
+                icon: Path | None = None, description: str = "") -> Path:
+    """用 IShellLink 写出一个 .lnk（桌面快捷方式与启动器共用）。"""
+    lnk = Path(lnk)
     if lnk.exists():
         lnk.unlink()
 
@@ -213,12 +163,12 @@ def create_shortcut(exe: Path, name: str = "帅羊羊DLY",
         _vt_call(ptr, _VT_SET_WORKING_DIR, ctypes.c_wchar_p)(ptr, str(workdir))
         if arguments:
             _vt_call(ptr, _VT_SET_ARGUMENTS, ctypes.c_wchar_p)(ptr, arguments)
-        # SetIconLocation(路径, 索引)：路径只放 .ico 文件本身，索引单独传。
-        # 早前把 ",0" 拼进路径字符串里（写成 "xxx.ico,0"），虽然多数情况
-        # 资源管理器能容错解析，但存进去的路径本身是非法的，图标缓存一旦
-        # 记住就长期显示空白。这里按规范分开传。
-        _vt_call(ptr, _VT_SET_ICON_LOCATION, ctypes.c_wchar_p, ctypes.c_int)(
-            ptr, str(icon_path), 0)
+        if icon:
+            # SetIconLocation(路径, 索引)：路径只放 .ico 本身，索引单独传。
+            # 早前把 ",0" 拼进路径字符串里，存下的路径本身非法，图标缓存一旦
+            # 记住就长期显示空白。这里按规范分开传。
+            _vt_call(ptr, _VT_SET_ICON_LOCATION, ctypes.c_wchar_p, ctypes.c_int)(
+                ptr, str(icon), 0)
         if description:
             _vt_call(ptr, _VT_SET_DESCRIPTION, ctypes.c_wchar_p)(ptr, description)
 
@@ -238,6 +188,54 @@ def create_shortcut(exe: Path, name: str = "帅羊羊DLY",
             ole32.CoUninitialize()
 
 
+def launcher_link(exe: Path, icon: Path | None = None) -> Path:
+    """在 exe 同目录生成「启动DLY.lnk」启动器并返回路径。
+
+    为什么是快捷方式而不是 .cmd：
+    * .cmd 的图标被系统固定成黑色命令窗口，改不了；快捷方式能带自己的
+      IconLocation，和程序用同一只羊。
+    * 未签名的 exe 被资源管理器直接双击会弹 SmartScreen「无法识别的应用」，
+      而经命令解释器再 start 拉起不会。这里把它藏进快捷方式里。
+
+    不用 VBS：本机 WSH 开了 UseWINSAFER，wscript 拉起后会挂住，什么都不发生。
+    """
+    exe = Path(exe).resolve()
+    cmd_exe = (Path(os.environ.get("SystemRoot", r"C:\Windows"))
+               / "System32" / "cmd.exe")
+    return _write_link(
+        exe.parent / LAUNCHER_NAME, cmd_exe, exe.parent,
+        arguments=f'/c start "" "{exe}"',
+        icon=icon or (exe.parent / "DLY.ico"),
+        description="启动 DLY（跳过未签名提示）")
+
+
+def create_shortcut(exe: Path, name: str = "帅羊羊DLY",
+                    description: str = "", icon: str = "",
+                    arguments: str = "", launcher: bool = False) -> Path:
+    """在桌面创建程序快捷方式，返回 .lnk 路径。
+
+    ``launcher=True`` 时不直接指向 DLY.exe，而是指向同目录的「启动DLY.lnk」：
+    未签名的 exe 由资源管理器直接执行会触发 SmartScreen 的「无法识别的
+    应用」（本机每次双击都弹），而经命令解释器 start 拉起则不会。
+    """
+    exe = Path(exe).resolve()
+    if not exe.is_file():
+        raise FileNotFoundError(f"目标不存在：{exe}")
+
+    icon_path = icon_source(exe, icon)
+    if launcher:
+        # 指向同目录的启动器快捷方式：它自己带羊图标，双击时经 cmd 拉起
+        target = launcher_link(exe, icon_path)
+        workdir = exe.parent
+        arguments = ""
+    else:
+        target = exe
+        workdir = exe.parent
+
+    return _write_link(desktop_dir() / f"{name}.lnk", target, workdir,
+                       arguments, icon_path, description)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="在桌面创建程序快捷方式")
     parser.add_argument("--app-dir", default="", help="程序所在目录（含 DLY.exe）")
@@ -248,7 +246,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--args", default="",
                         help="启动参数，例如 --args=--web 让快捷方式直接进浏览器模式")
     parser.add_argument("--launcher", action="store_true",
-                        help="经 VBS 启动器启动，避开未签名 exe 的 SmartScreen 提示")
+                        help="经同目录启动器（启动DLY.lnk）启动，避开未签名 exe 的 SmartScreen 提示")
     args = parser.parse_args(argv)
 
     try:
