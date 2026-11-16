@@ -107,6 +107,10 @@ def _window_size() -> tuple:
 
 
 def _load_webview():
+    # 先备好 .NET 运行时：打包版走 coreclr + 打过补丁的 winforms 后端
+    from dly.gui import clr_boot
+
+    clr_boot.prepare()
     try:
         import webview  # noqa: F401  延迟导入：浏览器模式不需要它
     except ImportError as exc:

@@ -94,6 +94,9 @@ def write_version_file() -> str:
 datas = [
     # 界面单页（server.py 通过 importlib.resources 读取）
     (str(PKG / "gui" / "assets"), "dly/gui/assets"),
+    # 桌面窗口：.NET Core 运行配置 + pywebview winforms 后端补丁副本
+    (str(ROOT / "packaging" / "dotnet_desktop.runtimeconfig.json"), "dly_patch"),
+    (str(ROOT / "packaging" / "pywebview_winforms_coreclr.py"), "dly_patch"),
 ]
 # pywebview 注入脚本；内置钩子版本较旧时可能漏掉 js/ 目录
 datas += collect_data_files("webview", subdir="js")
@@ -111,6 +114,7 @@ if os.environ.get("DLY_BUNDLE_FFMPEG", "1") != "0":
 hiddenimports = [
     # 延迟导入的模块不会被静态分析发现
     "dly.gui.desktop",
+    "dly.gui.clr_boot",
     "dly.gui.server",
     "dly.downloader.engine",
     "dly.downloader.images",
