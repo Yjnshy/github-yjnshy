@@ -17,8 +17,12 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
+import subprocess
+import sys
 import threading
 import time
+import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
@@ -834,6 +838,49 @@ def create_app(desktop: bool = False) -> AppContext:
     return AppContext(state, _make_server(state), desktop=desktop)
 
 
+def open_interface(url: str) -> bool:
+    """打开界面：Windows 上优先用 Edge 应用窗口，失败再退回系统默认浏览器。
+
+    浏览器模式的 webbrowser.open 在部分环境里返回 True 但看不到窗口；
+    Edge 的 ``--app`` 模式会开一个独立应用窗口（没有地址栏标签），
+    视觉上和桌面窗口一致，也不需要装 WebView2 / .NET。
+    """
+    if sys.platform == "win32":
+        roots = [os.environ.get("ProgramFiles(x86)", ""),
+                 os.environ.get("ProgramFiles", ""),
+                 r"C:\Program Files (x86)", r"C:\Program Files"]
+        for root in roots:
+            if not root:
+                continue
+            edge = Path(root) / "Microsoft" / "Edge" / "Application" / "msedge.exe"
+            if not edge.is_file():
+                continue
+            try:
+                subprocess.Popen([str(edge), f"--app={url}",
+                                  "--window-size=1180,860"],
+                                 close_fds=True)
+                logger.info("已用 Edge 应用窗口打开界面：%s", url)
+                return True
+            except OSError:
+                logger.debug("Edge 启动失败，退回默认浏览器", exc_info=True)
+                break
+    return bool(webbrowser.open(url))
+
+
+def _existing_instance_url() -> str:
+    """已有 DLY 服务在跑时返回它的地址，避免第二个进程抢端口后闪退。"""
+    for port in range(DEFAULT_PORT, DEFAULT_PORT + PORT_RANGE):
+        url = f"http://{HOST}:{port}/"
+        try:
+            with urllib.request.urlopen(url + "api/state?after=0", timeout=0.4) as resp:
+                if resp.status == 200:
+                    json.loads(resp.read())
+                    return url
+        except Exception:  # noqa: BLE001 端口没开 / 不是 DLY 都继续扫
+            continue
+    return ""
+
+
 def launch(open_browser: bool = True,
            idle_exit_seconds: float = 0.0) -> None:
     """浏览器模式：启动服务并打开系统浏览器（阻塞直到用户退出）。
@@ -842,13 +889,21 @@ def launch(open_browser: bool = True,
     且没有任务在跑，就自动退出。给打包版桌面窗口启动失败退回浏览器模式用——
     打包版没有控制台窗口，用户关掉浏览器页面后进程必须能自己收尾。
     """
+    # 已经在跑就别再抢端口：直接把已有实例的应用窗口拉出来
+    existing = _existing_instance_url()
+    if existing:
+        logger.info("已有 DLY 在运行，直接打开已有界面：%s", existing)
+        if open_browser:
+            open_interface(existing)
+        return
+
     app = create_app(desktop=False)
     app.start()
     print(f"界面已启动：{app.url}")
     print("关闭此窗口或按 Ctrl+C 即可退出。")
 
     if open_browser:
-        threading.Timer(0.6, lambda: webbrowser.open(app.url)).start()
+        threading.Timer(0.6, lambda: open_interface(app.url)).start()
 
     if idle_exit_seconds > 0:
         state = app.state
