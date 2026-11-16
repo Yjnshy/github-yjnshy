@@ -885,12 +885,22 @@ def open_interface(url: str) -> bool:
             if not exe:
                 continue
             params = f'--app="{url}" --window-size=1180,860'
+            old_path = os.environ.get("PATH")
+            if getattr(sys, "frozen", False) and old_path:
+                # 冻结程序给子进程传的 PATH 含有 _internal，浏览器会加载到
+                # 不匹配的 api-ms-win-*.dll 后静默退出；调用前后临时替换。
+                os.environ["PATH"] = os.pathsep.join(
+                    p for p in old_path.split(os.pathsep)
+                    if "_internal" not in p.lower() and "_mei" not in p.lower())
             try:
                 # 冻结程序里 subprocess.Popen 会被 PyInstaller 改写，浏览器
                 # 子进程会静默消失；系统 ShellExecute 最可靠。
                 import ctypes
                 rc = ctypes.windll.shell32.ShellExecuteW(
                     None, "open", exe, params, None, 1)
+            finally:
+                if old_path is not None:
+                    os.environ["PATH"] = old_path
                 if int(rc) > 32:
                     logger.info("已用 %s 应用窗口打开界面：%s", name, url)
                     return True

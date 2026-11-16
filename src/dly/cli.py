@@ -224,13 +224,20 @@ def cache(ctx: click.Context, clear: bool) -> None:
               help="用系统浏览器打开（默认是独立桌面窗口）")
 @click.option("--debug", is_flag=True,
               help="开发者模式：窗口内可打开 DevTools")
-def gui(web: bool, debug: bool) -> None:
+@click.option("--app-window", is_flag=True,
+              help="只启动服务，由外部启动器用 Chrome/Edge 应用窗口打开界面")
+def gui(web: bool, debug: bool, app_window: bool) -> None:
     """打开图形界面（桌面窗口：下载 / 录制 / 值守）。"""
     try:
         from dly.gui import launch
     except ImportError as exc:
         console.print(f"[red]无法加载图形界面：{exc}[/red]")
         raise SystemExit(1)
+    if app_window:
+        from dly.gui.server import launch as launch_server
+
+        launch_server(open_browser=False, idle_exit_seconds=150)
+        return
     launch(debug=debug, web=web)
 
 
