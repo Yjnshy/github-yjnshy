@@ -473,11 +473,45 @@ SMALL_ICONS = {
 }
 
 
+def _dib_frame(img: Image.Image) -> bytes:
+    """把图像写成 ICO 内的 BMP 帧（BITMAPINFOHEADER + BGRA + AND 掩码）。
+
+    Windows 的 ICO 规范里，**只有 256×256 允许用 PNG 压缩**，小于 256 的帧
+    必须是未压缩 DIB。之前所有尺寸都写成 PNG，资源管理器在按桌面尺寸
+    （48/96px）取图标时判定无效，直接退回「白纸」占位图标 —— 这就是
+    桌面图标一直空白的真正原因。
+    """
+    import struct
+
+    w, h = img.size
+    px = img.load()
+
+    xor = bytearray()
+    for y in range(h - 1, -1, -1):            # DIB 是自下而上
+        for x in range(w):
+            r, g, b, a = px[x, y]
+            xor += bytes((b, g, r, a))
+
+    mask_stride = ((w + 31) // 32) * 4
+    mask = bytearray()
+    for y in range(h - 1, -1, -1):
+        bits = bytearray(mask_stride)
+        for x in range(w):
+            if px[x, y][3] == 0:              # 1 = 透明
+                bits[x // 8] |= 0x80 >> (x % 8)
+        mask += bits
+
+    header = struct.pack("<IiiHHIIiiII", 40, w, h * 2, 1, 32, 0,
+                         len(xor) + len(mask), 0, 0, 0, 0)
+    return header + bytes(xor) + bytes(mask)
+
+
 def save_ico(path: Path, full: Image.Image, small: Image.Image | None = None) -> None:
     """手工写 ICO 容器。
 
     Pillow 自带的 ICO 保存只能「从同一张大图缩出所有尺寸」，做不到给
-    16/24px 换一套简化图，所以这里自己拼容器（PNG 压缩格式，Vista+ 支持）。
+    16/24px 换一套简化图，也做不到「小尺寸 DIB、256 用 PNG」混排，
+    所以这里自己拼容器。
     """
     import io
     import struct
@@ -491,11 +525,13 @@ def save_ico(path: Path, full: Image.Image, small: Image.Image | None = None) ->
         img = plan[size]
         if img.size != (size, size):
             img = img.resize((size, size), Image.LANCZOS)
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        data = buf.getvalue()
+        # 全部用未压缩 DIB 帧。文档说 256 可以（甚至应该）用 PNG，但实测
+        # 本机资源管理器的图标加载器只要遇到 PNG 帧，整个 .ico 就判为无效、
+        # 桌面退回「白纸」占位图 —— 这正是图标长期空白的根因。DIB 代价是
+        # 文件大一些（约 360KB），换来在任何 Windows 上都能显示。
+        data = _dib_frame(img.convert("RGBA"))
         dim = 0 if size >= 256 else size          # 0 表示 256
-        entries.append(struct.pack("<BBBBHHII", dim, dim, 0, 0, 1, 32,
+        entries.append(struct.pack("<BBBBHHII", dim, dim, 0, 0, 0, 32,
                                    len(data), offset))
         offset += len(data)
         blobs.append(data)

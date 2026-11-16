@@ -133,15 +133,61 @@ def icon_source(exe: Path, override: str = "") -> Path:
     return versioned_icon(exe)
 
 
+LAUNCHER_NAME = "启动DLY.cmd"
+
+# 只用 ASCII：cmd 按系统 ANSI 代码页读批处理，中文注释容易变乱码
+_CMD = """@echo off
+rem DLY launcher (auto-generated, do not edit)
+rem Starts DLY.exe from cmd so Explorer never triggers the SmartScreen
+rem "unrecognized app" prompt that an unsigned exe gets on double click.
+cd /d "%~dp0"
+start "" "%~dp0DLY.exe"
+"""
+
+
+def launcher_script(exe: Path) -> Path:
+    """在 exe 同目录写出 .cmd 启动器（内容固定，已存在则不重复写）。
+
+    不用 VBS：部分机器（含本机，WSH 开了 UseWINSAFER）里 wscript 拉起后
+    会挂住，什么都不发生。cmd 在哪台机器上都在。
+    """
+    path = Path(exe).parent / LAUNCHER_NAME
+    try:
+        current = ""
+        if path.is_file():
+            current = path.read_text(encoding="ascii", errors="ignore")
+        if current.replace("\r\n", "\n") != _CMD:
+            with open(path, "w", encoding="ascii", errors="ignore",
+                      newline="\r\n") as fh:
+                fh.write(_CMD)
+    except OSError:
+        pass
+    return path
+
+
 def create_shortcut(exe: Path, name: str = "帅羊羊DLY",
                     description: str = "", icon: str = "",
-                    arguments: str = "") -> Path:
-    """调用 IShellLink 在桌面创建快捷方式，返回 .lnk 路径。"""
+                    arguments: str = "", launcher: bool = False) -> Path:
+    """调用 IShellLink 在桌面创建快捷方式，返回 .lnk 路径。
+
+    ``launcher=True`` 时不直接指向 DLY.exe，而是经同目录的 .cmd 启动器：
+    未签名的 exe 由资源管理器直接执行会触发 SmartScreen 的「无法识别的
+    应用」（本机每次双击都弹），而由 cmd 调 CreateProcess 拉起则不会。
+    """
     exe = Path(exe).resolve()
     if not exe.is_file():
         raise FileNotFoundError(f"目标不存在：{exe}")
 
     icon_path = icon_source(exe, icon)
+    if launcher:
+        # 显式指向 cmd.exe：不经文件关联，行为最可预测
+        target = (Path(os.environ.get("SystemRoot", r"C:\Windows"))
+                  / "System32" / "cmd.exe")
+        workdir = exe.parent
+        arguments = f'/c "{launcher_script(exe)}"'
+    else:
+        target = exe
+        workdir = exe.parent
 
     lnk = desktop_dir() / f"{name}.lnk"
     if lnk.exists():
@@ -163,8 +209,8 @@ def create_shortcut(exe: Path, name: str = "帅羊羊DLY",
 
         ptr = link.value
         _vt_call(ptr, _VT_SET_PATH, ctypes.c_wchar_p, ctypes.c_int)(
-            ptr, str(exe), 0)
-        _vt_call(ptr, _VT_SET_WORKING_DIR, ctypes.c_wchar_p)(ptr, str(exe.parent))
+            ptr, str(target), 0)
+        _vt_call(ptr, _VT_SET_WORKING_DIR, ctypes.c_wchar_p)(ptr, str(workdir))
         if arguments:
             _vt_call(ptr, _VT_SET_ARGUMENTS, ctypes.c_wchar_p)(ptr, arguments)
         # SetIconLocation(路径, 索引)：路径只放 .ico 文件本身，索引单独传。
@@ -201,11 +247,14 @@ def main(argv: list[str] | None = None) -> int:
                         help="指定 .ico 路径（换图标但还没重新打包 exe 时用）")
     parser.add_argument("--args", default="",
                         help="启动参数，例如 --args=--web 让快捷方式直接进浏览器模式")
+    parser.add_argument("--launcher", action="store_true",
+                        help="经 VBS 启动器启动，避开未签名 exe 的 SmartScreen 提示")
     args = parser.parse_args(argv)
 
     try:
         exe = find_exe(Path(args.app_dir) if args.app_dir else None)
-        lnk = create_shortcut(exe, args.name, args.desc, args.icon, args.args)
+        lnk = create_shortcut(exe, args.name, args.desc, args.icon, args.args,
+                              args.launcher)
     except (FileNotFoundError, OSError) as exc:
         print(f"✗ {exc}", file=sys.stderr)
         return 1
@@ -215,6 +264,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  图标：{icon_source(exe, args.icon)}")
     if args.args:
         print(f"  参数：{args.args}")
+    if args.launcher:
+        print(f"  启动器：{exe.parent / LAUNCHER_NAME}")
     return 0
 
 
