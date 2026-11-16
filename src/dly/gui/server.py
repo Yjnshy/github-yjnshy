@@ -898,15 +898,15 @@ def open_interface(url: str) -> bool:
                 import ctypes
                 rc = ctypes.windll.shell32.ShellExecuteW(
                     None, "open", exe, params, None, 1)
-            finally:
-                if old_path is not None:
-                    os.environ["PATH"] = old_path
                 if int(rc) > 32:
                     logger.info("已用 %s 应用窗口打开界面：%s", name, url)
                     return True
                 logger.warning("ShellExecute 启动 %s 失败：%s", name, rc)
             except Exception:
                 logger.debug("%s 启动失败，继续尝试", name, exc_info=True)
+            finally:
+                if old_path is not None:
+                    os.environ["PATH"] = old_path
     return bool(webbrowser.open(url))
 
 
