@@ -62,7 +62,7 @@ def test_frozen_fallback_calls_runtime_setup():
     assert "runtime_setup.prompt_runtime_action(missing)" in init
     assert "looks_like_runtime_failure" not in init   # 别再对"已安装"用户弹修复窗
     assert 'action == "pages"' in init
-    assert "runtime_setup.open_download_pages(targets)" in init
+    assert "runtime_setup.open_download_pages(missing)" in init
     assert "runtime_setup.relaunch()" in init
     assert "launch_web(open_browser=True, idle_exit_seconds=150)" in init
 
