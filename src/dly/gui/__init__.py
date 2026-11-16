@@ -29,21 +29,45 @@ def launch(debug: bool = False, web: bool = False) -> None:
         from dly.core import paths
 
         if paths.is_frozen():
-            # 打包版没有控制台，直接退出用户只能看到一个弹窗。HTTP 服务是
-            # 纯 Python，不依赖 WebView2 / .NET，退回浏览器模式照样能用；
-            # 空闲自退保证用户关掉页面后进程不会变成后台僵尸。
+            # 打包版没有控制台。优先帮用户把缺的系统运行时装上（WebView2 /
+            # .NET 4.8）；装不了或用户拒绝，再退回纯 Python 的浏览器模式。
+            _try_install_runtimes()
             alert(
                 f"{exc}\n\n"
                 "程序将改用浏览器模式继续运行：稍后会自动打开默认浏览器，"
                 "功能与桌面窗口完全相同；关闭浏览器页面且没有任务在跑时，"
                 "程序会自动退出。\n\n"
-                "想用回独立桌面窗口，请在这台电脑安装下面两个微软官方运行时，"
-                "装好后重新打开 DLY.exe：\n"
-                "1. Microsoft Edge WebView2 运行时\n"
-                "2. Microsoft .NET Framework 4.8 运行时\n"
-                "（浏览器打开时可能会被拦截，允许即可）"
+                "想用回独立桌面窗口，可以重新打开 DLY.exe 让它再检测一次，"
+                "或手动安装：Microsoft Edge WebView2 运行时 + "
+                "Microsoft .NET Framework 4.8。\n"
+                "（若刚装完运行时仍失败，请重启电脑后再试）"
             )
             launch_web(open_browser=True, idle_exit_seconds=150)
             return
         print(f"{exc}\n已改用系统浏览器打开界面。")
         launch_web()
+
+
+def _try_install_runtimes() -> None:
+    """检测缺失的桌面运行时并自动安装；成功则换新进程重启。
+
+    pythonnet 初始化失败的状态会留在当前进程里，所以装完必须重新拉起
+    DLY.exe，不能直接重试 launch_desktop()。
+    """
+    try:
+        from dly.gui import runtime_setup
+
+        missing = runtime_setup.missing_components()
+        if not missing:
+            return              # 两样都在还失败，就不是缺运行时的问题
+        if not runtime_setup.confirm_install(missing):
+            return
+        if runtime_setup.install(missing):
+            runtime_setup.relaunch()
+            raise SystemExit(0)
+    except SystemExit:
+        raise
+    except Exception:           # noqa: BLE001 自动安装只是锦上添花，失败就走浏览器
+        import logging
+
+        logging.getLogger("dly").warning("自动安装运行环境失败", exc_info=True)
