@@ -39,8 +39,6 @@ def launch(debug: bool = False, web: bool = False) -> None:
 
         launch_desktop(debug=debug)
     except DesktopUnavailable as exc:
-        from dly.core import paths
-
         if paths.is_frozen():
             # 打包版没有控制台。优先帮用户把缺的系统运行时装上（WebView2 /
             # .NET 4.8）；装不了或用户拒绝，再退回纯 Python 的浏览器模式。
