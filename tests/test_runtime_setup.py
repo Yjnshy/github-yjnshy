@@ -59,7 +59,8 @@ def test_frozen_fallback_calls_runtime_setup():
             / "src" / "dly" / "gui" / "__init__.py").read_text(encoding="utf-8")
     assert "_try_install_runtimes(str(exc))" in init
     assert "runtime_setup.missing_components()" in init
-    assert "runtime_setup.prompt_runtime_action(targets, repair=repair)" in init
+    assert "runtime_setup.prompt_runtime_action(missing)" in init
+    assert "looks_like_runtime_failure" not in init   # 别再对"已安装"用户弹修复窗
     assert 'action == "pages"' in init
     assert "runtime_setup.open_download_pages(targets)" in init
     assert "runtime_setup.relaunch()" in init

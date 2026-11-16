@@ -48,26 +48,24 @@ def launch(debug: bool = False, web: bool = False) -> None:
 
 
 def _try_install_runtimes(exc_text: str) -> None:
-    """检测缺失的桌面运行时并自动安装；成功则换新进程重启。
+    """只有注册表确实显示缺组件时才问安装；显示齐全就不再追问。
 
-    pythonnet 初始化失败的状态会留在当前进程里，所以装完必须重新拉起
-    DLY.exe，不能直接重试 launch_desktop()。
+    v0.1.4 曾把 pythonnet 加载失败一律当成"需要修复"，导致电脑上两样
+    都装了还反复弹安装窗。现在缺才问，不缺就安静退回浏览器模式。
     """
     try:
         from dly.gui import runtime_setup
 
         missing = runtime_setup.missing_components()
-        repair = not missing and runtime_setup.looks_like_runtime_failure(exc_text)
-        targets = runtime_setup.repair_targets() if repair else missing
-        if not targets:
-            return              # 两样都在、错误也和环境无关，装了也没用
-        action = runtime_setup.prompt_runtime_action(targets, repair=repair)
+        if not missing:
+            return              # 系统显示齐全：安装帮不上忙，别再烦用户
+        action = runtime_setup.prompt_runtime_action(missing)
         if action == "pages":
-            runtime_setup.open_download_pages(targets)
+            runtime_setup.open_download_pages(missing)
             return
         if action == "skip":
             return
-        if runtime_setup.install(targets):
+        if runtime_setup.install(missing):
             runtime_setup.relaunch()
             raise SystemExit(0)
     except SystemExit:
