@@ -79,3 +79,15 @@ def test_download_failure_returns_false(tmp_path):
 def test_run_elevated_missing_exe_returns_none(tmp_path):
     """文件不存在时提权启动会失败，必须安全返回 None（不弹 UAC）。"""
     assert runtime_setup._run_elevated(tmp_path / "not_here.exe", "/q") is None
+
+
+def test_version_matches_pyproject():
+    """界面显示的版本来自 dly.__version__，必须和 pyproject 同步。"""
+    import re
+
+    import dly
+
+    pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(
+        encoding="utf-8")
+    declared = re.search(r'^version = "([^"]+)"', pyproject, re.M).group(1)
+    assert dly.__version__ == declared
