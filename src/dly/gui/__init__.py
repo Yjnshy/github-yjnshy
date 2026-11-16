@@ -4,14 +4,18 @@
 
 - ``dly gui`` / ``python -m dly.gui`` → 优先独立桌面窗口
 - 缺少 pywebview 时自动退回系统浏览器，不影响使用
-- 打包成 exe 后没有控制台：桌面窗口起不来（缺 WebView2 / .NET 运行时）也
-  退回浏览器模式继续用，只弹窗说明原因；空闲自退负责关掉页面后收尾进程
+- 打包成 exe 后没有控制台：桌面窗口起不来时静默退回浏览器模式继续用；
+  只有确实缺运行时需要用户决策时才弹窗，空闲自退负责关掉页面后收尾进程
 """
 
 from __future__ import annotations
 
+import logging
+
 from dly.gui.desktop import DesktopUnavailable, alert
 from dly.gui.server import launch as launch_web
+
+logger = logging.getLogger("dly")
 
 __all__ = ["launch", "launch_web", "DesktopUnavailable"]
 
@@ -31,16 +35,23 @@ def launch(debug: bool = False, web: bool = False) -> None:
         if paths.is_frozen():
             # 打包版没有控制台。优先帮用户把缺的系统运行时装上（WebView2 /
             # .NET 4.8）；装不了或用户拒绝，再退回纯 Python 的浏览器模式。
+            from dly.gui import runtime_setup
+
+            # 组件齐全却起不来 → 静默退回浏览器模式；只有确实缺组件、需要
+            # 用户决定装不装时才弹窗打扰。
+            need_prompt = bool(runtime_setup.missing_components())
             _try_install_runtimes(str(exc))
-            alert(
-                f"{exc}\n\n"
-                "程序将改用浏览器模式继续运行：稍后会自动打开默认浏览器，"
-                "功能与桌面窗口完全相同；关闭浏览器页面且没有任务在跑时，"
-                "程序会自动退出。\n\n"
-                "想用回独立桌面窗口，可重新打开 DLY.exe 让它再检测一次；"
-                "若刚才选了「打开官方页面」，按页面引导装好后重新打开程序即可。"
-                "（装完运行时仍失败时，重启电脑再试）"
-            )
+            if need_prompt:
+                alert(
+                    f"{exc}\n\n"
+                    "程序将改用浏览器模式继续运行：稍后会自动打开默认浏览器，"
+                    "功能与桌面窗口完全相同；关闭浏览器页面且没有任务在跑时，"
+                    "程序会自动退出。\n\n"
+                    "想用回独立桌面窗口，可重新打开 DLY.exe 让它再检测一次；"
+                    "若刚才选了「打开官方页面」，按页面引导装好后重新打开程序即可。"
+                    "（装完运行时仍失败时，重启电脑再试）"
+                )
+            logger.info("桌面窗口不可用，改用浏览器模式：%s", exc)
             launch_web(open_browser=True, idle_exit_seconds=150)
             return
         print(f"{exc}\n已改用系统浏览器打开界面。")
