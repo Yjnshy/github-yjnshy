@@ -17,9 +17,12 @@
 
 想用 Edge 登录态：新版 Edge / Chrome 启用了应用绑定加密（App-Bound Encryption），
 Windows 不允许第三方程序直接读取 Cookie，这是浏览器厂商的安全限制，程序绕不过去。
-解决办法：在浏览器装一个 Cookie 导出扩展（如 Cookie-Editor），登录目标网站后导出
-Netscape 格式的 cookies.txt，再到本程序「设置 → Cookie 管理 → 选择文件」导入并保存，
-之后下载就会优先用这份 Cookie，不必再管浏览器来源。
+解决办法有两个：
+A. 在浏览器装 Cookie 导出扩展（如 Cookie-Editor），登录目标网站后导出
+   Netscape 格式的 cookies.txt，到「设置 → Cookie 管理 → 选择文件」导入并保存；
+B. 直接从浏览器开发者工具里复制整段 Cookie，粘贴到「设置 → Cookie 管理 →
+   手动输入 Cookie」输入框并保存（格式：name=value; name2=value2; ...）。
+两种方式都只保存在本机 config.yaml，不上传。
 
 三、四个页签分别做什么
 ----------------------

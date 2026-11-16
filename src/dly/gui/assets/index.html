@@ -965,7 +965,13 @@
             <button class="ghost" onclick="chooseCookieFile()">选择文件</button>
           </div>
           <div class="hint">Edge / 新版 Chrome 的登录态受系统级加密保护，程序无法直接读取。
-            遇到读不到 Cookie 时，装个 Cookie 导出扩展导出 cookies.txt，在这里选一次即可，不需要再选浏览器。</div>
+            可以导出 cookies.txt 导入，也可以直接把浏览器里的 Cookie 粘贴到下面。</div>
+          <div class="row">
+            <label for="set-manual-cookie">手动输入 Cookie</label>
+          </div>
+          <textarea id="set-manual-cookie" rows="3" class="room-textarea"
+                    placeholder="例如：sessionid=xxx; odin_tt=xxx; passport_csrf_token=xxx（整段粘贴，保存后优先使用）"></textarea>
+          <div class="hint">只保存在本机 config.yaml，不上传、不进压缩包；留空则自动读取浏览器。</div>
         </div>
 
         <div class="card wide">
@@ -1638,7 +1644,8 @@ let settingsDirty = false;
 let syncedOutputDir = '';   // 最近一次同步到下载页/录制页的默认值
 const SETTINGS_FIELDS = ['set-outdir', 'set-quality', 'set-fps', 'set-keep',
   'set-rec-format', 'set-seg-minutes', 'set-poll', 'set-rec-fps',
-  'set-browser', 'set-sound', 'set-log-level'];
+  'set-browser', 'set-cookies-file', 'set-manual-cookie',
+  'set-sound', 'set-log-level'];
 
 function setDirtyState(dirty) {
   settingsDirty = !!dirty;
@@ -1708,6 +1715,7 @@ function fillSettingsForm(s) {
   $('set-poll').value = s.poll_interval || 60;
   $('set-browser').value = s.browser || 'chrome';
   if ($('set-cookies-file')) $('set-cookies-file').value = s.cookies_file || '';
+  if ($('set-manual-cookie')) $('set-manual-cookie').value = s.manual_cookie || '';
   fillRooms(s.rooms || []);
   applyUiSettings(s);
   syncedOutputDir = s.output_dir || '';
@@ -1725,6 +1733,7 @@ function readSettingsForm() {
     record_fps: parseInt($('set-rec-fps').value || '0', 10) || 0,
     browser: $('set-browser').value,
     cookies_file: $('set-cookies-file').value.trim(),
+    manual_cookie: $('set-manual-cookie').value.trim(),
     rooms: roomRows(),
     theme: window.DLYTheme.mode(),
     sound: $('set-sound').checked,

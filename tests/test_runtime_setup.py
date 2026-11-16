@@ -41,9 +41,16 @@ def test_install_with_empty_list_is_noop():
     assert runtime_setup.install([]) is True
 
 
-def test_confirm_install_false_when_nothing_missing():
-    """缺列表为空时不弹询问框，直接返回 False。"""
-    assert runtime_setup.confirm_install([]) is False
+def test_prompt_skips_when_nothing_missing():
+    """缺列表为空时不弹询问框。"""
+    assert runtime_setup.prompt_runtime_action([]) == "skip"
+
+
+def test_official_download_pages():
+    """手动安装的官方页面要指向微软域名。"""
+    assert runtime_setup.DOWNLOAD_PAGES["dotnet48"].startswith("https://dotnet.microsoft.com/")
+    assert runtime_setup.DOWNLOAD_PAGES["webview2"].startswith("https://developer.microsoft.com/")
+    assert not any("runtime" in url for url in runtime_setup.DOWNLOAD_PAGES.values())
 
 
 def test_frozen_fallback_calls_runtime_setup():
@@ -52,7 +59,9 @@ def test_frozen_fallback_calls_runtime_setup():
             / "src" / "dly" / "gui" / "__init__.py").read_text(encoding="utf-8")
     assert "_try_install_runtimes(str(exc))" in init
     assert "runtime_setup.missing_components()" in init
-    assert "runtime_setup.confirm_install(targets, repair=repair)" in init
+    assert "runtime_setup.prompt_runtime_action(targets, repair=repair)" in init
+    assert 'action == "pages"' in init
+    assert "runtime_setup.open_download_pages(targets)" in init
     assert "runtime_setup.relaunch()" in init
     assert "launch_web(open_browser=True, idle_exit_seconds=150)" in init
 
@@ -93,14 +102,12 @@ def test_version_matches_pyproject():
     assert dly.__version__ == declared
 
 
-def test_bundled_installer_lookup(tmp_path, monkeypatch):
-    """随包带的安装包优先，找不到才走网络下载。"""
-    import dly.gui.runtime_setup as rs
-    monkeypatch.setattr(rs, "_bundled_installer_dir", lambda: tmp_path)
-    assert rs.installer_path("dotnet48") is None
-    fake = tmp_path / rs.INSTALLERS["dotnet48"][1]
-    fake.write_bytes(b"x")
-    assert rs.installer_path("dotnet48") == fake
+def test_installers_are_small_web_downloads():
+    """压缩包不携带大安装包：自动安装只下载 1~2MB 的联网引导包。"""
+    assert "go.microsoft.com/fwlink" in runtime_setup.WEBVIEW2_URL
+    assert "go.microsoft.com/fwlink" in runtime_setup.DOTNET48_URL
+    assert not hasattr(runtime_setup, "installer_path")
+    assert not hasattr(runtime_setup, "_bundled_installer_dir")
 
 
 def test_detect_runtime_failure_text():
@@ -145,3 +152,28 @@ def test_cookie_file_picker_endpoint_exists():
     assert 'from dly.core.folder_dialog import pick_file' in server
     assert 'id="set-cookies-file"' in html
     assert "chooseCookieFile()" in html
+
+
+def test_manual_cookie_roundtrip(tmp_path):
+    """设置页粘贴的 Cookie 要能保存并作为请求头使用。"""
+    from dly.core import config as cfgmod
+    from dly.core.config import save_settings, settings_from_config
+    from dly.cookies.manager import CookieManager
+
+    saved = tmp_path / "config.yaml"
+    header = "sessionid=abc123; odin_tt=xyz"
+    save_settings({"manual_cookie": header}, str(saved))
+    cfg = cfgmod.load_config(str(saved))
+    assert cfg.cookies.manual_cookie == header
+    assert settings_from_config(cfg)["manual_cookie"] == header
+    manager = CookieManager(cfg.cookies, use_cache=False)
+    assert manager._from_manual("douyin") == header
+
+
+def test_manual_cookie_ui_is_wired():
+    """设置页要有手动 Cookie 输入框，并纳入未保存检测。"""
+    html = (Path(__file__).resolve().parents[1]
+            / "src" / "dly" / "gui" / "assets" / "index.html").read_text(encoding="utf-8")
+    assert 'id="set-manual-cookie"' in html
+    assert "manual_cookie: $('set-manual-cookie').value.trim()" in html
+    assert "'set-manual-cookie'" in html

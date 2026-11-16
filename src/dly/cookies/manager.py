@@ -110,6 +110,7 @@ class CookieManager:
 
         self.last_error = ""
         header = (self._from_file(platform)
+                  or self._from_manual(platform)
                   or self._from_disk_cache(platform)
                   or self._from_browser(platform))
         if header:
@@ -181,6 +182,14 @@ class CookieManager:
         except OSError:
             return ""
         return "; ".join(items)
+
+    def _from_manual(self, platform: str) -> str:
+        """设置页直接粘贴的整段 Cookie（name=value; ...），优先级仅次于 cookies.txt。"""
+        value = (getattr(self._config, "manual_cookie", "") or "").strip()
+        if not value or "=" not in value:
+            return ""
+        logger.debug("[%s] 使用设置页手动输入的 Cookie（%d 字符）", platform, len(value))
+        return value
 
     def _from_disk_cache(self, platform: str) -> str:
         """读取本地缓存（未过期则复用，避免每次都去翻浏览器数据库）。"""

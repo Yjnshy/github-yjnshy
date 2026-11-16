@@ -33,9 +33,16 @@ except ImportError:        # pragma: no cover - 项目只面向 Windows
 
 logger = logging.getLogger("dly")
 
-# 微软官方永久链接（fwlink 会跳转到当期版本，链接本身长期有效）
+# 微软官方永久链接（fwlink 会跳转到当期版本，链接本身长期有效）。
+# 用体积小的联网安装包（1~2MB），大安装包不再随 exe / zip 分发。
 WEBVIEW2_URL = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
 DOTNET48_URL = "https://go.microsoft.com/fwlink/?LinkId=2085155"
+
+# 让用户自己装时打开的官方下载页面
+DOWNLOAD_PAGES = {
+    "dotnet48": "https://dotnet.microsoft.com/download/dotnet-framework/net48",
+    "webview2": "https://developer.microsoft.com/microsoft-edge/webview2/",
+}
 
 WEBVIEW2_GUID = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 DOTNET48_MIN_RELEASE = 528040        # .NET 4.8 = 528040；4.8.1 = 533320
@@ -57,6 +64,7 @@ _OK_CODES = (0, 3010, 1641)
 _SEE_MASK_NOCLOSEPROCESS = 0x00000040
 _WM_CLOSE = 0x0010
 _IDYES = 6
+_IDNO = 7
 
 
 class _SHELLEXECUTEINFOW(ctypes.Structure):
@@ -162,22 +170,6 @@ def missing_components() -> List[str]:
     return missing
 
 
-def _bundled_installer_dir() -> Path:
-    """随包携带的安装包目录（exe 旁的 runtime/，源码运行时用 packaging/runtime）。"""
-    if getattr(sys, "frozen", False):
-        base = Path(sys.executable).resolve().parent
-    else:
-        base = Path(__file__).resolve().parents[2] / "packaging"
-    return base / "runtime"
-
-
-def installer_path(name: str) -> Optional[Path]:
-    """优先返回随包携带的安装包路径；没有则 None（调用方再去下载）。"""
-    filename = INSTALLERS[name][1]
-    bundled = _bundled_installer_dir() / filename
-    return bundled if bundled.is_file() else None
-
-
 def looks_like_runtime_failure(exc_text: str) -> bool:
     """桌面报错是不是 .NET / WebView2 这类环境问题。
 
@@ -197,35 +189,51 @@ def repair_targets() -> List[str]:
     return ["dotnet48", "webview2"]
 
 
-def confirm_install(missing: List[str], repair: bool = False) -> bool:
-    """问用户要不要自动安装；返回是否点了「是」。"""
+def prompt_runtime_action(missing: List[str],
+                          repair: bool = False) -> str:
+    """三选一：'install' 自动装 / 'pages' 打开官方页面 / 'skip' 跳过。"""
     if not missing:
-        return False
+        return "skip"
     names = "、".join(LABELS.get(m, m) for m in missing)
     if repair:
         text = (
-            "系统里虽然检测到了运行环境，但桌面窗口仍然启动失败。\n"
-            "这通常说明已安装的版本损坏或不完整，需要重新安装一次。\n\n"
-            f"是否重新安装/修复：{names}？\n\n"
-            "安装包已经随程序一起带了，不需要联网下载；\n"
-            "安装时会弹出「用户账户控制」，请点「是」（这是 Windows 要求，绕不过去）。\n"
-            "装完程序会自动重新打开。选「否」则改用浏览器模式继续运行。"
+            "桌面窗口启动失败：系统里虽然检测到了运行环境，但组件可能已损坏。\n"
+            f"建议重新安装：{names}。\n\n"
+            "【是】自动联网下载安装包并静默安装（1~2MB 引导包，装完自动重开）\n"
+            "【否】打开微软官方下载页面，自己手动安装\n"
+            "【取消】不装了，改用浏览器模式继续运行\n\n"
+            "无论哪种安装方式，Windows 都会要求确认一次「用户账户控制」。"
         )
     else:
-        size = {1: "约 110~150MB", 2: "约 260MB"}.get(len(missing), "约 260MB")
         text = (
-            f"检测到这台电脑缺少桌面窗口所需的系统组件：\n\n{names}\n\n"
-            f"是否现在自动下载并安装？（{size}，需要联网）\n\n"
-            "安装时会弹出「用户账户控制」提示，请点「是」；装完程序会自动重新打开。\n"
-            "选「否」则改用浏览器模式继续运行 —— 功能完全相同，只是界面在浏览器里。"
+            f"这台电脑缺少桌面窗口所需的系统组件：{names}\n\n"
+            "【是】自动联网下载安装包并静默安装（1~2MB 引导包，装完自动重开）\n"
+            "【否】打开微软官方下载页面，自己手动安装\n"
+            "【取消】不装了，改用浏览器模式继续运行（功能相同，界面在浏览器里）\n\n"
+            "安装包不会随程序附带，以保持压缩包体积小巧。"
         )
     try:
         res = ctypes.windll.user32.MessageBoxW(
-            None, text, "帅羊羊DLY - 缺少运行环境", 0x04 | 0x30)   # 是/否 + 问号
-    except Exception:         # noqa: BLE001 弹不出窗就按「不装」处理
+            None, text, "帅羊羊DLY - 运行环境提示", 0x03 | 0x30)  # 是/否/取消
+    except Exception:         # noqa: BLE001 弹不出窗就按「跳过」处理
         logger.warning("询问安装弹窗失败", exc_info=True)
-        return False
-    return res == _IDYES
+        return "skip"
+    return {_IDYES: "install", _IDNO: "pages"}.get(res, "skip")
+
+
+def open_download_pages(missing: List[str]) -> None:
+    """在系统默认浏览器里打开缺失组件的微软官方下载页面。"""
+    import webbrowser
+
+    for name in missing:
+        url = DOWNLOAD_PAGES.get(name)
+        if not url:
+            continue
+        logger.info("打开官方下载页面：%s", url)
+        try:
+            webbrowser.open(url)
+        except Exception:     # noqa: BLE001 打不开也不能影响浏览器模式回退
+            logger.warning("打开下载页面失败：%s", url, exc_info=True)
 
 
 def _download(url: str, dest: Path, timeout: float = 60.0) -> bool:
@@ -289,25 +297,18 @@ def install(missing: List[str], temp_dir: Optional[Path] = None) -> bool:
         label = LABELS.get(name, name)
         dest = work / filename
 
-        note = None
-        bundled = installer_path(name)
-        if bundled:
-            got = True
-            logger.info("%s 使用随包安装包：%s", label, bundled)
-        else:
-            note = _Note(f"正在下载 {label} 安装包…\n\n约 1~3 分钟，请勿关闭本程序。")
-            got = _download(url, dest) or _download(url, dest)   # 失败重试一次
-            note.close()
+        note = _Note(f"正在下载 {label} 安装包…\n\n约 1~2MB，几秒到几十秒，请勿关闭本程序。")
+        got = _download(url, dest) or _download(url, dest)   # 失败重试一次
+        note.close()
         if not got:
             logger.warning("%s 下载失败", label)
             continue
 
-        source = bundled or dest
         note = _Note(
             f"正在安装 {label}…\n\n"
             "屏幕上可能暂时没有变化，这是静默安装的正常表现，通常 1~3 分钟。\n"
             "若弹出「用户账户控制」，请点「是」。")
-        code = _run_elevated(source, params)
+        code = _run_elevated(dest, params)
         note.close()
         if code is None:
             logger.warning("%s 安装被取消（UAC 未确认）", label)

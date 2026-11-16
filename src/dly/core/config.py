@@ -27,6 +27,7 @@ DEFAULT_CONFIG_PATHS = [
 class CookieConfig:
     browser: str = "chrome"            # chrome / edge / firefox / brave
     cookies_file: str = ""           # Netscape 格式 cookies.txt 路径
+    manual_cookie: str = ""          # 设置页直接粘贴的 Cookie 请求头
     cache_days: int = 7              # 提取成功后的本地缓存天数，0 表示不缓存
 
 
@@ -102,6 +103,7 @@ def load_config(explicit_path: Optional[str] = None) -> AppConfig:
         cfg.cookies = CookieConfig(
             browser=ck.get("browser", "chrome"),
             cookies_file=ck.get("cookies_file", "") or "",
+            manual_cookie=ck.get("manual_cookie", "") or "",
             cache_days=int(ck.get("cache_days", 7)),
         )
         rc = raw.get("record") or {}
@@ -141,7 +143,9 @@ def load_config(explicit_path: Optional[str] = None) -> AppConfig:
 # ---------------------------------------------------------------- 设置页持久化
 #
 # 界面把配置读成一个扁平字典，保存时只覆盖白名单里的键，其余（proxy、
-# ffmpeg_path、cookies_file、max_retries 等）原样保留；Cookie 明文一律不写。
+# ffmpeg_path、cookies_file、max_retries 等）原样保留。
+# 用户在设置页粘贴的 Cookie 明文只写进本机 config.yaml（该文件已 gitignore，
+# 不会入库、不上传、不进 zip），且界面展示时只回显到本地。
 
 QUALITY_CHOICES = ("best", "1080", "720", "480", "audio", "mp3")
 BROWSER_CHOICES = ("chrome", "edge", "firefox", "brave")
@@ -159,6 +163,7 @@ def settings_from_config(cfg: AppConfig) -> Dict[str, Any]:
         "keep_original": cfg.keep_original,
         "browser": cfg.cookies.browser,
         "cookies_file": cfg.cookies.cookies_file,
+        "manual_cookie": cfg.cookies.manual_cookie,
         "record_format": cfg.record.format,
         "segment_minutes": cfg.record.segment_minutes,
         "poll_interval": cfg.record.poll_interval,
@@ -251,6 +256,12 @@ def save_settings(data: Dict[str, Any], path: Optional[str] = None) -> Path:
             value = ""          # 路径失效就清空，避免界面显示一个假文件
         cookies = _section(raw, "cookies")
         cookies["cookies_file"] = value
+        raw["cookies"] = cookies
+    if "manual_cookie" in data:
+        # 只存本机 config.yaml；允许较长的整段 Cookie 请求头
+        value = str(data["manual_cookie"] or "").strip()[:20000]
+        cookies = _section(raw, "cookies")
+        cookies["manual_cookie"] = value
         raw["cookies"] = cookies
 
     record = _section(raw, "record")

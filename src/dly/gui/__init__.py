@@ -37,10 +37,9 @@ def launch(debug: bool = False, web: bool = False) -> None:
                 "程序将改用浏览器模式继续运行：稍后会自动打开默认浏览器，"
                 "功能与桌面窗口完全相同；关闭浏览器页面且没有任务在跑时，"
                 "程序会自动退出。\n\n"
-                "想用回独立桌面窗口，可以重新打开 DLY.exe 让它再检测一次，"
-                "或手动安装：Microsoft Edge WebView2 运行时 + "
-                "Microsoft .NET Framework 4.8。\n"
-                "（若刚装完运行时仍失败，请重启电脑后再试）"
+                "想用回独立桌面窗口，可重新打开 DLY.exe 让它再检测一次；"
+                "若刚才选了「打开官方页面」，按页面引导装好后重新打开程序即可。"
+                "（装完运行时仍失败时，重启电脑再试）"
             )
             launch_web(open_browser=True, idle_exit_seconds=150)
             return
@@ -62,7 +61,11 @@ def _try_install_runtimes(exc_text: str) -> None:
         targets = runtime_setup.repair_targets() if repair else missing
         if not targets:
             return              # 两样都在、错误也和环境无关，装了也没用
-        if not runtime_setup.confirm_install(targets, repair=repair):
+        action = runtime_setup.prompt_runtime_action(targets, repair=repair)
+        if action == "pages":
+            runtime_setup.open_download_pages(targets)
+            return
+        if action == "skip":
             return
         if runtime_setup.install(targets):
             runtime_setup.relaunch()
