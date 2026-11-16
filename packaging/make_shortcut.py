@@ -37,6 +37,7 @@ COINIT_APARTMENTTHREADED = 2
 _VT_RELEASE = 2
 _VT_SET_DESCRIPTION = 7
 _VT_SET_WORKING_DIR = 9
+_VT_SET_ARGUMENTS = 11
 _VT_SET_ICON_LOCATION = 17
 _VT_SET_PATH = 20
 # IPersistFile
@@ -133,7 +134,8 @@ def icon_source(exe: Path, override: str = "") -> Path:
 
 
 def create_shortcut(exe: Path, name: str = "帅羊羊DLY",
-                    description: str = "", icon: str = "") -> Path:
+                    description: str = "", icon: str = "",
+                    arguments: str = "") -> Path:
     """调用 IShellLink 在桌面创建快捷方式，返回 .lnk 路径。"""
     exe = Path(exe).resolve()
     if not exe.is_file():
@@ -163,6 +165,8 @@ def create_shortcut(exe: Path, name: str = "帅羊羊DLY",
         _vt_call(ptr, _VT_SET_PATH, ctypes.c_wchar_p, ctypes.c_int)(
             ptr, str(exe), 0)
         _vt_call(ptr, _VT_SET_WORKING_DIR, ctypes.c_wchar_p)(ptr, str(exe.parent))
+        if arguments:
+            _vt_call(ptr, _VT_SET_ARGUMENTS, ctypes.c_wchar_p)(ptr, arguments)
         _vt_call(ptr, _VT_SET_ICON_LOCATION, ctypes.c_wchar_p, ctypes.c_int)(
             ptr, str(icon_path), 0)
         if description:
@@ -191,11 +195,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--desc", default="视频无水印下载 & 直播录制", help="备注")
     parser.add_argument("--icon", default="",
                         help="指定 .ico 路径（换图标但还没重新打包 exe 时用）")
+    parser.add_argument("--args", default="",
+                        help="启动参数，例如 --args=--web 让快捷方式直接进浏览器模式")
     args = parser.parse_args(argv)
 
     try:
         exe = find_exe(Path(args.app_dir) if args.app_dir else None)
-        lnk = create_shortcut(exe, args.name, args.desc, args.icon)
+        lnk = create_shortcut(exe, args.name, args.desc, args.icon, args.args)
     except (FileNotFoundError, OSError) as exc:
         print(f"✗ {exc}", file=sys.stderr)
         return 1
@@ -203,6 +209,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"✓ 快捷方式：{lnk}")
     print(f"  指向：{exe}")
     print(f"  图标：{icon_source(exe, args.icon)}")
+    if args.args:
+        print(f"  参数：{args.args}")
     return 0
 
 
