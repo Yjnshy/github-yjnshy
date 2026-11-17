@@ -56,6 +56,9 @@ class AppConfig:
     quality: str = "best"
     fps: int = 0                      # 下载完成后转码到的帧率，0 = 不转码
     keep_original: bool = False       # 转码后是否保留原片
+    # 优先选 H.264 编码：B 站等站点默认给 AV1/HEVC，Windows 自带播放器放不了，
+    # 用户会以为文件坏了。关掉才能拿到最高画质（AV1 更省带宽）
+    compat_format: bool = True
     proxy: str = ""
     ffmpeg_path: str = ""
     ffprobe_path: str = ""
@@ -96,6 +99,7 @@ def load_config(explicit_path: Optional[str] = None) -> AppConfig:
         cfg.quality = raw.get("quality", cfg.quality)
         cfg.fps = int(raw.get("fps", cfg.fps) or 0)
         cfg.keep_original = bool(raw.get("keep_original", cfg.keep_original))
+        cfg.compat_format = bool(raw.get("compat_format", cfg.compat_format))
         cfg.proxy = raw.get("proxy", cfg.proxy)
         cfg.ffmpeg_path = raw.get("ffmpeg_path", cfg.ffmpeg_path)
         cfg.ffprobe_path = raw.get("ffprobe_path", cfg.ffprobe_path)
@@ -161,6 +165,7 @@ def settings_from_config(cfg: AppConfig) -> Dict[str, Any]:
         "quality": cfg.quality,
         "fps": cfg.fps,
         "keep_original": cfg.keep_original,
+        "compat_format": cfg.compat_format,
         "browser": cfg.cookies.browser,
         "cookies_file": cfg.cookies.cookies_file,
         "manual_cookie": cfg.cookies.manual_cookie,
@@ -244,6 +249,8 @@ def save_settings(data: Dict[str, Any], path: Optional[str] = None) -> Path:
         raw["fps"] = _number(data["fps"], 0, 120, 0)
     if "keep_original" in data:
         raw["keep_original"] = bool(data["keep_original"])
+    if "compat_format" in data:
+        raw["compat_format"] = bool(data["compat_format"])
     if "browser" in data:
         cookies = _section(raw, "cookies")
         cookies["browser"] = _choice(data["browser"], BROWSER_CHOICES,

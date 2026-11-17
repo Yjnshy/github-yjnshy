@@ -33,6 +33,17 @@ def main() -> int:
 
     log_dir = setup_logging()
 
+    # 打包版先自检一次“能不能写”：出问题时用户只需把这个文件发过来
+    try:
+        from pathlib import Path
+
+        from dly.core import diag
+        from dly.core.config import load_config
+
+        diag.dump([Path(load_config().output_dir)])
+    except Exception:                             # noqa: BLE001 自检失败不影响启动
+        logging.getLogger("dly").debug("写权限自检失败", exc_info=True)
+
     # --login <平台>：只开登录窗然后退出。主程序用同样的 exe 再拉起一个自己，
     # 因为 webview.start() 必须独占主线程，不能和主窗口挤在同一个进程里。
     if "--login" in sys.argv:

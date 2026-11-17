@@ -365,3 +365,17 @@ def test_frozen_fallback_switches_to_browser_mode():
     assert 'if idle >= idle_exit_seconds' in server
     assert '<button id="quit-btn" class="quit-btn" type="button" hidden>退出程序</button>' in html
     assert "quit-btn').hidden = !!snapshot.desktop" in html
+
+
+def test_compat_format_defaults_to_true_and_roundtrips(tmp_path):
+    """优先兼容格式默认开启，关掉后能存进配置。"""
+    from dly.core.config import AppConfig, load_config, save_settings, settings_from_config
+
+    cfg = AppConfig()
+    assert cfg.compat_format is True
+
+    target = tmp_path / "config.yaml"
+    save_settings({"compat_format": False}, target)
+    reloaded = load_config(str(target))
+    assert reloaded.compat_format is False
+    assert settings_from_config(reloaded)["compat_format"] is False

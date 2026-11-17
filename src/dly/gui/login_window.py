@@ -22,6 +22,7 @@ Python 代码——**不涉及解密，也不碰用户浏览器里的数据**。
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import threading
 import time
@@ -166,7 +167,9 @@ def _has_marker(cookies, host: str, markers: tuple) -> bool:
 
 def run(platform: str) -> int:
     """打开登录窗并阻塞到结束，返回进程退出码。"""
-    _debug("启动登录窗：platform=%r", platform)
+    _debug("启动登录窗：platform=%r 用户=%s 家目录=%s 会话文件=%s",
+           platform, os.environ.get("USERNAME", "?"), Path.home(),
+           sessions.STORE_PATH)
     site = site_of(platform)
     if site is None:
         logger.error("未知的登录目标：%s", platform)

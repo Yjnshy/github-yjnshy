@@ -153,6 +153,8 @@ class CookieManager:
                     f.write(f".{domain}\tTRUE\t/\tTRUE\t0\t"
                             f"{name.strip()}\t{value.strip()}\n")
             self._temp_files.append(path)
+            logger.info("[%s] 已生成 Cookie 文件：%d 条 → %s",
+                        platform, header.count(";") + 1, path)
             return path
         except OSError as exc:
             logger.warning("写入 Cookie 临时文件失败: %s", exc)
@@ -189,7 +191,9 @@ class CookieManager:
         """
         header = sessions.get_header(platform)
         if header:
-            logger.debug("[%s] 使用程序内登录会话（%d 字符）", platform, len(header))
+            # 用 info 级别：用户说“登录了还是下不了”时，日志里要能一眼看到
+            # 到底有没有把登录态带上
+            logger.info("[%s] 使用程序内登录会话（%d 字符）", platform, len(header))
         return header
 
     def _from_file(self, platform: str) -> str:

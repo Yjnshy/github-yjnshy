@@ -109,6 +109,10 @@ class DownloadEngine:
             opts["ffmpeg_location"] = os.path.dirname(self.ffmpeg)
         else:
             opts["format"] = "b"  # 无 ffmpeg 时退化为单文件流
+        if getattr(self.config, "compat_format", True) and self.ffmpeg:
+            # 同分辨率优先 H.264：B 站等会给 AV1/HEVC，Windows 自带播放器放不了，
+            # 用户看到「格式错误」会以为下载坏了。只是排序，没有 H.264 时仍会用别的。
+            opts["format_sort"] = ["vcodec:h264"]
         if quality in ("audio", "mp3") and self.ffmpeg:
             opts["postprocessors"] = [{
                 "key": "FFmpegExtractAudio",

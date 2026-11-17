@@ -16,7 +16,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 APP_NAME = "DLY"
 
@@ -63,18 +63,54 @@ def resource_dirs() -> List[Path]:
     return seen
 
 
+def _writable(path: Path) -> bool:
+    """真实写一次才算可写：能建目录不代表能建文件。"""
+    try:
+        Path(path).mkdir(parents=True, exist_ok=True)
+        probe = Path(path) / ".dly_write_probe"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+        return True
+    except OSError:
+        return False
+
+
+_DATA_DIR_CACHE: Optional[Path] = None
+
+
 def data_dir() -> Path:
     """可写的用户数据目录（日志、默认下载位置）。
 
-    打包后固定用 ``%LOCALAPPDATA%\\DLY``，避免程序装在无写权限
-    目录时直接报错；源码运行仍用当前目录，保持开发时行为直观。
+    打包后优先 ``%LOCALAPPDATA%\\DLY``；但实测某些机器上冻结进程写这里会被
+    系统拒绝（PermissionError 13，同一个目录普通 python 进程却正常），而
+    程序目录一直可写——所以这里实际探一次，不行就退到 exe 同级目录，
+    再不行退临时目录。源码运行仍用当前目录，保持开发时行为直观。
     """
+    global _DATA_DIR_CACHE
+    if _DATA_DIR_CACHE is not None:
+        return _DATA_DIR_CACHE
+
     if not is_frozen():
-        return Path.cwd()
+        _DATA_DIR_CACHE = Path.cwd()
+        return _DATA_DIR_CACHE
+
+    candidates = []
     base = os.environ.get("LOCALAPPDATA")
     if not base:
         base = str(Path.home() / "AppData" / "Local")
-    return Path(base) / APP_NAME
+    candidates.append(Path(base) / APP_NAME)
+    try:
+        candidates.append(Path(sys.executable).resolve().parent)
+    except OSError:
+        pass
+
+    for candidate in candidates:
+        if _writable(candidate):
+            _DATA_DIR_CACHE = candidate
+            return candidate
+
+    _DATA_DIR_CACHE = ensure_dir(Path(tempfile.gettempdir()) / APP_NAME)
+    return _DATA_DIR_CACHE
 
 
 def ensure_dir(path: Path) -> Path:

@@ -209,8 +209,11 @@ def _run_download(state: AppState, text: str, quality: str, outdir: str,
 
     # yt-dlp 的进度回调非常密集，界面上按 1.5 秒节流，否则日志会被刷屏
     last = {"at": 0.0}
+    permission_denied = {"hit": False}
 
     def progress(message: str) -> None:
+        if "Permission denied" in message or "拒绝访问" in message:
+            permission_denied["hit"] = True
         if "下载中" in message or "%" in message:
             now = time.monotonic()
             if now - last["at"] < 1.5:
@@ -227,6 +230,12 @@ def _run_download(state: AppState, text: str, quality: str, outdir: str,
                                          output_dir=outdir, fps=fps)
         level = "ok" if ok == total and total else "warn"
         state.log("download", f"完成：成功 {ok} / 共 {total}", level)
+        if permission_denied["hit"] and ok == 0:
+            # 原始报错是一串英文 Errno，普通用户看不懂，这里直说怎么办
+            state.log("download",
+                      "保存失败的原因是没有写入权限，不是链接的问题。"
+                      f"请换一个保存目录（现在是 {outdir}），"
+                      "例如 D:\\视频；如果安全软件弹过提示，选「允许」。", "error")
     except Exception as exc:  # noqa: BLE001
         logger.exception("下载失败")
         state.log("download", f"下载失败：{exc}", "error")
@@ -438,28 +447,45 @@ def _run_cookie_check(state: AppState, browser: str) -> None:
         state.log("download", f"Cookie 检测异常：{exc}", "error")
 
 
-def _spawn_login_window(platform: str) -> None:
-    """拉起一个独立的登录窗进程。
+_LOGIN_LOCK = threading.Lock()
+_LOGIN_PROCS: Dict[str, "subprocess.Popen"] = {}
+
+
+def _spawn_login_window(platform: str, force: bool = False) -> bool:
+    """拉起一个独立的登录窗进程，返回是否真的新开了一个。
 
     ``webview.start()`` 必须独占主线程，而主窗口已经占着它，所以让程序再起
     一个自己：打包版是 ``DLY.exe --login <平台>``，源码模式是
     ``python -m dly.gui --login <平台>``。登录结果写在磁盘上，界面轮询即可。
-    """
-    if getattr(sys, "frozen", False):
-        cmd = [sys.executable, "--login", platform]
-        env = None
-    else:
-        cmd = [sys.executable, "-m", "dly.gui", "--login", platform]
-        env = dict(os.environ)
-        src = str(Path(__file__).resolve().parents[2])
-        env["PYTHONPATH"] = os.pathsep.join(
-            part for part in (src, env.get("PYTHONPATH", "")) if part)
 
-    flags = 0
-    if os.name == "nt":
-        flags = 0x00000008            # DETACHED_PROCESS：不占用外壳、不挂控制台
-    subprocess.Popen(cmd, env=env, creationflags=flags,
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    同一平台已经有窗口在开时直接忽略：界面按钮被连点两次会发两次请求，
+    之前就出现过一次点出两个登录窗。
+    """
+    global _LOGIN_PROCS
+    with _LOGIN_LOCK:
+        running = _LOGIN_PROCS.get(platform)
+        if running is not None and running.poll() is None and not force:
+            logger.info("%s 的登录窗已经开着，忽略重复请求", platform)
+            return False
+
+        if getattr(sys, "frozen", False):
+            cmd = [sys.executable, "--login", platform]
+            env = None
+        else:
+            cmd = [sys.executable, "-m", "dly.gui", "--login", platform]
+            env = dict(os.environ)
+            src = str(Path(__file__).resolve().parents[2])
+            env["PYTHONPATH"] = os.pathsep.join(
+                part for part in (src, env.get("PYTHONPATH", "")) if part)
+
+        flags = 0
+        if os.name == "nt":
+            flags = 0x00000008        # DETACHED_PROCESS：不占外壳、不挂控制台
+        proc = subprocess.Popen(cmd, env=env, creationflags=flags,
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL)
+        _LOGIN_PROCS[platform] = proc
+        return True
 
 
 # ----------------------------------------------------------------------
@@ -731,16 +757,17 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": "不支持的登录目标"}, 400)
                 return
             try:
-                _spawn_login_window(platform)
+                opened = _spawn_login_window(platform)
             except Exception as exc:  # noqa: BLE001 拉不起子进程时如实回报
                 logger.exception("打开登录窗口失败")
                 self._json({"error": f"登录窗口启动失败：{exc}"}, 500)
                 return
-            self.state.log(
-                self.state.active_tab(),
-                f"已打开{sessions.site_name(platform)}登录窗口，"
-                "在新窗口里扫码或输入账号即可", "info")
-            self._json({"ok": True})
+            if opened:
+                self.state.log(
+                    self.state.active_tab(),
+                    f"已打开{sessions.site_name(platform)}登录窗口，"
+                    "在新窗口里扫码或输入账号即可", "info")
+            self._json({"ok": True, "opened": opened})
             return
 
         if path == "/api/login/logout":

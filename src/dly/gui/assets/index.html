@@ -915,6 +915,11 @@
           <div class="row">
             <label class="check"><input type="checkbox" id="set-keep"> 转码后保留原片</label>
           </div>
+          <div class="row">
+            <label class="check"><input type="checkbox" id="set-compat"> 优先兼容格式（H.264）</label>
+          </div>
+          <div class="hint">开启后拿到的文件在 Windows 自带播放器、老播放器里都能直接播。
+            关掉会优先最高画质（B 站等站点可能给 AV1 编码，部分播放器放不了）。</div>
         </div>
 
         <div class="card">
@@ -1537,12 +1542,18 @@ async function fetchLogins() {
   return sites;
 }
 
+let loginBusy = false;
+
 async function startLogin(platform, btn) {
+  // 连点两下会开出两个登录窗，这里先挡一道（后端也会去重）
+  if (loginBusy) return;
+  loginBusy = true;
   const label = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = '等待登录…'; }
   try {
     await api('/api/login/start', { platform });
   } catch (e) {
+    loginBusy = false;
     if (btn) { btn.disabled = false; btn.textContent = label; }
     notify('登录窗口打不开：' + e.message);
     return;
@@ -1554,6 +1565,7 @@ async function startLogin(platform, btn) {
     try { sites = await fetchLogins(); } catch (e) { continue; }
     const hit = sites.find(s => s.platform === platform);
     if (hit && hit.logged_in) {
+      loginBusy = false;
       if (btn) { btn.disabled = false; btn.textContent = label; }
       const hint = $('dl-login-hint');
       if (hint) hint.hidden = true;
@@ -1561,6 +1573,7 @@ async function startLogin(platform, btn) {
       return;
     }
   }
+  loginBusy = false;
   if (btn) { btn.disabled = false; btn.textContent = label; }
 }
 
@@ -1783,7 +1796,7 @@ function fillRooms(list) {
    主题开关是自动保存的，不参与 dirty 标记。 */
 let settingsDirty = false;
 let syncedOutputDir = '';   // 最近一次同步到下载页/录制页的默认值
-const SETTINGS_FIELDS = ['set-outdir', 'set-quality', 'set-fps', 'set-keep',
+const SETTINGS_FIELDS = ['set-outdir', 'set-quality', 'set-fps', 'set-keep', 'set-compat',
   'set-rec-format', 'set-seg-minutes', 'set-poll', 'set-rec-fps',
   'set-browser', 'set-cookies-file', 'set-manual-cookie',
   'set-sound', 'set-log-level'];
@@ -1850,6 +1863,7 @@ function fillSettingsForm(s) {
   setFps('set-fps', s.fps);
   setFps('set-rec-fps', s.record_fps);
   $('set-keep').checked = !!s.keep_original;
+  $('set-compat').checked = s.compat_format !== false;
   $('set-rec-format').value = s.record_format || 'ts';
   if (!$('set-rec-format').value) $('set-rec-format').value = 'ts';
   $('set-seg-minutes').value = s.segment_minutes || 0;
@@ -1868,6 +1882,7 @@ function readSettingsForm() {
     quality: $('set-quality').value,
     fps: parseInt($('set-fps').value || '0', 10) || 0,
     keep_original: $('set-keep').checked,
+    compat_format: $('set-compat').checked,
     record_format: $('set-rec-format').value,
     segment_minutes: parseInt($('set-seg-minutes').value || '0', 10) || 0,
     poll_interval: parseInt($('set-poll').value || '60', 10) || 60,
