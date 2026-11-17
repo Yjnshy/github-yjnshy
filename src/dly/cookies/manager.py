@@ -1,9 +1,11 @@
 """Cookie 管理器。
 
 获取优先级（从高到低）：
-1. 环境变量 DLY_COOKIES_FILE 或配置里的 cookies.txt（Netscape 格式）
-2. 本地缓存（~/.dly/cookie_cache.json，默认 7 天）
-3. 浏览器自动提取（复用 yt-dlp 内置的浏览器 Cookie 解密，
+1. 程序内登录会话（用户在登录窗里扫码/登录后保存的，见 ``sessions``）
+2. 环境变量 DLY_COOKIES_FILE 或配置里的 cookies.txt（Netscape 格式）
+3. 设置页手动粘贴的 Cookie
+4. 本地缓存（~/.dly/cookie_cache.json，默认 7 天）
+5. 浏览器自动提取（复用 yt-dlp 内置的浏览器 Cookie 解密，
    browser-cookie3 兜底）
 
 缓存的意义：部分浏览器（Chrome/Edge）运行时会锁住 Cookie 数据库，
@@ -28,6 +30,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from dly.core.config import CookieConfig
+from dly.cookies import sessions
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +112,8 @@ class CookieManager:
             return ""
 
         self.last_error = ""
-        header = (self._from_file(platform)
+        header = (self._from_session(platform)
+                  or self._from_file(platform)
                   or self._from_manual(platform)
                   or self._from_disk_cache(platform)
                   or self._from_browser(platform))
@@ -164,6 +168,29 @@ class CookieManager:
         self._temp_files.clear()
 
     # ---- 内部实现 ----
+
+    def reload(self, platform: Optional[str] = None) -> None:
+        """登录状态变化后清掉内存缓存，让下次取 Cookie 重新读盘。
+
+        不做这一步的话，进程内已缓存/已标记失败的结果会一直生效，
+        用户刚登录完仍然拿到旧结果。
+        """
+        if platform:
+            self._cache.pop(platform, None)
+            self._failed.pop(platform, None)
+        else:
+            self._cache.clear()
+            self._failed.clear()
+
+    def _from_session(self, platform: str) -> str:
+        """用户在本程序登录窗里登录得到的会话。
+
+        优先级最高：这是用户刚刚亲手做的操作，意图最明确，也最不容易过期。
+        """
+        header = sessions.get_header(platform)
+        if header:
+            logger.debug("[%s] 使用程序内登录会话（%d 字符）", platform, len(header))
+        return header
 
     def _from_file(self, platform: str) -> str:
         path = self._config.cookies_file

@@ -114,6 +114,7 @@ if os.environ.get("DLY_BUNDLE_FFMPEG", "1") != "0":
 hiddenimports = [
     # 延迟导入的模块不会被静态分析发现
     "dly.gui.desktop",
+    "dly.gui.login_window",
     "dly.gui.clr_boot",
     "dly.gui.server",
     "dly.downloader.engine",

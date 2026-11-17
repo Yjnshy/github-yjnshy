@@ -33,6 +33,13 @@ def main() -> int:
 
     log_dir = setup_logging()
 
+    # --login <平台>：只开登录窗然后退出。主程序用同样的 exe 再拉起一个自己，
+    # 因为 webview.start() 必须独占主线程，不能和主窗口挤在同一个进程里。
+    if "--login" in sys.argv:
+        from dly.gui import login_window
+
+        return login_window.main()
+
     try:
         from dly.gui import launch
 

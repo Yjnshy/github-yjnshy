@@ -434,6 +434,26 @@
   .toast.err { background: var(--danger); color: #fff; }
   .toast.ok { background: var(--ok); color: #fff; }
 
+  /* ---------------- 登录状态 ---------------- */
+  .login-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 0; border-bottom: 1px solid var(--border);
+  }
+  .login-row:last-child { border-bottom: none; }
+  .login-name { min-width: 68px; font-size: 13px; color: var(--text); }
+  .login-state { flex: 1; font-size: 12px; color: var(--muted); }
+  .login-state.ok { color: var(--ok); }
+  .login-state.wait { color: var(--warn); }
+
+  .login-hint {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    margin-bottom: 12px; padding: 10px 14px;
+    border: 1px solid var(--accent-line); border-radius: 10px;
+    background: var(--accent-card); font-size: 13px; color: var(--text);
+  }
+  .login-hint[hidden] { display: none; }
+  .login-hint span { flex: 1; min-width: 160px; }
+
   /* ---------------- 主题切换过渡 ---------------- */
   body, .sidebar, .card, .log, .ctx-menu, .overlay .box, .badge, .pill,
   input, textarea, select, button {
@@ -672,6 +692,12 @@
           帧率选「原帧率」= 原始画质直存，最快；选具体数值会在下载完成后重新编码，
           速度取决于电脑性能，文件名不变。
         </p>
+      </div>
+      <div class="login-hint" id="dl-login-hint" hidden>
+        <span>这条链接需要登录才能下载高清或完整内容。登录一次就会记住，不用再操作。</span>
+        <button class="ghost" onclick="startLogin('bilibili', this)">登录 B 站</button>
+        <button class="ghost" onclick="startLogin('douyin', this)">登录抖音</button>
+        <button class="ghost" onclick="startLogin('xiaohongshu', this)">登录小红书</button>
       </div>
       <div class="card log-card">
         <div class="log-head"><span>运行日志</span><span id="dl-count"></span></div>
@@ -939,12 +965,29 @@
           <div class="card-head">
             <div class="head-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="4" y="10" width="16" height="10" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>
+              </svg>
+            </div>
+            <div>
+              <div class="card-title">登录账号</div>
+              <div class="card-sub">在自己电脑上扫一次码，之后自动记住</div>
+            </div>
+          </div>
+          <div id="login-sites"></div>
+          <div class="hint">只有下载高清、会员或完整作品时才需要登录。密码不会保存在本程序里，
+            只保留登录状态；退出登录即清除。</div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="head-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7v5l3 2"/><path d="M17 3v4h4"/>
               </svg>
             </div>
             <div>
-              <div class="card-title">Cookie 管理</div>
-              <div class="card-sub">下载解析用的浏览器登录态来源</div>
+              <div class="card-title">高级：手动提供登录信息</div>
+              <div class="card-sub">上一栏登录不好用时的备选方案</div>
             </div>
           </div>
           <span class="label">Cookie 来源浏览器</span>
@@ -1150,6 +1193,13 @@ function playChime() {
 
 function appendLine(tab, ev) {
   const level = ev.level || 'info';
+  // 下载失败且原因是「没登录」时，把登录入口直接摆出来，
+  // 别让用户自己去找设置页
+  if (tab === 'download' && level === 'error'
+      && /登录|会员|付费|清晰度|403|401|Login required|premium/i.test(ev.text || '')) {
+    const hint = $('dl-login-hint');
+    if (hint) hint.hidden = false;
+  }
   if ((LEVEL_RANK[level] || 0) < (LEVEL_RANK[uiLogLevel] || 0)) return;
   if (uiSound && (level === 'ok' || /完成|已保存|下载成功|已自动停止/.test(ev.text || ''))) {
     playChime();
@@ -1179,6 +1229,7 @@ function fmtDur(sec) {
 /* ---------------- 状态渲染 ---------------- */
 function render() {
   if (!snapshot) return;
+  renderLogins(snapshot.logins);
   const rec = snapshot.record || {};
   const dl = snapshot.download || {};
   const watch = snapshot.watch || {};
@@ -1430,9 +1481,99 @@ async function clearCookie() {
   } catch (e) { notify(e.message); }
 }
 
+/* ---------------- 登录（推荐方式） ---------------- */
+let lastLoginSig = '';
+
+function loginAgo(hours) {
+  if (hours === null || hours === undefined) return '';
+  if (hours < 1) return '刚刚';
+  if (hours < 24) return Math.round(hours) + ' 小时前';
+  return Math.round(hours / 24) + ' 天前';
+}
+
+function renderLogins(sites) {
+  const box = $('login-sites');
+  if (!box || !sites) return;
+  const sig = sites.map(s => s.platform + ':' + s.logged_in + ':' + s.saved_at).join('|');
+  if (sig === lastLoginSig) return;
+  lastLoginSig = sig;
+  box.innerHTML = '';
+  sites.forEach(s => {
+    const row = document.createElement('div');
+    row.className = 'login-row';
+
+    const name = document.createElement('span');
+    name.className = 'login-name';
+    name.textContent = s.name;
+
+    const state = document.createElement('span');
+    state.className = 'login-state' + (s.logged_in ? ' ok' : '');
+    state.textContent = s.logged_in
+      ? '已登录 · ' + loginAgo(s.age_hours)
+      : '未登录（普通下载不受影响）';
+
+    const btn = document.createElement('button');
+    btn.className = 'ghost';
+    btn.textContent = s.logged_in ? '重新登录' : '登录';
+    btn.onclick = () => startLogin(s.platform, btn);
+
+    row.append(name, state, btn);
+    if (s.logged_in) {
+      const out = document.createElement('button');
+      out.className = 'ghost';
+      out.textContent = '退出';
+      out.onclick = () => logoutSite(s.platform);
+      row.append(out);
+    }
+    box.append(row);
+  });
+}
+
+async function fetchLogins() {
+  const res = await fetch('/api/login/sites');
+  const data = await res.json();
+  const sites = data.sites || [];
+  renderLogins(sites);
+  return sites;
+}
+
+async function startLogin(platform, btn) {
+  const label = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '等待登录…'; }
+  try {
+    await api('/api/login/start', { platform });
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+    notify('登录窗口打不开：' + e.message);
+    return;
+  }
+  const deadline = Date.now() + 5 * 60 * 1000;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 1500));
+    let sites = [];
+    try { sites = await fetchLogins(); } catch (e) { continue; }
+    const hit = sites.find(s => s.platform === platform);
+    if (hit && hit.logged_in) {
+      if (btn) { btn.disabled = false; btn.textContent = label; }
+      const hint = $('dl-login-hint');
+      if (hint) hint.hidden = true;
+      toast('登录成功，可以重新点「开始下载」', 'ok');
+      return;
+    }
+  }
+  if (btn) { btn.disabled = false; btn.textContent = label; }
+}
+
+async function logoutSite(platform) {
+  try {
+    await api('/api/login/logout', { platform });
+    await fetchLogins();
+    toast('已退出登录', 'ok');
+  } catch (e) { notify(e.message); }
+}
+
 /* 选一份浏览器导出的 cookies.txt，路径回填后点「保存设置」生效 */
-async function chooseCookieFile() {
-  if (picking) return;
+async function chooseCookieFile() {  if (picking) return;
   picking = true;
   const btn = document.querySelector('[onclick="chooseCookieFile()"]');
   if (btn) btn.disabled = true;

@@ -42,6 +42,7 @@ from dly.core.config import (config_file_path, load_config,
 from dly.core.ffmpeg import find_ffmpeg
 from dly.core.logging import setup_logging
 from dly.core.transcode import FPS_CHOICES, normalize_fps
+from dly.cookies import sessions
 
 logger = logging.getLogger(__name__)
 
@@ -437,6 +438,30 @@ def _run_cookie_check(state: AppState, browser: str) -> None:
         state.log("download", f"Cookie 检测异常：{exc}", "error")
 
 
+def _spawn_login_window(platform: str) -> None:
+    """拉起一个独立的登录窗进程。
+
+    ``webview.start()`` 必须独占主线程，而主窗口已经占着它，所以让程序再起
+    一个自己：打包版是 ``DLY.exe --login <平台>``，源码模式是
+    ``python -m dly.gui --login <平台>``。登录结果写在磁盘上，界面轮询即可。
+    """
+    if getattr(sys, "frozen", False):
+        cmd = [sys.executable, "--login", platform]
+        env = None
+    else:
+        cmd = [sys.executable, "-m", "dly.gui", "--login", platform]
+        env = dict(os.environ)
+        src = str(Path(__file__).resolve().parents[2])
+        env["PYTHONPATH"] = os.pathsep.join(
+            part for part in (src, env.get("PYTHONPATH", "")) if part)
+
+    flags = 0
+    if os.name == "nt":
+        flags = 0x00000008            # DETACHED_PROCESS：不占用外壳、不挂控制台
+    subprocess.Popen(cmd, env=env, creationflags=flags,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 # ----------------------------------------------------------------------
 # HTTP 层
 # ----------------------------------------------------------------------
@@ -490,6 +515,7 @@ class Handler(BaseHTTPRequestHandler):
             "settings": settings_from_config(config),
             "ffmpeg": bool(find_ffmpeg(config.ffmpeg_path)),
             "desktop": bool(getattr(self.state, "desktop", False)),
+            "logins": sessions.status(),
             "download": self.state.download,
             "record": self.state.record_snapshot(),
             "watch": self.state.watch,
@@ -565,6 +591,10 @@ class Handler(BaseHTTPRequestHandler):
                 "snapshot": self._snapshot(),
                 "events": self.state.events_since(after),
             })
+            return
+
+        if path == "/api/login/sites":
+            self._json({"sites": sessions.status()})
             return
 
         self._json({"error": "not found"}, 404)
@@ -691,6 +721,38 @@ class Handler(BaseHTTPRequestHandler):
             threading.Thread(target=_run_cookie_check,
                              args=(self.state, browser), daemon=True).start()
             self._json({"ok": True})
+            return
+
+        if path == "/api/login/start":
+            from dly.gui import login_window
+
+            platform = (data.get("platform") or "").strip().lower()
+            if login_window.site_of(platform) is None:
+                self._json({"error": "不支持的登录目标"}, 400)
+                return
+            try:
+                _spawn_login_window(platform)
+            except Exception as exc:  # noqa: BLE001 拉不起子进程时如实回报
+                logger.exception("打开登录窗口失败")
+                self._json({"error": f"登录窗口启动失败：{exc}"}, 500)
+                return
+            self.state.log(
+                self.state.active_tab(),
+                f"已打开{sessions.site_name(platform)}登录窗口，"
+                "在新窗口里扫码或输入账号即可", "info")
+            self._json({"ok": True})
+            return
+
+        if path == "/api/login/logout":
+            from dly.cookies import sessions
+
+            platform = (data.get("platform") or "").strip().lower()
+            if sessions.clear(platform):
+                self.state.log(self.state.active_tab(),
+                               f"已退出{sessions.site_name(platform)}登录", "ok")
+                self._json({"ok": True})
+            else:
+                self._json({"ok": False, "error": "本来就没有登录"})
             return
 
         if path == "/api/cookie/clear":
