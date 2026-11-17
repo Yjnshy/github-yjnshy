@@ -193,6 +193,7 @@ class DouyinAdapter(PlatformAdapter):
             is_live=(status == 2),
             title=room.get("title") or "",
             anchor=anchor,
+            anchor_id=web_rid,
             referer=referer,
             user_agent=UA_PC,
             cookie=cookie,

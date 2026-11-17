@@ -43,6 +43,7 @@ class DownloadEngine:
         self.ffmpeg = find_ffmpeg(config.ffmpeg_path)
         self.ffprobe = find_ffprobe(self.ffmpeg, config.ffprobe_path)
         self._notify = progress or (lambda msg: None)
+        self.last_outputs: list[Path] = []   # 本次任务的产物，供界面「打开文件位置」
 
     def download_text(self, text: str, quality: Optional[str] = None,
                       output_dir: Optional[str] = None,
@@ -134,6 +135,9 @@ class DownloadEngine:
         with YoutubeDL(opts) as ydl:
             ydl.download([target_url])
         self._notify(f"✓ 完成：{Path(outtmpl).stem}")
+        produced = self._locate_output(outdir, stem)
+        if produced:
+            self.last_outputs.append(produced)
         self._apply_fps(outdir, stem, fps)
         return True
 

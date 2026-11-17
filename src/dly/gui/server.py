@@ -228,6 +228,10 @@ def _run_download(state: AppState, text: str, quality: str, outdir: str,
         engine = DownloadEngine(config, progress=progress)
         ok, total = engine.download_text(text, quality=quality,
                                          output_dir=outdir, fps=fps)
+        if engine.last_outputs:
+            state.download["last_file"] = str(engine.last_outputs[-1])
+            state.download["folder"] = str(engine.last_outputs[-1].parent)
+            state.download["outputs"] = [str(p) for p in engine.last_outputs]
         level = "ok" if ok == total and total else "warn"
         state.log("download", f"完成：成功 {ok} / 共 {total}", level)
         if permission_denied["hit"] and ok == 0:
@@ -243,6 +247,16 @@ def _run_download(state: AppState, text: str, quality: str, outdir: str,
         state.download["active"] = False
 
 
+def _live_url_hint(url: str) -> str:
+    """直播间链接的常见错误提前拦掉，别让用户看到「风控」这种误导信息。"""
+    from dly.platforms.bilibili_live import room_id_from_url
+
+    if "live.bilibili.com" in url and not room_id_from_url(url):
+        return ("这是 B 站直播首页，不是某个直播间。请打开具体直播间页面，"
+                "地址形如 https://live.bilibili.com/12345，再复制过来。")
+    return ""
+
+
 def probe_live(url: str) -> Dict[str, Any]:
     """查询直播间标题 / 主播 / 开播状态，供界面自动回填核对。"""
     from dly.cookies.manager import CookieManager
@@ -251,6 +265,9 @@ def probe_live(url: str) -> Dict[str, Any]:
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         return {"ok": False, "error": "链接格式不对，请以 http(s):// 开头"}
+    hint = _live_url_hint(url)
+    if hint:
+        return {"ok": False, "error": hint}
     config = load_config()
     adapter = find_adapter(url, CookieManager(config.cookies),
                            proxy=config.proxy)
@@ -283,6 +300,12 @@ def _run_record(state: AppState, url: str, outroot: str,
     from dly.cookies.manager import CookieManager
     from dly.platforms import find_adapter
     from dly.recorder.recorder import LiveRecorder, RecordingError
+
+    hint = _live_url_hint(url)
+    if hint:
+        state.log("record", hint, "error")
+        state.set_record(status="链接不是直播间", level="error")
+        return
 
     state.set_record(active=True, status="正在获取直播流…", level="idle",
                      seconds=0.0, size=0, part=0, duration=segment,
@@ -342,7 +365,8 @@ def _run_record(state: AppState, url: str, outroot: str,
                              started_at=time.monotonic(), ended_at=None)
             try:
                 path = recorder.record_once(live, part=part if part > 1 else 0)
-                state.set_record(ended_at=time.monotonic())
+                state.set_record(ended_at=time.monotonic(),
+                                 last_file=str(path), folder=str(Path(path).parent))
                 state.log("record", f"已保存：{path}", "ok")
                 failures = 0
             except RecordingError as exc:
@@ -836,7 +860,8 @@ class Handler(BaseHTTPRequestHandler):
             target = (data.get("path") or "").strip()
             try:
                 folder = Path(target or load_config().output_dir)
-                folder.mkdir(parents=True, exist_ok=True)
+                if not folder.is_file():
+                    folder.mkdir(parents=True, exist_ok=True)
                 open_folder(str(folder))
                 self._json({"ok": True})
             except Exception as exc:  # noqa: BLE001

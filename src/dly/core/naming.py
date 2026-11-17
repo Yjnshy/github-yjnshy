@@ -45,3 +45,37 @@ def build_filename(platform: str, author: str, title: str,
     stamp = when.strftime("%Y%m%d_%H%M%S")
     name = f"{stem}_{stamp}"
     return name + ext if ext else name
+
+
+PLATFORM_LABELS = {
+    "douyin": "抖音",
+    "bilibili": "B站",
+    "xiaohongshu": "小红书",
+}
+
+
+def platform_label(platform: str) -> str:
+    """平台的中文名（用于目录名）；未知平台原样保留。"""
+    key = (platform or "").lower()
+    return PLATFORM_LABELS.get(key) or safe_name(platform or "其他", 20)
+
+
+def live_folder_name(platform: str, anchor: str, anchor_id: str = "") -> str:
+    """直播录制目录名：``平台-主播昵称-主播号``。
+
+    主播号优先用平台自己的 ID（抖音号 / 房间号），拿不到就省略这一段，
+    避免出现 ``抖音-Katie小仙女-`` 这种尾巴。
+    """
+    parts = [platform_label(platform)]
+    if anchor and anchor.strip():
+        parts.append(safe_name(anchor, 30))
+    if anchor_id:
+        parts.append(safe_name(str(anchor_id), 24))
+    return "-".join(parts)
+
+
+def live_filename(title: str, when: datetime | None = None, ext: str = "") -> str:
+    """直播文件名：``标题_录制时间[.ext]``，方便按时间排序查找。"""
+    when = when or datetime.now()
+    stem = f"{safe_name(title or '直播', 60)}_{when.strftime('%Y%m%d_%H%M%S')}"
+    return f"{stem}.{ext}" if ext else stem

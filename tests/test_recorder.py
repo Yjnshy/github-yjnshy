@@ -216,7 +216,7 @@ def test_collect_outputs_segment_glob(tmp_path):
     (tmp_path / "other.ts").write_bytes(b"x")
 
     rec = LiveRecorder("ffmpeg", tmp_path, segment_minutes=10)
-    found = rec._collect_outputs("a")
+    found = rec._collect_outputs(tmp_path, "a")
     assert [p.name for p in found] == ["a_000.ts", "a_001.ts"]
 
 

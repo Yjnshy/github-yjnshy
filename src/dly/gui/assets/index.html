@@ -683,6 +683,7 @@
         </div>
         <div class="row">
           <button class="primary" id="dl-btn" onclick="startDownload()">开始下载</button>
+          <button class="ghost" id="dl-open" onclick="openLast('download')" hidden>打开文件位置</button>
           <label class="check">
             <input type="checkbox" id="dl-keep"> 保留原片
           </label>
@@ -769,6 +770,7 @@
         <div class="row">
           <button class="primary" id="rec-start" onclick="startRecord()">开始录制</button>
           <button class="danger" id="rec-stop" onclick="stopRecord()" disabled>停止录制</button>
+          <button class="ghost" id="rec-open" onclick="openLast('record')" hidden>打开录制文件夹</button>
           <label class="check">
             <input type="checkbox" id="rec-auto-next"> 到点后自动续录下一段
           </label>
@@ -1263,6 +1265,12 @@ function render() {
 
   $('rec-start').disabled = !!rec.active;
   $('rec-stop').disabled = !rec.active;
+
+  // 有产物才显示「打开文件位置」，点它直接在资源管理器里选中刚录/刚下的文件
+  const recOpen = $('rec-open');
+  if (recOpen) recOpen.hidden = !(rec.last_file || rec.folder);
+  const dlOpen = $('dl-open');
+  if (dlOpen) dlOpen.hidden = !(dl.last_file || dl.folder);
   $('dl-btn').disabled = !!dl.active;
   $('dl-btn').textContent = dl.active ? '下载中…' : '开始下载';
   $('watch-start').disabled = !!watch.active;
@@ -1954,6 +1962,17 @@ function resetSettings() {
   setDirtyState(false);
   $('set-hint').textContent = '已恢复为已保存的设置';
   toast('已放弃未保存的修改', 'ok');
+}
+
+/* 打开刚录制/刚下载的文件位置（资源管理器里直接选中该文件） */
+async function openLast(kind) {
+  const st = (kind === 'record' ? (snapshot && snapshot.record)
+                                : (snapshot && snapshot.download)) || {};
+  const target = st.last_file || st.folder || '';
+  if (!target) return;
+  try {
+    await api('/api/open', { path: target });
+  } catch (e) { notify(e.message); }
 }
 
 async function openOutputDir() {

@@ -62,6 +62,9 @@ class GenericAdapter(PlatformAdapter):
             # 直播元数据里上传者字段因平台而异，逐个兜底
             anchor=(info.get("uploader") or info.get("channel")
                     or info.get("uploader_id") or ""),
+            # 主播号：优先平台内的唯一 ID，其次退到房间号
+            anchor_id=str(info.get("uploader_id") or info.get("channel_id")
+                          or info.get("id") or ""),
             referer=info.get("webpage_url") or room_url,
             user_agent=UA_PC,
             cookie=self.cookies.get_header(platform) if platform != "other" else "",
@@ -74,6 +77,18 @@ class GenericAdapter(PlatformAdapter):
             hls = next((f["url"] for f in formats
                         if isinstance(f.get("url"), str) and ".m3u8" in f["url"]), "")
             live.stream_url = flv or hls or info.get("url") or ""
+        if platform == "bilibili" and not live.anchor:
+            # yt-dlp 给的 B 站直播元数据常常没有主播名，补一次官网接口，
+            # 否则录制目录只能叫「B站」，没法按主播归类
+            from dly.platforms.bilibili_live import fetch_room_meta, room_id_from_url
+
+            room_id = live.anchor_id or room_id_from_url(room_url)
+            uname, uid, title = fetch_room_meta(room_id, live.cookie,
+                                                self.proxy)
+            live.anchor = uname or live.anchor
+            live.anchor_id = uid or room_id
+            if not live.title and title:
+                live.title = title
         return live
 
     # ------------------------------------------------------------------

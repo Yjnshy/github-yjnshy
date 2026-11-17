@@ -35,3 +35,42 @@ def test_build_filename_format():
 def test_build_filename_skips_empty_author():
     name = build_filename("other", "", "标题")
     assert name.startswith("other_标题_")
+
+
+def test_live_folder_name_formats_platform_anchor_id():
+    from dly.core.naming import live_folder_name
+
+    assert live_folder_name("douyin", "Katie小仙女", "498526330292") == \
+        "抖音-Katie小仙女-498526330292"
+    # 拿不到主播号时不要留空尾巴
+    assert live_folder_name("bilibili", "某主播") == "B站-某主播"
+    assert live_folder_name("bilibili", "", "") == "B站"
+
+
+def test_live_folder_name_sanitizes_illegal_chars():
+    from dly.core.naming import live_folder_name
+
+    name = live_folder_name("douyin", "a/b:c*d?", "123")
+    assert "抖音-a b c d-123" == name
+
+
+def test_live_filename_is_title_plus_time():
+    from datetime import datetime
+
+    from dly.core.naming import live_filename
+
+    when = datetime(2026, 11, 17, 12, 50, 58)
+    assert live_filename("央视新闻频道正在直播", when, "ts") == \
+        "央视新闻频道正在直播_20261117_125058.ts"
+    assert live_filename("", when) == "直播_20261117_125058"
+
+
+def test_bilibili_room_id_from_url():
+    from dly.platforms.bilibili_live import room_id_from_url
+
+    assert room_id_from_url("https://live.bilibili.com/6") == "6"
+    assert room_id_from_url(
+        "https://live.bilibili.com/21452505?spm_id_from=333.788") == "21452505"
+    assert room_id_from_url("https://live.bilibili.com/blanc/1234") == "1234"
+    # 直播首页没有房间号，应当为空（界面据此提示用户换链接）
+    assert room_id_from_url("https://live.bilibili.com/?spm_id_from=333.788") == ""

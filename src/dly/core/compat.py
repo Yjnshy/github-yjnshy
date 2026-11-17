@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -47,8 +48,14 @@ def kill_process_tree(proc: subprocess.Popen) -> None:
 
 
 def open_folder(path: str) -> None:
-    """在系统文件管理器中打开目录。"""
+    """在系统文件管理器中打开目录；给文件路径时打开所在目录并选中它。"""
     if IS_WINDOWS:
+        target = Path(path)
+        if target.is_file():
+            # explorer /select, 会打开父目录并高亮该文件，比只开目录更省事
+            subprocess.Popen(["explorer", "/select,", str(target)],
+                             **popen_kwargs(isolate_console=True))
+            return
         os.startfile(path)  # type: ignore[attr-defined]
     elif sys.platform == "darwin":
         subprocess.Popen(["open", path])

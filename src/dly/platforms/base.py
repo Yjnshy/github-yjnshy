@@ -78,6 +78,7 @@ class LiveInfo:
     is_live: bool
     title: str = ""
     anchor: str = ""
+    anchor_id: str = ""             # 主播号（抖音号 / 直播间号），用于建目录
     stream_url: str = ""            # 优先 flv，其次 hls
     referer: str = ""
     user_agent: str = UA_PC

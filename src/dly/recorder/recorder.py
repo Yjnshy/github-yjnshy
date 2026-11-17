@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Callable, Deque, List, Optional
 
 from dly.core import compat
-from dly.core.naming import build_filename
+from dly.core.naming import live_filename, live_folder_name
 from dly.core.transcode import normalize_fps
 from dly.platforms.base import UA_PC, LiveInfo, strip_login_cookies
 
@@ -177,12 +177,15 @@ class LiveRecorder:
         if not live.stream_url:
             raise RecordingError("直播流地址为空，无法录制")
 
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        stem = build_filename(live.platform, live.anchor,
-                              live.title or "直播")
+        # 按主播建目录：直播录制/抖音-Katie小仙女-498526330292/
+        # 同一个主播的所有场次都落在同一个文件夹里，找起来比按日期铺平更直观
+        folder = self.output_dir / live_folder_name(
+            live.platform, live.anchor, live.anchor_id)
+        folder.mkdir(parents=True, exist_ok=True)
+        stem = live_filename(live.title or "直播")
         if part:
             stem += f"_part{part:02d}"
-        outfile = self.output_dir / f"{stem}.{self.fmt}"
+        outfile = folder / f"{stem}.{self.fmt}"
         cmd = self.build_cmd(live, outfile)
 
         self._stop_requested = False
@@ -238,7 +241,7 @@ class LiveRecorder:
                 t.join(timeout=3)
             self._proc = None
 
-        produced = self._collect_outputs(stem)
+        produced = self._collect_outputs(folder, stem)
         total = sum(p.stat().st_size for p in produced)
         logger.info("录制结束: %s（%.1f MB）", outfile.name, total / 1024 / 1024)
 
@@ -270,10 +273,10 @@ class LiveRecorder:
     # 内部工具
     # ------------------------------------------------------------------
 
-    def _collect_outputs(self, stem: str) -> List[Path]:
+    def _collect_outputs(self, folder: Path, stem: str) -> List[Path]:
         if self.segment_seconds:
-            return sorted(self.output_dir.glob(f"{stem}_*.{self.fmt}"))
-        target = self.output_dir / f"{stem}.{self.fmt}"
+            return sorted(Path(folder).glob(f"{stem}_*.{self.fmt}"))
+        target = Path(folder) / f"{stem}.{self.fmt}"
         return [target] if target.is_file() else []
 
     def _pump_progress(self, stream) -> None:
