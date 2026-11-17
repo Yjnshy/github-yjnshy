@@ -26,6 +26,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from dly.cookies import sessions
@@ -34,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 POLL_SECONDS = 1.2          # 轮询登录状态的间隔
 SAVE_SETTLE_SECONDS = 1.0   # 检测到登录后略等一下，让 Cookie 落全
+WARMUP_SECONDS = 2.0        # 开工前等 WebView2 初始化
 MAX_WAIT_SECONDS = 600      # 十分钟没登录就自己关掉
 
 EXIT_OK = 0
@@ -70,6 +72,42 @@ SITES: Dict[str, Site] = {
 
 def site_of(platform: str) -> Optional[Site]:
     return SITES.get((platform or "").lower())
+
+
+def _debug_paths() -> "list[Path]":
+    """诊断日志的落点：程序目录 + 会话文件旁，去重后逐个试。"""
+    out = []
+    for path in (Path(sys.executable).resolve().parent / "login_debug.log",
+                 sessions.STORE_PATH.parent / "login_debug.log"):
+        if path not in out:
+            out.append(path)
+    return out
+
+
+def _debug(message: str, *args) -> None:
+    """登录窗的诊断日志。
+
+    打包版没有控制台，用户「登了但没生效」时只能靠这个文件定位。
+    只记状态与 Cookie 名字，不记值。
+    """
+    text = message % args if args else message
+    logger.info(text)
+    line = time.strftime("%Y-%m-%d %H:%M:%S ") + text + "\n"
+    errors = []
+    for path in _debug_paths():
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "a", encoding="utf-8") as fh:
+                fh.write(line)
+        except OSError as exc:
+            errors.append(f"{path} -> {exc!r}")
+    if errors:
+        # 一条日志都写不进去时才落地错误本身，避免静默失联
+        try:
+            probe = _debug_paths()[0].parent / "login_debug_err.txt"
+            probe.write_text("\n".join(errors) + "\n", encoding="utf-8")
+        except OSError:
+            pass
 
 
 def _iter_cookies(cookies) -> "list[tuple]":
@@ -128,6 +166,7 @@ def _has_marker(cookies, host: str, markers: tuple) -> bool:
 
 def run(platform: str) -> int:
     """打开登录窗并阻塞到结束，返回进程退出码。"""
+    _debug("启动登录窗：platform=%r", platform)
     site = site_of(platform)
     if site is None:
         logger.error("未知的登录目标：%s", platform)
@@ -153,37 +192,96 @@ def run(platform: str) -> int:
         text_select=True,
     )
 
-    state = {"saved": False, "stop": False}
+    state = {"saved": False, "done": False,
+             "final_check": False, "closing_once": False}
+
+    def _grab(timeout: float = 8.0) -> dict:
+        """取一次 Cookie；用看门狗避免某次调用吊死整个循环。
+
+        ``get_cookies()`` 内部是 ``Invoke`` + 信号量等待，页面还没就绪时
+        有可能很久不返回，这里放在子线程里带超时地等。
+        """
+        box: dict = {}
+
+        def call() -> None:
+            try:
+                box["cookies"] = window.get_cookies() or []
+            except Exception as exc:      # noqa: BLE001 取不到就等下一轮
+                box["error"] = exc
+
+        thread = threading.Thread(target=call, daemon=True, name="login-grab")
+        thread.start()
+        thread.join(timeout)
+        return box
+
+    def _try_save(prefix: str = "") -> bool:
+        box = _grab()
+        if "cookies" not in box:
+            _debug("%s取登录状态未返回（%r）", prefix,
+                   type(box.get("error")).__name__ if box.get("error") else "超时")
+            return False
+        cookies = box["cookies"]
+        names = [name for name, _, _ in _iter_cookies(cookies)]
+        hit = _has_marker(cookies, host, site.markers)
+        _debug("%s取到 %d 条，命中登录标记=%s，样本=%s",
+               prefix, len(cookies), hit, names[:8])
+        if not hit:
+            return False
+        # 登录成功后站点通常会连续下发几条 Cookie（SESSDATA、bili_jct…），
+        # 稍等一下再取一次，避免只拿到半套
+        time.sleep(SAVE_SETTLE_SECONDS)
+        again = _grab()
+        if "cookies" in again:
+            cookies = again["cookies"]
+        header = _header_from_cookies(cookies, host)
+        if not header:
+            _debug("%s命中登录标记但请求头为空（域名不匹配）", prefix)
+            return False
+        ok = sessions.save(site.key, header)
+        state["saved"] = ok
+        _debug("%s保存登录状态：%s（%d 字符）→ %s", prefix,
+               "成功" if ok else "失败", len(header), sessions.current_path())
+        return ok
 
     def _watch() -> None:
-        start = time.monotonic()
-        while not state["stop"]:
-            if time.monotonic() - start > MAX_WAIT_SECONDS:
-                logger.info("登录窗等待超时，自动关闭")
+        _debug("登录窗已打开：%s → %s", site.key, site.url)
+        time.sleep(WARMUP_SECONDS)      # 等 WebView2 起来再开始取
+        started_at = time.monotonic()
+        while not state["done"]:
+            if time.monotonic() - started_at > MAX_WAIT_SECONDS:
+                _debug("等待登录超时（%d 秒），关闭窗口", MAX_WAIT_SECONDS)
                 break
-            try:
-                cookies = window.get_cookies() or []
-            except Exception:        # noqa: BLE001 窗口还没建好时取不到
-                cookies = []
-            if _has_marker(cookies, host, site.markers):
-                time.sleep(SAVE_SETTLE_SECONDS)
-                try:
-                    cookies = window.get_cookies() or []
-                except Exception:    # noqa: BLE001
-                    pass
-                header = _header_from_cookies(cookies, host)
-                if header:
-                    sessions.save(site.key, header)
-                    state["saved"] = True
+            if _try_save():
+                break
+            if state["final_check"]:
+                _debug("用户手动关窗，完成最后一次检查")
                 break
             time.sleep(POLL_SECONDS)
-        state["stop"] = True
+        state["done"] = True
+        _debug("登录窗结束，saved=%s", state["saved"])
         try:
             window.destroy()
         except Exception:            # noqa: BLE001 用户可能已经自己关掉
             pass
 
+    def _on_closing():
+        """用户手动关窗时先别关：让后台线程最后取一次再退出。
+
+        这样即使轮询期间某次调用超时，登录完直接关窗也能保存下来。
+        """
+        if state["saved"] or state["closing_once"]:
+            return True
+        state["closing_once"] = True
+        state["final_check"] = True
+        return False
+
+    window.events.closing += _on_closing
+
+    # 自己起线程而不用 webview.start(func)：打包版里那个回调没有执行
+    # （实测窗口开了、轮询却没启动），普通线程在所有形态下都可靠。
+    # 开头先等窗口把 WebView2 初始化完，避免第一次取 Cookie 落空。
     threading.Thread(target=_watch, daemon=True, name="login-watch").start()
+
     try:
         webview.start()
     except Exception as exc:         # noqa: BLE001 WebView2 环境问题

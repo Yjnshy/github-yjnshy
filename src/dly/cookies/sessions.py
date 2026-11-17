@@ -16,13 +16,32 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-STORE_PATH = Path.home() / ".dly" / "login_sessions.json"
+def _default_store() -> Path:
+    """登录会话的默认落点。
+
+    优先程序目录：打包后它一定可写（config.yaml 也放这里），而实测某些机器
+    上冻结进程写 ``%LOCALAPPDATA%\\DLY`` 会被系统拒绝（PermissionError 13）。
+    拿不到程序目录（比如装在 Program Files）时退回 AppData / 用户目录。
+    """
+    if getattr(sys, "frozen", False):
+        try:
+            return Path(sys.executable).resolve().parent / "login_sessions.json"
+        except OSError:               # pragma: no cover 极端环境
+            pass
+    base = os.environ.get("LOCALAPPDATA")
+    if base:
+        return Path(base) / "DLY" / "login_sessions.json"
+    return Path.home() / ".dly" / "login_sessions.json"
+
+
+STORE_PATH = _default_store()
 
 # 站点展示名：界面上只用这些名字，不出现技术术语
 SITE_NAMES: Dict[str, str] = {
@@ -36,34 +55,78 @@ def site_name(platform: str) -> str:
     return SITE_NAMES.get(platform, platform)
 
 
+def _fallbacks() -> "list[Path]":
+    """主位置写不进去时的备选落点（装在只读目录、策略受限等极端情况）。"""
+    out = []
+    base = os.environ.get("LOCALAPPDATA")
+    if base:
+        out.append(Path(base) / "DLY" / STORE_PATH.name)
+    out.append(Path.home() / ".dly" / STORE_PATH.name)
+    if getattr(sys, "frozen", False):
+        try:
+            out.append(Path(sys.executable).resolve().parent / STORE_PATH.name)
+        except OSError:               # pragma: no cover
+            pass
+    return [p for p in out if p != STORE_PATH]
+
+
+# 真正在用的文件：写入失败切到备选后记住它，读的时候优先看它
+_active: Optional[Path] = None
+_active_for: Optional[Path] = None      # 记录当时的 STORE_PATH，换位置就失效
+
+
+def current_path() -> Path:
+    """当前实际使用的会话文件（诊断与设置页展示用）。"""
+    if _active is not None and _active_for == STORE_PATH:
+        return _active
+    return STORE_PATH
+
+
 def _read() -> Dict[str, dict]:
-    if not STORE_PATH.is_file():
-        return {}
-    try:
-        data = json.loads(STORE_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return data if isinstance(data, dict) else {}
+    candidates = [current_path()] + _fallbacks()
+    for path in candidates:
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(data, dict):
+            return data
+    return {}
 
 
 def _write(data: Dict[str, dict]) -> None:
-    STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp = STORE_PATH.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2),
-                   encoding="utf-8")
-    os.replace(tmp, STORE_PATH)
-    if os.name != "nt":
+    """写入会话文件；主位置不可写时依次尝试备选落点。"""
+    global _active, _active_for
+    payload = json.dumps(data, ensure_ascii=False, indent=2)
+    last_exc: Optional[OSError] = None
+    for path in [current_path()] + _fallbacks():
         try:
-            os.chmod(STORE_PATH, 0o600)
-        except OSError:
-            pass
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(payload, encoding="utf-8")
+            os.replace(tmp, path)
+            if os.name != "nt":
+                try:
+                    os.chmod(path, 0o600)
+                except OSError:
+                    pass
+            _active = path
+            _active_for = STORE_PATH
+            return
+        except OSError as exc:
+            last_exc = exc
+            logger.debug("写入 %s 失败：%s", path, exc)
+    if last_exc is not None:
+        raise last_exc
 
 
-def save(platform: str, header: str, account: str = "") -> None:
-    """保存某站点的登录会话。"""
+def save(platform: str, header: str, account: str = "") -> bool:
+    """保存某站点的登录会话，成功返回 True。"""
     header = (header or "").strip()
     if not header:
-        return
+        return False
     data = _read()
     data[platform] = {
         "header": header,
@@ -72,10 +135,12 @@ def save(platform: str, header: str, account: str = "") -> None:
     }
     try:
         _write(data)
-        logger.info("已保存 %s 的登录状态（%d 字符）", site_name(platform),
-                    len(header))
+        logger.info("已保存 %s 的登录状态（%d 字符）→ %s", site_name(platform),
+                    len(header), current_path())
+        return True
     except OSError as exc:
         logger.warning("保存登录状态失败: %s", exc)
+        return False
 
 
 def get_header(platform: str) -> str:
