@@ -178,9 +178,45 @@ def _watch_minimize(window, state: dict) -> None:
             return
 
 
+def _focus_existing_instance() -> bool:
+    """已经有 DLY 窗口在跑就把它切到前台，自己退出。
+
+    测试时反复启动留下过两个进程，任务栏图标指向旧实例，点了没反应。
+    这里做单实例保护，避免再次出现「有图标但点不动」。
+    """
+    if os.name != "nt":
+        return False
+    user32 = ctypes.windll.user32
+    ENUM = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+    found = []
+
+    def cb(hwnd, _):
+        n = user32.GetWindowTextLengthW(hwnd)
+        if not n or not user32.IsWindowVisible(hwnd):
+            return True
+        buf = ctypes.create_unicode_buffer(n + 1)
+        user32.GetWindowTextW(hwnd, buf, n + 1)
+        if "帅羊羊DLY" not in buf.value:
+            return True
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value != os.getpid():
+            found.append(hwnd)
+        return True
+
+    user32.EnumWindows(ENUM(cb), 0)
+    for hwnd in found:
+        user32.ShowWindow(hwnd, 9)          # SW_RESTORE
+        user32.SetForegroundWindow(hwnd)
+    return bool(found)
+
+
 def launch(debug: bool = False) -> None:
     """打开桌面窗口（阻塞，直到用户关窗或收到 /api/quit 退出请求）。"""
     webview = _load_webview()
+    if _focus_existing_instance():
+        logger.info("已有 DLY 窗口，切到前台后退出本次启动")
+        return
     app = create_app(desktop=True)
     app.start()
     logger.debug("桌面窗口已启动：%s", app.url)

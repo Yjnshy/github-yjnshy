@@ -88,3 +88,21 @@ def test_history_survives_app_restart():
     second = AppState()
     assert second.history[-1]["name"] == "昨天的视频"
     assert second.history[-1]["path"] == "/videos/a.mp4"
+
+
+def test_new_results_counter_for_bell_badge():
+    state = AppState()
+    assert state.new_results == 0
+
+    state.add_history("download", "进行中", "", 0, "下载中")
+    assert state.new_results == 0
+
+    entry = state.history[-1]["id"]
+    state.update_history(entry, status="完成", path="/tmp/a.mp4", size=100)
+    assert state.new_results == 1
+
+    state.add_history("record", "直播", "/tmp/b.ts", 100, "已停止")
+    assert state.new_results == 2
+
+    state.new_results = 0
+    assert state.new_results == 0

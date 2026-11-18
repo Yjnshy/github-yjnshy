@@ -113,6 +113,7 @@ class AppState:
         self.monitor = None
         self.desktop = False          # 桌面窗口模式下关窗即退出，前端不显示浏览器模式的退出提示
         self.window_actions: Dict[str, Any] = {}   # 自绘标题栏的窗口操作（桌面模式由 desktop.launch 注入）
+        self.new_results = 0       # 上次查看历史后新完成的下载 / 录制数（铃铛红点）
         self.last_request = time.monotonic()   # 最近一次收到 HTTP 请求的时刻（浏览器模式空闲自退用）
         self._quit = threading.Event()
         # 独立于 recorder 内部状态的停止信号：自动续录的探测间隙里也要能停下
@@ -195,6 +196,8 @@ class AppState:
             })
             if len(self.history) > MAX_HISTORY:
                 del self.history[: len(self.history) - MAX_HISTORY]
+            if status in ("完成", "已停止"):
+                self.new_results += 1
             self._save_history()
             return self._history_seq
 
@@ -211,6 +214,8 @@ class AppState:
                     # 进度刷新（只有 size 在变）不必每次落盘；落终态时再写
                     if ("path" in fields or "status" in fields) and \
                             row.get("status") not in ("录制中", "下载中"):
+                        if fields.get("status") in ("完成", "已停止"):
+                            self.new_results += 1
                         self._save_history()
                     return
 
@@ -691,6 +696,7 @@ class Handler(BaseHTTPRequestHandler):
             "desktop": bool(getattr(self.state, "desktop", False)),
             "logins": sessions.status(),
             "history": list(self.state.history[-MAX_HISTORY:]),
+            "new_results": self.state.new_results,
             "history_path": str(AppState._history_file()),
             "download": self.state.download,
             "record": self.state.record_snapshot(),
@@ -1073,6 +1079,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True})
             except Exception as exc:  # noqa: BLE001
                 self._json({"error": str(exc)}, 500)
+            return
+
+        if path == "/api/history/seen":
+            with self.state._lock:
+                self.state.new_results = 0
+            self._json({"ok": True})
             return
 
         if path == "/api/history/clear":
