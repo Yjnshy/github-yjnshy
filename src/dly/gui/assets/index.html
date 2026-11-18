@@ -461,7 +461,7 @@
     flex: 1; min-height: 0; overflow-y: auto; background: var(--log-bg);
   }
   .task-head, .task-row {
-    display: grid; grid-template-columns: 74px 1fr 68px 50px;
+    display: grid; grid-template-columns: 74px 1fr 66px 68px;
     gap: 8px; align-items: center; padding: 6px 10px;
   }
   .task-head {
@@ -482,9 +482,17 @@
   .task-badge {
     justify-self: start; padding: 1px 7px; border-radius: 9px;
     font-size: 11px; background: var(--badge-bg); color: var(--pill-ink);
+    white-space: nowrap;
   }
   .task-badge.ok { background: var(--badge-ok-bg); color: var(--ok); }
   .task-badge.bad { background: var(--badge-bad-bg); color: var(--danger); }
+  .task-badge.live { background: var(--accent-soft); color: var(--accent-ink); }
+  .task-badge.live::before {
+    content: ''; display: inline-block; width: 6px; height: 6px;
+    margin-right: 5px; border-radius: 50%; background: currentColor;
+    animation: taskPulse 1.4s ease-in-out infinite;
+  }
+  @keyframes taskPulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
   .task-empty { padding: 14px 10px; color: var(--muted); font-size: 12.5px; }
 
   /* ---------------- 说明折叠 ---------------- */
@@ -2090,7 +2098,7 @@ function renderHistory(kind, boxId) {
   const box = $(boxId);
   if (!box || !snapshot) return;
   const rows = (snapshot.history || []).filter(r => r.kind === kind).reverse();
-  const sig = rows.map(r => r.id + r.status).join(',');
+  const sig = rows.map(r => r.id + r.status + r.size).join(',');
   if (HISTORY_SIG[boxId] === sig) return;
   HISTORY_SIG[boxId] = sig;
 
@@ -2135,8 +2143,9 @@ function renderHistory(kind, boxId) {
     size.textContent = fmtSize(r.size);
 
     const badge = document.createElement('span');
+    const live = r.status === '录制中' || r.status === '下载中';
     badge.className = 'task-badge '
-      + (r.status === '完成' ? 'ok' : r.status === '失败' ? 'bad' : '');
+      + (r.status === '完成' ? 'ok' : r.status === '失败' ? 'bad' : live ? 'live' : '');
     badge.textContent = r.status || '完成';
 
     row.append(time, name, size, badge);

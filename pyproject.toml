@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dly"
-version = "0.1.22"
+version = "0.1.23"
 description = "多平台无水印视频下载与直播自动录制工具（抖音 / B站 / 小红书等）"
 readme = "README.md"
 requires-python = ">=3.9"

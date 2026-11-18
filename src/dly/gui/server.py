@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import re
 import os
 import subprocess
 import sys
@@ -133,8 +134,12 @@ class AppState:
                 del self._events[: len(self._events) - MAX_EVENTS // 2]
 
     def add_history(self, kind: str, name: str, path: str = "",
-                    size: int = 0, status: str = "完成") -> None:
-        """记一条任务结果（下载 / 录制），供界面表格展示。"""
+                    size: int = 0, status: str = "完成") -> int:
+        """记一条任务（下载 / 录制），返回条目 id。
+
+        任务开始时就先建一条「录制中 / 下载中」，边跑边更新大小，
+        结束时再补上文件路径——否则长时间录制时表格一直是空的。
+        """
         with self._lock:
             self._history_seq += 1
             self.history.append({
@@ -148,6 +153,19 @@ class AppState:
             })
             if len(self.history) > MAX_HISTORY:
                 del self.history[: len(self.history) - MAX_HISTORY]
+            return self._history_seq
+
+    def update_history(self, entry_id: int, **fields: Any) -> None:
+        """更新某条任务记录（大小、状态、最终路径）。"""
+        if not entry_id:
+            return
+        with self._lock:
+            for row in self.history:
+                if row["id"] == entry_id:
+                    if "size" in fields:
+                        fields["size"] = int(fields["size"] or 0)
+                    row.update(fields)
+                    return
 
     def events_since(self, after: int) -> List[Dict[str, Any]]:
         with self._lock:
@@ -231,8 +249,15 @@ def _run_download(state: AppState, text: str, quality: str, outdir: str,
     # yt-dlp 的进度回调非常密集，界面上按 1.5 秒节流，否则日志会被刷屏
     last = {"at": 0.0}
     permission_denied = {"hit": False}
+    pending: List[Dict[str, Any]] = []      # 本次任务里「下载中」的表格条目
 
     def progress(message: str) -> None:
+        # 引擎每开始处理一条链接都会发 "[1/3] https://..."，借它把行先占上
+        started = re.match(r"^\[(\d+)/(\d+)\]\s+(\S+)", message or "")
+        if started:
+            entry = state.add_history("download", started.group(3)[:80],
+                                      "", 0, "下载中")
+            pending.append({"id": entry})
         if "Permission denied" in message or "拒绝访问" in message:
             permission_denied["hit"] = True
         if "下载中" in message or "%" in message:
@@ -249,19 +274,27 @@ def _run_download(state: AppState, text: str, quality: str, outdir: str,
         engine = DownloadEngine(config, progress=progress)
         ok, total = engine.download_text(text, quality=quality,
                                          output_dir=outdir, fps=fps)
-        if engine.last_outputs:
-            state.download["last_file"] = str(engine.last_outputs[-1])
-            state.download["folder"] = str(engine.last_outputs[-1].parent)
-            state.download["outputs"] = [str(p) for p in engine.last_outputs]
-            for item in engine.last_outputs:
-                state.add_history("download", Path(item).stem, str(item),
-                                  Path(item).stat().st_size,
-                                  "完成")
+        outputs = list(engine.last_outputs)
+        if outputs:
+            state.download["last_file"] = str(outputs[-1])
+            state.download["folder"] = str(outputs[-1].parent)
+            state.download["outputs"] = [str(p) for p in outputs]
+        for index, entry in enumerate(pending):
+            if index < len(outputs):
+                item = outputs[index]
+                state.update_history(
+                    entry["id"], path=str(item), name=Path(item).stem,
+                    size=Path(item).stat().st_size if Path(item).exists() else 0,
+                    status="完成")
+            else:
+                state.update_history(entry["id"], status="失败")
+        # 一条链接产出多个文件（如图文）时，多出来的单独补行
+        for item in outputs[len(pending):]:
+            state.add_history("download", Path(item).stem, str(item),
+                              Path(item).stat().st_size
+                              if Path(item).exists() else 0, "完成")
         level = "ok" if ok == total and total else "warn"
         state.log("download", f"完成：成功 {ok} / 共 {total}", level)
-        if ok == 0:
-            state.add_history("download", str(text).split()[0][:60], "",
-                              0, "失败")
         if permission_denied["hit"] and ok == 0:
             # 原始报错是一串英文 Errno，普通用户看不懂，这里直说怎么办
             state.log("download",
@@ -360,6 +393,13 @@ def _run_record(state: AppState, url: str, outroot: str,
             return
 
         outdir = Path(outroot or config.output_dir) / "直播录制"
+        # 当前这段在表格里的条目 id：开始时插入「录制中」，结束时补路径与状态
+        current = {"id": 0}
+
+        def _on_progress(seconds: float, size: int) -> None:
+            state.set_record(seconds=seconds, size=size)
+            state.update_history(current["id"], size=size)
+
         recorder = LiveRecorder(
             ffmpeg, outdir,
             fmt=config.record.format,
@@ -367,7 +407,7 @@ def _run_record(state: AppState, url: str, outroot: str,
             # 不传 segment_seconds：那是无限切文件的 muxer，永远不会自己退出。
             max_duration=segment,
             fps=fps,
-            on_progress=lambda s, b: state.set_record(seconds=s, size=b),
+            on_progress=_on_progress,
         )
         state.recorder = recorder
         state.set_record(status=f"录制中 · {live.anchor}", level="live")
@@ -391,18 +431,23 @@ def _run_record(state: AppState, url: str, outroot: str,
             # 续录开新文件时显示也能从第 0 秒重新开始。
             state.set_record(part=part, seconds=0.0, size=0,
                              started_at=time.monotonic(), ended_at=None)
+            label = live.title or live.anchor or "直播"
+            if part > 1:
+                label += f"（第 {part} 段）"
+            current["id"] = state.add_history("record", label, "", 0, "录制中")
             try:
                 path = recorder.record_once(live, part=part if part > 1 else 0)
                 state.set_record(ended_at=time.monotonic(),
                                  last_file=str(path), folder=str(Path(path).parent))
                 state.log("record", f"已保存：{path}", "ok")
-                state.add_history(
-                    "record", live.title or Path(path).stem, str(path),
-                    Path(path).stat().st_size if Path(path).exists() else 0,
-                    "已停止" if state.record_stop.is_set() else "完成")
+                state.update_history(
+                    current["id"], path=str(path),
+                    size=Path(path).stat().st_size if Path(path).exists() else 0,
+                    status="已停止" if state.record_stop.is_set() else "完成")
                 failures = 0
             except RecordingError as exc:
                 state.set_record(ended_at=time.monotonic())
+                state.update_history(current["id"], status="失败")
                 failures += 1
                 state.log("record", f"录制失败：{exc}", "error")
                 if exc.detail:
