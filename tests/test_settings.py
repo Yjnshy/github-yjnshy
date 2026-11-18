@@ -288,18 +288,15 @@ def test_index_has_settings_guard_and_live_sync(app):
 
 
 def test_sidebar_theme_toggle_replaces_quit_button(app):
-    """桌面版关窗即退出不再要按钮；浏览器模式保留隐藏的退出入口。"""
+    """桌面版关窗即退出不再要按钮；退出入口统一在顶部「窗口(W)」菜单。"""
     ctx, _ = app
     _, html = _get(ctx.url, "/")
     bottom = html.split('<div class="side-bottom">', 1)[1].split('</aside>', 1)[0]
-    # 退出入口已挪到顶部「窗口(W)」菜单，底部那个永久隐藏
+    # 退出入口已挪到顶部「窗口(W)」菜单，底部那个按钮和它的兼容脚本都删掉了
     assert 'onclick="quitApp()"' in html
     assert 'id="window-popover"' in html
-    assert "quit-btn').hidden = true" in html or "_quitBtn.hidden = true" in html
-    assert '.quit-btn[hidden] { display: none !important; }' in html
-    assert '<div class="side-links">' not in html
+    assert "quit-btn" not in html
     assert 'id="theme-toggle-mini"' in bottom
-    assert '<button id="quit-btn"' not in html
     assert '关闭窗口即停止值守并退出程序' in html
     assert '关闭浏览器页面且没有任务在跑时，程序会自动退出' in html
 

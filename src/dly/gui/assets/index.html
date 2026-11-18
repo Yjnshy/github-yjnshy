@@ -391,14 +391,6 @@
   .theme-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .side-theme { display: flex; justify-content: flex-start; margin: 2px 0 12px; }
   .side-theme .pixel-toggle { flex: none; }
-  .quit-btn {
-    display: block; width: 100%; margin: 0 0 10px; padding: 7px 10px;
-    border: 1px solid var(--border); border-radius: 9px;
-    background: var(--surface-2); color: var(--muted);
-    font: inherit; font-size: 12.5px; cursor: pointer;
-  }
-  .quit-btn:hover { color: var(--danger); border-color: var(--danger); }
-  .quit-btn[hidden] { display: none !important; }
   .room-row { display: flex; gap: 8px; margin-bottom: 8px; }
   .room-row input { flex: 1; min-width: 0; }
   .room-row button { flex: none; padding: 8px 12px; font-size: 12.5px; }
@@ -715,7 +707,7 @@
   body.sidebar-compact .sidebar { width: 64px; padding: 16px 8px 12px; }
   body.sidebar-compact .brand-text,
   body.sidebar-compact .side-note,
-  body.sidebar-compact .side-bell span,
+  body.sidebar-compact .side-bell span:not(.bell-badge),
   body.sidebar-compact .side-status,
   body.sidebar-compact .side-meta,
   body.sidebar-compact .side-theme { display: none; }
@@ -1724,15 +1716,6 @@ async function api(path, body) {
   return data;
 }
 
-// 浏览器模式的退出入口：桌面版隐藏（关窗即退），见 render() 里的 hidden 切换
-const _quitBtn = $('quit-btn');        // 老版本可能还留着这个按钮，做兼容
-if (_quitBtn) {
-  _quitBtn.hidden = true;
-  _quitBtn.addEventListener('click', () => {
-    api('/api/quit').catch(() => {});
-  });
-}
-
 function notify(text) {
   appendLine('download', { text, level: 'error' });
   if (typeof toast === 'function') toast(text, 'err');
@@ -1892,11 +1875,6 @@ function render() {
   $('watch-start').disabled = !!watch.active;
   $('watch-stop').disabled = !watch.active;
 
-  const ff = $('ffmpeg-badge');   // 精简侧栏后已移除，做个兼容判断
-  if (ff) {
-    ff.textContent = snapshot.ffmpeg ? 'ffmpeg 就绪' : '缺少 ffmpeg';
-    ff.className = 'badge ' + (snapshot.ffmpeg ? 'ok' : 'bad');
-  }
   $('version').textContent = '版本 ' + snapshot.version;
   $('watch-tip').textContent = '开播自动录、下播自动停；断流会指数退避重连。'
     + (snapshot.desktop ? '关闭窗口即停止值守并退出程序。'
@@ -1905,6 +1883,7 @@ function render() {
 
 /* ---------------- 轮询 ---------------- */
 async function poll() {
+  let ok = true;
   try {
     const res = await fetch('/api/state?after=' + lastId);
     if (!res.ok) throw new Error('bad');
@@ -1915,16 +1894,26 @@ async function poll() {
       appendLine(ev.tab, ev);
     });
     if (firstLoad) { applyDefaults(); firstLoad = false; }
-    render();
-    $('conn').textContent = '已连接';
-    $('conn').className = 'badge ok';
-    $('overlay').classList.remove('show');
+    // render 里任何一处取不到元素都不能把轮询带崩（否则界面永久停更）
+    try { render(); } catch (err) { console.error('render failed', err); }
   } catch (e) {
-    $('conn').textContent = '连接已断开';
-    $('conn').className = 'badge bad';
-    $('overlay').classList.add('show');
+    ok = false;
   }
+  setConnState(ok);
+  $('overlay').classList.toggle('show', !ok);
   setTimeout(poll, 300);   // 计时按墙钟显示，轮询快一点才不会一次跳 1~2 秒
+}
+
+/* 连接状态：侧栏那枚旧角标已移除，现在只在设置页显示 */
+function setConnState(ok) {
+  const setConn = $('set-conn');
+  if (setConn) {
+    const desktop = !!(snapshot && snapshot.desktop);
+    setConn.textContent = ok
+      ? (desktop ? '桌面窗口 · 已连接' : '浏览器模式 · 已连接')
+      : '连接已断开，正在重试…';
+    setConn.className = 'login-state ' + (ok ? 'ok' : 'wait');
+  }
 }
 
 function applyDefaults() {
