@@ -397,6 +397,7 @@
     font: inherit; font-size: 12.5px; cursor: pointer;
   }
   .quit-btn:hover { color: var(--danger); border-color: var(--danger); }
+  .quit-btn[hidden] { display: none !important; }
   .room-row { display: flex; gap: 8px; margin-bottom: 8px; }
   .room-row input { flex: 1; min-width: 0; }
   .room-row button { flex: none; padding: 8px 12px; font-size: 12.5px; }
@@ -545,6 +546,77 @@
   .title-icon:hover { background: var(--hover); color: var(--text); }
   .title-icon svg { width: 16px; height: 16px; stroke: currentColor; }
 
+  /* 标题栏：WorkBuddy 式「图标组 | 菜单文字」 */
+  .title-left { display: flex; align-items: center; gap: 4px; }
+  .title-sep {
+    width: 1px; height: 18px; background: var(--border-strong);
+    margin: 0 10px;
+  }
+  .title-menus { display: flex; align-items: center; gap: 2px; }
+  .title-menus button {
+    padding: 4px 9px; border: 0; border-radius: 6px; background: transparent;
+    color: var(--muted-ink); font-size: 12.5px; cursor: pointer;
+  }
+  .title-menus button:hover { background: var(--hover); color: var(--text); }
+  .title-brand-mini { font-size: 11px; color: var(--muted); }
+
+  /* 侧栏底部两个入口并排 */
+  .side-bottom-row { display: flex; gap: 6px; }
+  .side-bottom-row .side-bell { width: auto; flex: 1; justify-content: center; }
+  .side-computer { color: var(--accent-ink); }
+
+  /* 小弹层：账号登录 / 帮助 / 关于 */
+  .popover {
+    display: none; position: fixed; left: 16px; bottom: 154px; z-index: 40;
+    width: 320px; max-height: 60vh; overflow-y: auto;
+    padding: 12px 14px; border: 1px solid var(--border-strong);
+    border-radius: 12px; background: var(--surface-2);
+    box-shadow: 0 12px 32px var(--shadow);
+  }
+  .popover.show { display: block; }
+  .pop-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--border);
+  }
+  .pop-head strong { font-size: 13.5px; }
+  .pop-head button {
+    width: 22px; height: 22px; border: 0; border-radius: 6px;
+    background: transparent; color: var(--muted); font-size: 17px;
+    cursor: pointer; line-height: 1;
+  }
+  .pop-head button:hover { background: var(--hover); }
+  .pop-body { display: flex; flex-direction: column; gap: 6px; }
+  .pop-foot {
+    margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border);
+    font-size: 11.5px; color: var(--muted); line-height: 1.6;
+  }
+  .pop-login-row {
+    display: flex; align-items: center; gap: 8px; padding: 6px 2px;
+    font-size: 12.5px;
+  }
+  .pop-login-row .pop-name { min-width: 70px; font-weight: 600; }
+  .pop-login-row .pop-state { flex: 1; color: var(--muted); font-size: 11.5px; }
+  .pop-login-row .pop-state.ok { color: var(--ok); }
+  .pop-login-row button {
+    padding: 3px 9px; border: 1px solid var(--border-strong);
+    border-radius: 7px; background: var(--card); color: var(--muted-ink);
+    font-size: 11.5px; cursor: pointer;
+  }
+  .pop-login-row button:hover { background: var(--hover); }
+  .menu-popover {
+    left: 250px; top: 38px; bottom: auto; width: 190px;
+  }
+  .pop-menu-item {
+    width: 100%; padding: 7px 9px; border: 0; border-radius: 7px;
+    background: transparent; color: var(--text); text-align: left;
+    font-size: 12.5px; cursor: pointer;
+  }
+  .pop-menu-item:hover { background: var(--hover); }
+  .pop-menu-item.danger { color: var(--danger); }
+  .info-popover { width: 360px; }
+  .info-popover .pop-body { font-size: 12.5px; line-height: 1.8; color: var(--muted-ink); }
+  .info-popover a { color: var(--accent-ink); }
+
   /* ---------------- 侧栏底部：铃铛 + 小卡片 ---------------- */
   .side-bell {
     width: 100%; display: flex; align-items: center; gap: 9px;
@@ -581,6 +653,9 @@
   .history-table .task-head,
   .history-table .task-row {
     grid-template-columns: 74px 46px 1fr 66px 68px;
+  }
+  #fs-table .task-head, #fs-table .task-row {
+    grid-template-columns: 74px 1fr 68px;
   }
 
   /* ---------------- 主题切换过渡 ---------------- */
@@ -719,14 +794,23 @@
   <div class="side-spacer"></div>
 
   <div class="side-bottom">
+    <div class="side-bottom-row">
     <button class="side-bell" type="button" onclick="activateTab('history')"
             title="历史下载与录制">
       <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/>
         <path d="M10 20h4a2 2 0 0 1-4 0Z"/>
       </svg>
-      <span>历史记录</span>
+      <span>历史</span>
     </button>
+    <button class="side-bell side-computer" type="button" onclick="openLoginPopover()"
+            title="平台账号登录">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16.5V20"/>
+      </svg>
+      <span>账号</span>
+    </button>
+    </div>
     <div class="side-note">
       <strong>记录都在本机</strong>
       <span>下载与录制会自动留档，关掉程序也不丢</span>
@@ -759,34 +843,36 @@
 
 <main class="main">
   <div class="app-titlebar">
-    <div class="title-brand">
-      <img src="logo.png" alt="" aria-hidden="true">
-      <strong>帅羊羊DLY</strong>
-      <span class="title-ver" id="title-version"></span>
-    </div>
-    <div class="title-actions">
-      <button class="title-icon" type="button" title="搜索历史记录"
-              aria-label="搜索历史记录" onclick="openHistory('all', true)">
+    <div class="title-left">
+      <button class="title-icon" type="button" title="收起 / 展开侧栏"
+              aria-label="收起或展开侧栏" onclick="toggleSidebar()">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M9 4.5v15"/>
+        </svg>
+      </button>
+      <button class="title-icon" type="button" title="搜索历史"
+              aria-label="搜索历史" onclick="openHistory('all', true)">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round">
           <circle cx="10.8" cy="10.8" r="6.6"/><path d="m16 16 4 4"/>
         </svg>
       </button>
-      <button class="title-icon" type="button" title="历史下载与录制"
-              aria-label="历史下载与录制" onclick="openHistory('all')">
+      <button class="title-icon" type="button" title="筛选记录"
+              aria-label="筛选记录" onclick="openHistory('all')">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/>
-          <path d="M10 20h4a2 2 0 0 1-4 0Z"/>
+          <path d="M3.5 5.5h17l-6.6 7.6v5.4l-3.8 2v-7.4Z"/>
         </svg>
       </button>
-      <button class="title-icon" type="button" title="收起/展开侧栏"
-              aria-label="收起或展开侧栏" onclick="toggleSidebar()">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="4.5" width="18" height="15" rx="2"/>
-          <path d="M9 4.5v15"/>
-        </svg>
-      </button>
+      <span class="title-sep"></span>
+      <div class="title-menus">
+        <button type="button" onclick="activateTab('settings')">编辑(E)</button>
+        <button type="button" onclick="togglePopover('window-popover')">窗口(W)</button>
+        <button type="button" onclick="showHelp()">帮助(H)</button>
+        <button type="button" onclick="showAbout()">关于(A)</button>
+      </div>
     </div>
+    <div class="title-brand-mini"><span id="title-version"></span></div>
   </div>
+
 
   <header class="page-head">
     <div>
@@ -1069,6 +1155,34 @@
         </div>
       </div>
 
+      <div class="card">
+        <div class="card-head">
+          <div class="head-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 6.5A2 2 0 0 1 6 4.5h4l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">在目录里找文件</div>
+            <div class="card-sub">打开任意目录，按名字搜索，点结果直接定位</div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field grow">
+            <span class="label">目录</span>
+            <input type="text" id="fs-root" placeholder="例如 E://视频">
+          </div>
+          <button class="ghost" onclick="chooseFolder('fs-root', this)">选择目录</button>
+          <div class="field" style="min-width:180px">
+            <span class="label">文件名包含</span>
+            <input type="text" id="fs-keyword" placeholder="留空列出全部">
+          </div>
+          <button class="primary" onclick="searchFiles()">搜索</button>
+          <button class="ghost" onclick="openTypedFolder()">打开目录</button>
+        </div>
+        <div class="task-table" id="fs-table" style="margin-top:8px"></div>
+      </div>
+
       <div class="card log-card" style="flex:1;min-height:260px">
         <div class="log-head">
           <span>全部记录</span>
@@ -1328,6 +1442,35 @@
   </div>
 </div>
 
+<div class="popover" id="login-popover" role="dialog" aria-label="平台账号登录">
+  <div class="pop-head">
+    <strong>平台账号</strong>
+    <button type="button" onclick="closePopover('login-popover')" aria-label="关闭">×</button>
+  </div>
+  <div id="login-popover-sites" class="pop-body"></div>
+  <div class="pop-foot">扫一次码就会记住登录状态；退出登录即清除。</div>
+</div>
+
+<div class="popover menu-popover" id="window-popover" role="menu" aria-label="窗口">
+  <div class="pop-head"><strong>窗口</strong>
+    <button type="button" onclick="closePopover('window-popover')" aria-label="关闭">×</button>
+  </div>
+  <div class="pop-body">
+    <button class="pop-menu-item" type="button" onclick="toggleSidebar(); closePopover('window-popover')">
+      收起 / 展开侧栏
+    </button>
+    <button class="pop-menu-item danger" type="button" onclick="quitApp()">退出程序</button>
+  </div>
+</div>
+
+<div class="popover info-popover" id="info-popover" role="dialog" aria-label="说明">
+  <div class="pop-head">
+    <strong id="info-title">说明</strong>
+    <button type="button" onclick="closePopover('info-popover')" aria-label="关闭">×</button>
+  </div>
+  <div id="info-body" class="pop-body"></div>
+</div>
+
 <div class="ctx-menu" id="ctx-menu" role="menu" aria-label="编辑">
   <button type="button" role="menuitem" data-act="cut">剪切<span>Ctrl+X</span></button>
   <button type="button" role="menuitem" data-act="copy">复制<span>Ctrl+C</span></button>
@@ -1388,6 +1531,11 @@ function activateTab(name) {
   const el = $(id);
   if (el) el.addEventListener(id === 'his-search' ? 'input' : 'change',
                               () => renderHistoryPage(true));
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') document.querySelectorAll('.popover.show')
+    .forEach(p => p.classList.remove('show'));
 });
 
 document.querySelectorAll('.tab').forEach(tab => {
@@ -1522,6 +1670,14 @@ function render() {
   const titleVer = $('title-version');
   if (titleVer && snapshot.version) titleVer.textContent = 'v' + snapshot.version;
   renderHistoryPage();
+  const loginPop = $('login-popover');
+  if (loginPop && loginPop.classList.contains('show')) {
+    renderLoginPopover(snapshot.logins);
+  }
+  const fsRoot = $('fs-root');
+  if (fsRoot && !fsRoot.value && snapshot.default_output) {
+    fsRoot.value = snapshot.default_output;
+  }
   $('dl-btn').disabled = !!dl.active;
   $('dl-btn').textContent = dl.active ? '下载中…' : '开始下载';
   $('watch-start').disabled = !!watch.active;
@@ -1531,7 +1687,7 @@ function render() {
   ff.textContent = snapshot.ffmpeg ? 'ffmpeg 就绪' : '缺少 ffmpeg';
   ff.className = 'badge ' + (snapshot.ffmpeg ? 'ok' : 'bad');
   $('version').textContent = '版本 ' + snapshot.version;
-  $('quit-btn').hidden = !!snapshot.desktop;   // 浏览器模式才显示退出入口
+  $('quit-btn').hidden = true;                 // 退出入口已挪到顶部「窗口(W)」菜单
   $('watch-tip').textContent = '开播自动录、下播自动停；断流会指数退避重连。'
     + (snapshot.desktop ? '关闭窗口即停止值守并退出程序。'
                         : '关闭浏览器页面且没有任务在跑时，程序会自动退出；也可点左下角「退出程序」。');
@@ -2215,6 +2371,145 @@ function resetSettings() {
   toast('已放弃未保存的修改', 'ok');
 }
 
+
+
+/* ---------------- 弹层：账号 / 帮助 / 关于 ---------------- */
+function closePopover(id) {
+  const el = $(id);
+  if (el) el.classList.remove('show');
+}
+function openPopover(id) {
+  document.querySelectorAll('.popover').forEach(p => p.classList.remove('show'));
+  const el = $(id);
+  if (el) el.classList.add('show');
+}
+
+function togglePopover(id) {
+  const el = $(id);
+  if (el && el.classList.contains('show')) closePopover(id);
+  else openPopover(id);
+}
+
+async function quitApp() {
+  try { await api('/api/quit'); }
+  catch (e) { /* 服务退出时连接会断，属正常现象 */ }
+}
+
+function openLoginPopover() {
+  openPopover('login-popover');
+  renderLoginPopover(snapshot ? snapshot.logins : null);
+}
+
+function renderLoginPopover(sites) {
+  const box = $('login-popover-sites');
+  if (!box || !sites) return;
+  box.innerHTML = '';
+  sites.forEach(s => {
+    const row = document.createElement('div');
+    row.className = 'pop-login-row';
+
+    const name = document.createElement('span');
+    name.className = 'pop-name';
+    name.textContent = s.name;
+
+    const state = document.createElement('span');
+    state.className = 'pop-state' + (s.logged_in ? ' ok' : '');
+    state.textContent = s.logged_in ? '已登录 · ' + loginAgo(s.age_hours) : '未登录';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = s.logged_in ? '退出' : '登录';
+    btn.onclick = () => s.logged_in
+      ? logoutSite(s.platform)
+      : startLogin(s.platform, btn);
+
+    row.append(name, state, btn);
+    box.append(row);
+  });
+}
+
+function showHelp() {
+  $('info-title').textContent = '帮助';
+  $('info-body').innerHTML =
+    '<b>下载</b>：粘贴分享链接（可整段文案、可多条），点开始下载。<br>' +
+    '<b>录制</b>：填入直播间链接，自动识别标题；填 0 = 一直录到手动停止。<br>' +
+    '<b>历史</b>：点左侧铃铛，搜标题、按类型筛，点一行打开所在位置。<br>' +
+    '<b>账号</b>：铃铛旁的电脑图标，三个平台的扫码登录都在这里。<br>' +
+    '<b>文件搜索</b>：在历史页填目录和关键词，直接找已下载的文件。';
+  openPopover('info-popover');
+}
+
+function showAbout() {
+  const ver = (snapshot && snapshot.version) || '';
+  $('info-title').textContent = '关于 帅羊羊DLY';
+  $('info-body').innerHTML =
+    '版本 <b>' + ver + '</b><br>' +
+    '本地桌面工具：多平台视频下载、直播录制与值守。<br><br>' +
+    '<a href="https://github.com/Yjnshy/github-yjnshy/releases" ' +
+    'target="_blank" rel="noopener">在 GitHub 查看更新记录 ↗</a>';
+  openPopover('info-popover');
+}
+
+/* ---------------- 目录内文件搜索 ---------------- */
+function renderFileResults(files, root, truncated) {
+  const box = $('fs-table');
+  if (!box) return;
+  box.innerHTML = '';
+  const head = document.createElement('div');
+  head.className = 'task-head';
+  ['时间', '名称', '大小'].forEach(t => {
+    const c = document.createElement('span'); c.textContent = t; head.append(c);
+  });
+  box.append(head);
+  if (!files.length) {
+    const empty = document.createElement('div');
+    empty.className = 'task-empty';
+    empty.textContent = '没有找到文件。';
+    box.append(empty);
+    return;
+  }
+  files.forEach(f => {
+    const row = document.createElement('div');
+    row.className = 'task-row clickable';
+    row.title = '点击打开所在位置：' + f.path;
+    const time = document.createElement('span');
+    time.className = 'task-time';
+    time.textContent = fmtTaskTime(f.mtime);
+    const name = document.createElement('span');
+    name.className = 'task-name';
+    name.textContent = f.name;
+    name.title = f.path;
+    const size = document.createElement('span');
+    size.className = 'task-size';
+    size.textContent = fmtSize(f.size);
+    row.append(time, name, size);
+    row.onclick = () => api('/api/open', { path: f.path }).catch(e => notify(e.message));
+    box.append(row);
+  });
+  if (truncated) {
+    const tip = document.createElement('div');
+    tip.className = 'task-empty';
+    tip.textContent = '结果太多，只显示最近 300 个——换个关键词能更快找到。';
+    box.append(tip);
+  }
+}
+
+async function searchFiles() {
+  const root = ($('fs-root').value || '').trim();
+  const keyword = ($('fs-keyword').value || '').trim();
+  if (!root) { notify('先填要搜索的目录'); return; }
+  try {
+    const r = await api('/api/files/search', { root, keyword });
+    renderFileResults(r.files || [], r.root, r.truncated);
+  } catch (e) { notify(e.message); }
+}
+
+async function openTypedFolder() {
+  const root = ($('fs-root').value || '').trim();
+  if (!root) { notify('先填要打开的目录'); return; }
+  try { await api('/api/open', { path: root }); }
+  catch (e) { notify(e.message); }
+}
 
 /* ---------------- 标题栏 / 历史记录页 ---------------- */
 function toggleSidebar() {

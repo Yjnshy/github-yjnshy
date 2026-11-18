@@ -981,6 +981,41 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"path": picked, "cancelled": not picked})
             return
 
+        if path == "/api/files/search":
+            root = (data.get("root") or "").strip()
+            keyword = (data.get("keyword") or "").strip().lower()
+            if not root:
+                root = load_config().output_dir or str(paths.data_dir())
+            try:
+                base = Path(root).expanduser()
+                if not base.is_dir():
+                    self._json({"error": "目录不存在或不是文件夹"}, 400)
+                    return
+                found: List[Dict[str, Any]] = []
+                for dirpath, dirnames, filenames in os.walk(base):
+                    dirnames[:] = [d for d in dirnames
+                                   if not d.startswith(".") and d not in ("$RECYCLE.BIN", "System Volume Information")]
+                    for name in filenames:
+                        if keyword and keyword not in name.lower():
+                            continue
+                        item = Path(dirpath) / name
+                        try:
+                            stat = item.stat()
+                        except OSError:
+                            continue
+                        found.append({"name": name, "path": str(item),
+                                      "size": stat.st_size, "mtime": stat.st_mtime})
+                        if len(found) >= 300:
+                            break
+                    if len(found) >= 300:
+                        break
+                found.sort(key=lambda x: x["mtime"], reverse=True)
+                self._json({"ok": True, "root": str(base), "files": found,
+                            "truncated": len(found) >= 300})
+            except OSError as exc:
+                self._json({"error": f"搜索失败：{exc}"}, 500)
+            return
+
         if path == "/api/history/clear":
             with self.state._lock:
                 self.state.history.clear()
