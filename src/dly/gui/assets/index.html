@@ -571,6 +571,12 @@
   }
   .bell-badge[hidden] { display: none !important; }
 
+  .dl-progress { margin-top: 12px; display: flex; align-items: center; gap: 10px; }
+  .dl-progress[hidden] { display: none !important; }
+  .dl-bar { flex: 1; height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; }
+  .dl-bar span { display: block; height: 100%; width: 0%; background: var(--accent); transition: width .3s; }
+  .dl-progress-text { flex: none; max-width: 280px; font-size: 11.5px; color: var(--muted-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
   /* 侧栏底部：只有两个圆形图标按钮，收起侧栏也照样能点 */
   .side-bottom-row { display: flex; gap: 6px; }
   .side-bottom-row .side-bell {
@@ -1024,6 +1030,10 @@
             <input type="checkbox" id="dl-keep"> 保留原片
           </label>
           <span class="hint" id="dl-hint"></span>
+        </div>
+        <div class="dl-progress" id="dl-progress" hidden>
+          <div class="dl-bar"><span id="dl-progress-fill"></span></div>
+          <span class="dl-progress-text" id="dl-progress-text"></span>
         </div>
         <div class="tips-row">
           <button class="icon-btn" title="使用说明" aria-label="使用说明"
@@ -1823,6 +1833,17 @@ function render() {
   const dlOpen = $('dl-open');
   if (dlOpen) dlOpen.hidden = !(dl.last_file || dl.folder);
 
+  const dlProgress = $('dl-progress');
+  if (dlProgress) {
+    const prog = snapshot.download && snapshot.download.progress;
+    dlProgress.hidden = !prog;
+    if (prog) {
+      const fill = $('dl-progress-fill');
+      if (fill) fill.style.width = Math.max(0, Math.min(100, prog.percent || 0)) + '%';
+      const txt = $('dl-progress-text');
+      if (txt) txt.textContent = (prog.percent || 0).toFixed(1) + '%  ' + (prog.text || '');
+    }
+  }
   renderHistory('download', 'dl-table');
   renderHistory('record', 'rec-table');
   const titleVer = $('title-version');
@@ -2825,7 +2846,7 @@ function toggleSidebar() {
 }
 
 async function markHistorySeen() {
-  try { await api('/api/history/seen', {}); }
+  try { await api('/api/history/seen', {}); if (typeof render === 'function') render(); }
   catch (e) { /* 清角标失败不影响切页 */ }
 }
 
@@ -2846,6 +2867,7 @@ async function clearHistory() {
     const box = $('his-table');
     if (box) box.innerHTML = '';
     renderHistoryPage(true);
+    if (typeof render === 'function') render();
     toast('记录已清空', 'ok');
   } catch (e) { notify(e.message); }
 }

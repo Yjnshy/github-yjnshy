@@ -294,6 +294,7 @@ def _run_download(state: AppState, text: str, quality: str, outdir: str,
 
     with state._lock:  # noqa: SLF001 内部状态，避免并发重复启动
         state.download["active"] = True
+        state.download["progress"] = {"percent": 0, "text": "准备中…"}
     state.log("download", "开始解析链接…")
     if fps:
         state.log("download", f"下载完成后转码到 {fps}fps（需重新编码，比较耗时）")
@@ -317,6 +318,13 @@ def _run_download(state: AppState, text: str, quality: str, outdir: str,
             if now - last["at"] < 1.5:
                 return
             last["at"] = now
+        # 把 yt-dlp 的百分比进度转成结构化字段，前端显示进度条
+        pct = re.search(r"(\d+(?:\.\d+)?)\s*%", message or "")
+        if pct and state.download.get("active"):
+            state.download["progress"] = {
+                "percent": min(100.0, float(pct.group(1))),
+                "text": (message or "").strip()[-120:],
+            }
         state.log("download", message)
 
     try:
@@ -358,6 +366,7 @@ def _run_download(state: AppState, text: str, quality: str, outdir: str,
         state.log("download", f"下载失败：{exc}", "error")
     finally:
         state.download["active"] = False
+        state.download["progress"] = None
 
 
 def _live_url_hint(url: str) -> str:
