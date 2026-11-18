@@ -54,15 +54,15 @@ def test_live_folder_name_sanitizes_illegal_chars():
     assert "抖音-a b c d-123" == name
 
 
-def test_live_filename_is_title_plus_time():
+def test_live_filename_is_time_then_title():
     from datetime import datetime
 
     from dly.core.naming import live_filename
 
     when = datetime(2026, 11, 17, 12, 50, 58)
     assert live_filename("央视新闻频道正在直播", when, "ts") == \
-        "央视新闻频道正在直播_20261117_125058.ts"
-    assert live_filename("", when) == "直播_20261117_125058"
+        "20261117_125058_央视新闻频道正在直播.ts"
+    assert live_filename("", when) == "20261117_125058_直播"
 
 
 def test_bilibili_room_id_from_url():

@@ -75,7 +75,11 @@ def live_folder_name(platform: str, anchor: str, anchor_id: str = "") -> str:
 
 
 def live_filename(title: str, when: datetime | None = None, ext: str = "") -> str:
-    """直播文件名：``标题_录制时间[.ext]``，方便按时间排序查找。"""
+    """直播文件名：``录制时间_标题[.ext]``。
+
+    时间放最前面，按文件名排序就是录制先后顺序，同一个主播文件夹里
+    一眼能看出哪场在前。
+    """
     when = when or datetime.now()
-    stem = f"{safe_name(title or '直播', 60)}_{when.strftime('%Y%m%d_%H%M%S')}"
+    stem = f"{when.strftime('%Y%m%d_%H%M%S')}_{safe_name(title or '直播', 60)}"
     return f"{stem}.{ext}" if ext else stem
