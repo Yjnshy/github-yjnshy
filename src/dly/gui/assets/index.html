@@ -1319,6 +1319,7 @@
           <span>全部记录</span>
           <div class="log-actions">
             <span id="his-count"></span>
+            <button class="mini-btn" id="his-refresh" onclick="refreshNow()" title="刷新记录">↻ 刷新</button>
             <button class="mini-btn" id="his-clear" onclick="clearHistory()">清空记录</button>
           </div>
         </div>
@@ -1891,9 +1892,11 @@ function render() {
   $('watch-start').disabled = !!watch.active;
   $('watch-stop').disabled = !watch.active;
 
-  const ff = $('ffmpeg-badge');
-  ff.textContent = snapshot.ffmpeg ? 'ffmpeg 就绪' : '缺少 ffmpeg';
-  ff.className = 'badge ' + (snapshot.ffmpeg ? 'ok' : 'bad');
+  const ff = $('ffmpeg-badge');   // 精简侧栏后已移除，做个兼容判断
+  if (ff) {
+    ff.textContent = snapshot.ffmpeg ? 'ffmpeg 就绪' : '缺少 ffmpeg';
+    ff.className = 'badge ' + (snapshot.ffmpeg ? 'ok' : 'bad');
+  }
   $('version').textContent = '版本 ' + snapshot.version;
   $('watch-tip').textContent = '开播自动录、下播自动停；断流会指数退避重连。'
     + (snapshot.desktop ? '关闭窗口即停止值守并退出程序。'
@@ -2858,6 +2861,18 @@ function openHistory(kind, focusSearch) {
   if (focusSearch) {
     setTimeout(() => { const box = $('his-search'); if (box) box.focus(); }, 120);
   }
+}
+
+async function refreshNow() {
+  try {
+    const res = await fetch('/api/state');
+    if (!res.ok) throw new Error('刷新失败');
+    const data = await res.json();
+    snapshot = data.snapshot;
+    render();
+    renderHistoryPage(true);
+    toast('已刷新', 'ok');
+  } catch (e) { notify(e.message); }
 }
 
 async function clearHistory() {
