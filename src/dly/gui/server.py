@@ -37,7 +37,7 @@ except ImportError:        # pragma: no cover
     winreg = None  # type: ignore[assignment]
 
 from dly import __version__
-from dly.core.compat import open_folder
+from dly.core.compat import open_file, open_folder
 from dly.core.config import (config_file_path, load_config,
                              save_settings, settings_from_config)
 from dly.core import paths
@@ -980,6 +980,51 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 _PICK_LOCK.release()
             self._json({"path": picked, "cancelled": not picked})
+            return
+
+        if path == "/api/files/tree":
+            root = (data.get("root") or "").strip()
+            if not root:
+                root = load_config().output_dir or str(paths.data_dir())
+            try:
+                base = Path(root).expanduser()
+                if not base.is_dir():
+                    self._json({"error": "目录不存在或不是文件夹"}, 400)
+                    return
+                nodes: List[Dict[str, Any]] = []
+                for item in sorted(base.iterdir(),
+                                   key=lambda p: (p.is_file(), p.name.lower())):
+                    if item.name.startswith(".") or item.name in ("$RECYCLE.BIN",
+                                                                   "System Volume Information"):
+                        continue
+                    try:
+                        st = item.stat()
+                    except OSError:
+                        continue
+                    node = {"name": item.name, "path": str(item),
+                            "type": "dir" if item.is_dir() else "file",
+                            "size": st.st_size if item.is_file() else 0,
+                            "mtime": st.st_mtime}
+                    nodes.append(node)
+                    if len(nodes) >= 250:
+                        break
+                # 文件夹在前（排序已保证），数量截断时提示还有更多
+                self._json({"ok": True, "root": str(base), "nodes": nodes,
+                            "truncated": len(nodes) >= 250})
+            except OSError as exc:
+                self._json({"error": f"读取目录失败：{exc}"}, 500)
+            return
+
+        if path == "/api/file/open":
+            target = (data.get("path") or "").strip()
+            if not target or not Path(target).is_file():
+                self._json({"error": "文件不存在"}, 400)
+                return
+            try:
+                open_file(target)
+                self._json({"ok": True})
+            except OSError as exc:
+                self._json({"error": str(exc)}, 500)
             return
 
         if path == "/api/files/search":

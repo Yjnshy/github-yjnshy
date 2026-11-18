@@ -12,9 +12,12 @@
 
 from __future__ import annotations
 
+import ctypes
 import logging
+import os
 import threading
 import time
+from ctypes import wintypes
 
 from dly.gui.server import create_app
 
@@ -121,6 +124,66 @@ def _load_webview():
     return webview
 
 
+def _taskbar_button_rect(hwnd: int):
+    """找到本程序在 Windows 任务栏上那个按钮的屏幕矩形。"""
+    try:
+        user32 = ctypes.windll.user32
+        tray = user32.FindWindowW("Shell_TrayWnd", None)
+        for cls in ("ReBarWindow32", "MSTaskSwWClass", "MSTaskListWClass"):
+            tray = user32.FindWindowExW(tray, None, cls, None)
+            if not tray:
+                return None
+
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        found = []
+
+        ENUM = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+
+        def cb(child, _):
+            child_pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(child, ctypes.byref(child_pid))
+            if child_pid.value != pid.value:
+                return True
+            rect = wintypes.RECT()
+            if user32.GetWindowRect(child, ctypes.byref(rect)):
+                if rect.right > rect.left and rect.bottom > rect.top:
+                    found.append((rect.left, rect.top, rect.right, rect.bottom))
+            return True
+
+        user32.EnumChildWindows(tray, ENUM(cb), 0)
+        return found[0] if found else None
+    except Exception:  # noqa: BLE001 任务栏结构变了就放弃这次轮询
+        return None
+
+
+def _watch_taskbar_clicks(window) -> None:
+    """无边框窗口在 Win11 上点任务栏图标有时不还原，自己兜一下。"""
+    user32 = ctypes.windll.user32
+    while True:
+        time.sleep(0.15)
+        try:
+            hwnd = int(window.native.Handle)
+            if not user32.IsWindow(hwnd):
+                return
+            # 只有在按钮被按下、且鼠标确实停在本程序任务栏按钮上时才处理
+            if not (user32.GetAsyncKeyState(0x01) & 0x8000):
+                continue
+            pos = wintypes.POINT()
+            user32.GetCursorPos(ctypes.byref(pos))
+            rect = _taskbar_button_rect(hwnd)
+            if not rect:
+                continue
+            left, top, right, bottom = rect
+            if not (left <= pos.x <= right and top <= pos.y <= bottom):
+                continue
+            if user32.IsIconic(hwnd):
+                user32.ShowWindow(hwnd, 9)      # SW_RESTORE
+            user32.SetForegroundWindow(hwnd)
+        except Exception:  # noqa: BLE001 窗口关闭时就退出轮询
+            return
+
+
 def launch(debug: bool = False) -> None:
     """打开桌面窗口（阻塞，直到用户关窗或收到 /api/quit 退出请求）。"""
     webview = _load_webview()
@@ -157,6 +220,10 @@ def launch(debug: bool = False) -> None:
         "maximize": _toggle_maximize,
         "close": window.destroy,
     }
+
+    if os.name == "nt":
+        threading.Thread(target=_watch_taskbar_clicks, args=(window,),
+                         daemon=True, name="taskbar-focus").start()
 
     def _quit_watcher() -> None:
         """收到退出请求时关掉窗口，让 GUI 主循环能返回。"""

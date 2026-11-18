@@ -561,6 +561,43 @@
   .win-btn svg { width: 14px; height: 14px; stroke: currentColor; }
   .win-btn.close:hover { background: var(--danger); color: #fff; }
 
+  /* 侧栏底部：只有两个圆形图标按钮，收起侧栏也照样能点 */
+  .side-bottom-row { display: flex; gap: 6px; }
+  .side-bottom-row .side-bell {
+    width: 42px; height: 38px; flex: none; padding: 0;
+    justify-content: center; border-radius: 10px;
+  }
+  .side-computer { color: var(--accent-ink); }
+  button, input, select, textarea, a, .side-bell {
+    -webkit-app-region: no-drag;
+  }
+  .app-titlebar { -webkit-app-region: drag; }
+
+  /* 目录管理页：左侧文件树 + 右侧快捷操作 */
+  .files-layout {
+    display: grid; grid-template-columns: minmax(360px, 1fr) 230px;
+    gap: 14px; align-items: start; height: 100%;
+  }
+  .tree-card { display: flex; flex-direction: column; min-height: 0; }
+  .file-tree {
+    margin-top: 10px; padding: 8px 4px; flex: 1; min-height: 240px;
+    max-height: 62vh; overflow: auto; border-top: 1px solid var(--border);
+    font-size: 12.5px;
+  }
+  .tree-row {
+    display: flex; align-items: center; gap: 6px; width: 100%;
+    padding: 4px 8px; border: 0; border-radius: 6px; background: transparent;
+    color: var(--text); text-align: left; cursor: pointer; white-space: nowrap;
+  }
+  .tree-row:hover { background: var(--hover); }
+  .tree-arrow { width: 12px; color: var(--muted); flex: none; }
+  .tree-icon { width: 14px; color: var(--accent-ink); flex: none; }
+  .tree-label { overflow: hidden; text-overflow: ellipsis; }
+  .tree-file .tree-label { color: var(--muted-ink); }
+  .tree-more { padding: 4px 8px; color: var(--muted); font-size: 11.5px; }
+  .tree-side { padding: 16px; }
+  .tree-side .ghost { width: 100%; margin-bottom: 8px; text-align: left; }
+
   /* 标题栏：WorkBuddy 式「图标组 | 菜单文字」 */
   .title-left { display: flex; align-items: center; gap: 4px; }
   .title-sep {
@@ -850,6 +887,11 @@
         <circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>
       </svg>
     </button>
+    <button class="tab" data-tab="files" aria-label="目录管理" title="目录管理">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3.5 6.5A2 2 0 0 1 5.5 4.5h4l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"/>
+      </svg>
+    </button>
     <button class="tab" data-tab="settings" aria-label="设置">
       <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 0 1-4 0v-.09A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3a2 2 0 0 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3a2 2 0 0 1 4 0v.09A1.7 1.7 0 0 0 15.4 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.14.36.4.68.75.88.3.17.65.27 1 .28H21a2 2 0 0 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z"/>
@@ -861,34 +903,20 @@
 
   <div class="side-bottom">
     <div class="side-bottom-row">
-    <button class="side-bell" type="button" onclick="activateTab('history')"
-            title="历史下载与录制">
-      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/>
-        <path d="M10 20h4a2 2 0 0 1-4 0Z"/>
-      </svg>
-      <span>历史</span>
-    </button>
-    <button class="side-bell side-computer" type="button" onclick="openLoginPopover()"
-            title="平台账号登录">
-      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16.5V20"/>
-      </svg>
-      <span>账号</span>
-    </button>
+      <button class="side-bell" type="button" onclick="activateTab('history')"
+              title="历史下载与录制" aria-label="历史下载与录制">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/>
+          <path d="M10 20h4a2 2 0 0 1-4 0Z"/>
+        </svg>
+      </button>
+      <button class="side-bell side-computer" type="button" onclick="openLoginPopover()"
+              title="平台账号登录" aria-label="平台账号登录">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16.5V20"/>
+        </svg>
+      </button>
     </div>
-    <div class="side-note">
-      <strong>记录都在本机</strong>
-      <span>下载与录制会自动留档，关掉程序也不丢</span>
-      <button type="button" onclick="activateTab('history')">查看记录</button>
-    </div>
-    <div class="side-status">
-      <span id="conn" class="badge">连接中…</span>
-      <span id="ffmpeg-badge" class="badge">ffmpeg</span>
-    </div>
-    <!-- 浏览器模式（--web 或桌面窗口起不来回退）才显示的退出入口 -->
-    <button id="quit-btn" class="quit-btn" type="button" hidden>退出程序</button>
-    <!-- 桌面版关窗即退出，原来的退出按钮没必要；主题开关占它的位置 -->
     <div class="side-theme">
       <button id="theme-toggle-mini" class="pixel-toggle mini" type="button"
               role="switch" aria-checked="false" aria-label="切换日间/夜间主题"></button>
@@ -1158,6 +1186,49 @@
       </div>
     </section>
 
+    <!-- 目录管理 -->
+    <section class="panel" id="panel-files">
+      <div class="files-layout">
+        <div class="card tree-card">
+          <div class="card-head">
+            <div class="head-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3.5 6.5A2 2 0 0 1 5.5 4.5h4l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"/>
+              </svg>
+            </div>
+            <div>
+              <div class="card-title">文件目录</div>
+              <div class="card-sub">点文件夹展开，点文件直接打开</div>
+            </div>
+          </div>
+          <div class="row">
+            <div class="field grow">
+              <span class="label">当前目录</span>
+              <input type="text" id="tree-root" placeholder="例如 E://视频">
+            </div>
+            <button class="ghost" onclick="chooseFolder('tree-root', this)">选择</button>
+          </div>
+          <div class="row">
+            <button class="primary" onclick="loadTreeRoot()">读取目录</button>
+            <button class="ghost" onclick="openTypedTreeFolder()">打开目录</button>
+            <button class="ghost" onclick="refreshTree()">刷新</button>
+          </div>
+          <div class="file-tree" id="file-tree"></div>
+        </div>
+        <div class="card tree-side">
+          <div class="card-title">快捷操作</div>
+          <div class="pop-body" style="margin-top:12px">
+            <button class="ghost" onclick="activateTab('history')">查看历史记录</button>
+            <button class="ghost" onclick="activateTab('download')">去下载视频</button>
+            <button class="ghost" onclick="activateTab('record')">去录制直播</button>
+          </div>
+          <div class="hint" style="margin-top:16px">
+            视频用系统默认播放器打开；想定位到文件夹里，点历史记录里的对应行。
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- 历史下载 / 录制 -->
     <section class="panel" id="panel-history">
       <div class="card feature">
@@ -1355,6 +1426,20 @@
 
         <div class="card">
           <div class="card-head">
+            <div class="card-title">运行状态</div>
+          </div>
+          <div class="login-row">
+            <span class="login-name">本地服务</span>
+            <span class="login-state" id="set-conn">检测中…</span>
+          </div>
+          <div class="login-row">
+            <span class="login-name">ffmpeg</span>
+            <span class="login-state" id="set-ffmpeg">检测中…</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
             <div class="head-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <rect x="4" y="10" width="16" height="10" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>
@@ -1534,7 +1619,8 @@ const PAGE_META = {
   settings: ['设置', '默认参数、主题与常用维护都在这里']
 };
 const EXTRA_PAGE_META = {
-  history: ['历史记录', '所有下载与录制都留在本机，点一行定位文件']
+  history: ['历史记录', '所有下载与录制都留在本机，点一行定位文件'],
+  files: ['目录管理', '像文件管理器一样展开目录，点文件直接打开']
 };
 const TAB_NAMES = Object.keys(PAGE_META);
 
@@ -1555,7 +1641,7 @@ function activateTab(name) {
   if (meta) { $('page-title').textContent = meta[0]; $('page-sub').textContent = meta[1]; }
   // 设置页已有 Cookie 管理卡片，页头那组在设置页里显得重复
   $('head-actions').style.display =
-    (name === 'settings' || name === 'history') ? 'none' : '';
+    (name === 'settings' || name === 'history' || name === 'files') ? 'none' : '';
   if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name);
   // 改完设置直接切走是最容易丢修改的操作，明确提醒一次
   if (leavingSettings && settingsDirty) {
@@ -1568,6 +1654,16 @@ function activateTab(name) {
                               () => renderHistoryPage(true));
 });
 
+const _origActivateTab = activateTab;
+activateTab = function(name) {
+  _origActivateTab(name);
+  if (name === 'files' && snapshot && snapshot.default_output) {
+    const root = $('tree-root');
+    if (root && !root.value) root.value = snapshot.default_output;
+    if (root && root.value && !$('file-tree').childElementCount) loadTreeRoot();
+  }
+};
+
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') document.querySelectorAll('.popover.show')
     .forEach(p => p.classList.remove('show'));
@@ -1578,7 +1674,7 @@ document.querySelectorAll('.tab').forEach(tab => {
 });
 window.addEventListener('hashchange', () => {
   const name = location.hash.replace('#', '');
-  if (TAB_NAMES.includes(name) || name === 'history') activateTab(name);
+  if (TAB_NAMES.includes(name) || name === 'history' || name === 'files') activateTab(name);
 });
 
 /* ---------------- 请求封装 ---------------- */
@@ -1595,9 +1691,13 @@ async function api(path, body) {
 }
 
 // 浏览器模式的退出入口：桌面版隐藏（关窗即退），见 render() 里的 hidden 切换
-$('quit-btn').addEventListener('click', () => {
-  api('/api/quit').catch(() => {});   // 服务收到后会自己退出，页面随之断开
-});
+const _quitBtn = $('quit-btn');        // 老版本可能还留着这个按钮，做兼容
+if (_quitBtn) {
+  _quitBtn.hidden = true;
+  _quitBtn.addEventListener('click', () => {
+    api('/api/quit').catch(() => {});
+  });
+}
 
 function notify(text) {
   appendLine('download', { text, level: 'error' });
@@ -1706,6 +1806,27 @@ function render() {
   if (titleVer && snapshot.version) titleVer.textContent = 'v' + snapshot.version;
   const winControls = $('win-controls');
   if (winControls) winControls.hidden = !snapshot.desktop;
+  const setConn = $('set-conn');
+  if (setConn) {
+    setConn.textContent = snapshot.desktop ? '桌面窗口 · 已连接' : '浏览器模式 · 已连接';
+    setConn.className = 'login-state ok';
+  }
+  // 直接以 #files 打开时，snapshot 可能比切页晚到；到这里再补一次默认目录
+  if (!treeAutoLoaded && snapshot.default_output) {
+    const treeRoot = $('tree-root');
+    if (treeRoot && !treeRoot.value) {
+      treeRoot.value = snapshot.default_output;
+      treeAutoLoaded = true;
+      if ($('panel-files') && $('panel-files').classList.contains('active')) {
+        loadTreeRoot();
+      }
+    }
+  }
+  const setFfmpeg = $('set-ffmpeg');
+  if (setFfmpeg) {
+    setFfmpeg.textContent = snapshot.ffmpeg ? '就绪' : '未找到（请安装或设置路径）';
+    setFfmpeg.className = 'login-state' + (snapshot.ffmpeg ? ' ok' : ' wait');
+  }
   renderHistoryPage();
   const loginPop = $('login-popover');
   if (loginPop && loginPop.classList.contains('show')) {
@@ -1724,10 +1845,9 @@ function render() {
   ff.textContent = snapshot.ffmpeg ? 'ffmpeg 就绪' : '缺少 ffmpeg';
   ff.className = 'badge ' + (snapshot.ffmpeg ? 'ok' : 'bad');
   $('version').textContent = '版本 ' + snapshot.version;
-  $('quit-btn').hidden = true;                 // 退出入口已挪到顶部「窗口(W)」菜单
   $('watch-tip').textContent = '开播自动录、下播自动停；断流会指数退避重连。'
     + (snapshot.desktop ? '关闭窗口即停止值守并退出程序。'
-                        : '关闭浏览器页面且没有任务在跑时，程序会自动退出；也可点左下角「退出程序」。');
+                        : '关闭浏览器页面且没有任务在跑时，程序会自动退出；也可点标题栏「窗口(W)」菜单里的「退出程序」。');
 }
 
 /* ---------------- 轮询 ---------------- */
@@ -2553,6 +2673,123 @@ async function openTypedFolder() {
   catch (e) { notify(e.message); }
 }
 
+
+/* ---------------- 目录管理：文件树 ---------------- */
+const TREE_CACHE = {};
+let treeAutoLoaded = false;
+
+function fmtTreeSize(bytes) {
+  if (!bytes) return '';
+  if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
+  return Math.max(1, Math.round(bytes / 1024)) + ' KB';
+}
+
+function makeTreeRow(node, depth, onToggle) {
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'tree-row' + (node.type === 'file' ? ' tree-file' : '');
+  row.style.paddingLeft = (8 + depth * 16) + 'px';
+  row.title = node.path;
+
+  const arrow = document.createElement('span');
+  arrow.className = 'tree-arrow';
+  arrow.textContent = node.type === 'dir' ? '▸' : '';
+  const icon = document.createElement('span');
+  icon.className = 'tree-icon';
+  icon.textContent = node.type === 'dir' ? '📁' : '🎞';
+  const label = document.createElement('span');
+  label.className = 'tree-label';
+  label.textContent = node.name + (node.type === 'file'
+      ? '  ' + fmtTreeSize(node.size) : '');
+
+  row.append(arrow, icon, label);
+  if (node.type === 'dir') {
+    row.onclick = () => onToggle(row, arrow, node, depth);
+  } else {
+    row.onclick = () => api('/api/file/open', { path: node.path })
+      .catch(e => notify(e.message));
+  }
+  return row;
+}
+
+async function loadChildren(row, arrow, node, depth) {
+  const box = $('file-tree');
+  if (TREE_CACHE[node.path]) {
+    renderChildren(row, arrow, node, depth, TREE_CACHE[node.path]);
+    return;
+  }
+  arrow.textContent = '…';
+  try {
+    const r = await api('/api/files/tree', { root: node.path });
+    TREE_CACHE[node.path] = r.nodes || [];
+    renderChildren(row, arrow, node, depth, TREE_CACHE[node.path]);
+  } catch (e) {
+    arrow.textContent = '▸';
+    notify(e.message);
+  }
+}
+
+function renderChildren(row, arrow, node, depth, nodes) {
+  const box = $('file-tree');
+  // 清掉这一层已经展开的内容（下一个兄弟节点之前）
+  let next = row.nextElementSibling;
+  while (next && Number(next.dataset.depth || 0) > depth) {
+    const doomed = next;
+    next = next.nextElementSibling;
+    doomed.remove();
+  }
+  const expanded = !!row.dataset.expanded;
+  arrow.textContent = expanded ? '▸' : '▾';
+  row.dataset.expanded = expanded ? '' : '1';
+  if (expanded) return;
+
+  // 倒序 after()，插完正好是正序
+  [...nodes].reverse().forEach(child => {
+    const childRow = makeTreeRow(child, depth + 1, loadChildren);
+    childRow.dataset.depth = String(depth + 1);
+    row.after(childRow);
+  });
+  if (nodes.length >= 250) {
+    const more = document.createElement('div');
+    more.className = 'tree-more';
+    more.textContent = '这一层只显示前 250 项';
+    more.dataset.depth = String(depth + 1);
+    row.after(more);
+  }
+}
+
+async function loadTreeRoot() {
+  const root = ($('tree-root').value || '').trim();
+  if (!root) { notify('先填目录'); return; }
+  try {
+    const r = await api('/api/files/tree', { root });
+    Object.keys(TREE_CACHE).forEach(k => delete TREE_CACHE[k]);
+    $('tree-root').value = r.root || root;
+    const box = $('file-tree');
+    box.innerHTML = '';
+    (r.nodes || []).forEach(node => {
+      const row = makeTreeRow(node, 0, loadChildren);
+      row.dataset.depth = '0';
+      box.append(row);
+    });
+    if (!r.nodes || !r.nodes.length) {
+      const empty = document.createElement('div');
+      empty.className = 'task-empty';
+      empty.textContent = '这个目录是空的';
+      box.append(empty);
+    }
+  } catch (e) { notify(e.message); }
+}
+
+function refreshTree() { loadTreeRoot(); }
+
+async function openTypedTreeFolder() {
+  const root = ($('tree-root').value || '').trim();
+  if (!root) { notify('先填目录'); return; }
+  try { await api('/api/open', { path: root }); }
+  catch (e) { notify(e.message); }
+}
+
 /* ---------------- 标题栏 / 历史记录页 ---------------- */
 function toggleSidebar() {
   document.body.classList.toggle('sidebar-compact');
@@ -2820,7 +3057,7 @@ function mountThemeToggles() {
 }
 
 const initTab = location.hash.replace('#', '');
-if (TAB_NAMES.includes(initTab) || initTab === 'history') activateTab(initTab);
+if (TAB_NAMES.includes(initTab) || initTab === 'history' || initTab === 'files') activateTab(initTab);
 fillRooms([]);
 mountThemeToggles();
 bindSettingsInputs();

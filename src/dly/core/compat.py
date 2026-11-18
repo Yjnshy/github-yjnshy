@@ -47,6 +47,16 @@ def kill_process_tree(proc: subprocess.Popen) -> None:
             pass
 
 
+def open_file(path: str) -> None:
+    """用系统默认程序打开文件（视频直接用播放器播）。"""
+    if IS_WINDOWS:
+        os.startfile(path)  # type: ignore[attr-defined]
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", path])
+    else:
+        subprocess.Popen(["xdg-open", path])
+
+
 def open_folder(path: str) -> None:
     """在系统文件管理器中打开目录；给文件路径时打开所在目录并选中它。"""
     if IS_WINDOWS:
