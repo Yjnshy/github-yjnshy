@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import io
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -341,3 +343,113 @@ def test_small_output_still_rejected_without_duration(tmp_path, monkeypatch):
     with pytest.raises(RecordingError):
         rec.record_once(_live())
     assert not list(tmp_path.glob("*.ts"))
+
+
+# ---------------------------------------------------------------- mp4 崩溃安全
+
+def test_mp4_records_to_ts_then_remuxes(tmp_path, monkeypatch):
+    """mp4 不能边录边写：内部先落 ts，结束后无损转封装。"""
+    monkeypatch.setattr(
+        recorder_mod.subprocess, "Popen",
+        lambda cmd, **kw: _FakeProc(cmd, produce_bytes=MIN_OUTPUT_BYTES * 2,
+                                    returncode=0))
+    rec = LiveRecorder("ffmpeg", tmp_path, fmt="mp4")
+
+    seen = {}
+
+    def fake_remux(src, target_fmt):
+        seen["src"] = src
+        seen["fmt"] = target_fmt
+        dst = src.with_suffix("." + target_fmt)
+        src.rename(dst)
+        return dst
+
+    monkeypatch.setattr(rec, "_remux", fake_remux)
+    out = rec.record_once(_live())
+
+    assert out.suffix == ".mp4"
+    assert seen["src"].suffix == ".ts"        # 录制阶段写的是 ts
+    assert seen["fmt"] == "mp4"
+    assert not list(tmp_path.rglob("*.ts"))   # 中间文件已清理
+
+
+def test_ts_recording_skips_remux(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        recorder_mod.subprocess, "Popen",
+        lambda cmd, **kw: _FakeProc(cmd, produce_bytes=MIN_OUTPUT_BYTES * 2,
+                                    returncode=0))
+    rec = LiveRecorder("ffmpeg", tmp_path, fmt="ts")
+    monkeypatch.setattr(rec, "_remux",
+                        lambda *a, **k: pytest.fail("ts 不需要转封装"))
+
+    out = rec.record_once(_live())
+    assert out.suffix == ".ts"
+
+
+def test_stop_asks_ffmpeg_to_quit_first(tmp_path):
+    """手动停止先发 q 让 ffmpeg 写索引，而不是直接 kill。"""
+    class _Proc:
+        returncode = None
+
+        def __init__(self):
+            self.stdin = io.StringIO()
+
+        def poll(self):
+            return None
+
+    rec = LiveRecorder("ffmpeg", tmp_path)
+    proc = _Proc()
+    rec._proc = proc
+    rec.stop()
+
+    assert proc.stdin.getvalue() == "q"
+    assert rec.stop_requested is True
+
+
+def test_manual_stop_still_remuxes_to_mp4(tmp_path, monkeypatch):
+    """手动停止走的是另一条 return，之前会漏掉转封装、留下 ts。"""
+
+    class _Proc:
+        def __init__(self, cmd):
+            self._cmd = cmd
+            self.returncode = None
+            self.stdin = io.StringIO()
+            self.pid = 1000
+            Path(cmd[-1]).parent.mkdir(parents=True, exist_ok=True)
+            Path(cmd[-1]).write_bytes(b"0" * (MIN_OUTPUT_BYTES * 2))
+
+        @property
+        def stdout(self):
+            return io.StringIO("total_size=2048\nprogress=end\n")
+
+        @property
+        def stderr(self):
+            return io.StringIO("")
+
+        def poll(self):
+            # 收到 q 之后才退出，模拟 ffmpeg 优雅收尾
+            return 0 if self.stdin.getvalue() else None
+
+        def wait(self, *args, **kwargs):
+            return 0
+
+    monkeypatch.setattr(recorder_mod.subprocess, "Popen",
+                        lambda cmd, **kw: _Proc(cmd))
+    rec = LiveRecorder("ffmpeg", tmp_path, fmt="mp4")
+
+    def fake_remux(src, target_fmt):
+        dst = src.with_suffix("." + target_fmt)
+        src.rename(dst)
+        return dst
+
+    monkeypatch.setattr(rec, "_remux", fake_remux)
+
+    def _stop_soon():
+        time.sleep(0.3)
+        rec.stop()
+
+    threading.Thread(target=_stop_soon, daemon=True).start()
+    out = rec.record_once(_live())
+
+    assert out.suffix == ".mp4"
+    assert not list(tmp_path.rglob("*.ts"))

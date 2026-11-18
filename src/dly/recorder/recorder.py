@@ -110,10 +110,16 @@ class LiveRecorder:
     # 命令构造（独立成方法，便于单元测试）
     # ------------------------------------------------------------------
 
-    def build_cmd(self, live: LiveInfo, outfile: Path) -> List[str]:
-        """拼装 ffmpeg 命令行。"""
+    def build_cmd(self, live: LiveInfo, outfile: Path,
+                  record_fmt: Optional[str] = None) -> List[str]:
+        """拼装 ffmpeg 命令行。
+
+        ``record_fmt`` 是**实际落盘的容器**，可能和用户要的 ``self.fmt`` 不同：
+        mp4 直接写直播流，进程一旦被杀就没 moov、文件直接报废，所以内部先录 ts。
+        """
+        fmt = (record_fmt or self.fmt).lstrip(".").lower()
         cmd = [
-            self.ffmpeg, "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
+            self.ffmpeg, "-hide_banner", "-loglevel", "warning", "-y",
             "-progress", "pipe:1", "-nostats",
             # 拉流请求上下文
             "-user_agent", live.user_agent or UA_PC,
@@ -147,9 +153,9 @@ class LiveRecorder:
             cmd += [
                 "-f", "segment",
                 "-segment_time", _fmt_seconds(self.segment_seconds),
-                "-segment_format", _SEGMENT_FORMAT.get(self.fmt, self.fmt),
+                "-segment_format", _SEGMENT_FORMAT.get(fmt, fmt),
                 "-reset_timestamps", "1",
-                str(self.output_dir / f"{outfile.stem}_%03d.{self.fmt}"),
+                str(outfile.parent / f"{outfile.stem}_%03d.{fmt}"),
             ]
         else:
             cmd.append(str(outfile))
@@ -185,16 +191,24 @@ class LiveRecorder:
         stem = live_filename(live.title or "直播")
         if part:
             stem += f"_part{part:02d}"
-        outfile = folder / f"{stem}.{self.fmt}"
-        cmd = self.build_cmd(live, outfile)
+
+        # mp4 / mov 不能直接边录边写：进程被杀或断电时 moov 还没写进去，
+        # 整个文件就成了「格式错误」。所以先录成 ts（断了也能播），
+        # 录完再 -c copy 转封装，秒级完成、不损失画质。
+        crash_safe = self.fmt in ("mp4", "mov")
+        record_fmt = "ts" if crash_safe else self.fmt
+        outfile = folder / f"{stem}.{record_fmt}"
+        cmd = self.build_cmd(live, outfile, record_fmt=record_fmt)
 
         self._stop_requested = False
         logger.info("开始录制: %s", outfile.name)
 
+        spawn = compat.popen_kwargs(isolate_console=True)
+        # 需要能往 ffmpeg 的 stdin 发 'q' 让它优雅收尾，覆盖掉默认的 DEVNULL
+        spawn["stdin"] = subprocess.PIPE
         proc = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, encoding="utf-8", errors="replace",
-            **compat.popen_kwargs(isolate_console=True))
+            text=True, encoding="utf-8", errors="replace", **spawn)
         self._proc = proc
 
         stderr_tail: Deque[str] = deque(maxlen=30)
@@ -214,8 +228,15 @@ class LiveRecorder:
                 if proc.poll() is not None:
                     break
                 if self._stop_requested:
-                    compat.kill_process_tree(proc)
-                    proc.wait(timeout=5)
+                    # 先让 ffmpeg 自己收尾（写 moov / 刷新索引），8 秒还没退再强杀
+                    self._ask_quit(proc)
+                    deadline = time.monotonic() + 8
+                    while proc.poll() is None and time.monotonic() < deadline:
+                        time.sleep(0.2)
+                    if proc.poll() is None:
+                        logger.warning("ffmpeg 未在 8 秒内退出，强制结束")
+                        compat.kill_process_tree(proc)
+                        proc.wait(timeout=5)
                     break
                 if (self.max_duration
                         and time.monotonic() - started
@@ -241,13 +262,22 @@ class LiveRecorder:
                 t.join(timeout=3)
             self._proc = None
 
-        produced = self._collect_outputs(folder, stem)
+        produced = self._collect_outputs(folder, stem, record_fmt)
         total = sum(p.stat().st_size for p in produced)
         logger.info("录制结束: %s（%.1f MB）", outfile.name, total / 1024 / 1024)
 
+        def _finish(paths: List[Path]) -> Path:
+            """收尾：需要的话把 ts 转封装成 mp4，返回最终产物。"""
+            if crash_safe and paths:
+                remuxed = [self._remux(item, self.fmt) for item in paths]
+                kept = [p for p in remuxed if p is not None] or paths
+                return kept[-1]
+            return paths[-1] if paths else outfile
+
         if self._stop_requested:
-            # 手动停止：即使文件偏小也保留，用户可能只是想抢录一小段
-            return produced[-1] if produced else outfile
+            # 手动停止：即使文件偏小也保留，用户可能只是想抢录一小段。
+            # 但同样要走转封装——之前这里直接 return，录出来的还是 ts。
+            return _finish(produced)
 
         # 定时录几秒产出本来就小，别把正常的短视频误判成 403 删掉；
         # 403 / 流地址失效通常连文件都写不出来（0 字节），4KB 足够区分。
@@ -261,22 +291,67 @@ class LiveRecorder:
                 f"产出 {total} 字节）",
                 detail="\n".join(list(stderr_tail)[-8:]))
 
-        return produced[-1] if self.segment_seconds else outfile
+        return _finish(produced)
 
     def stop(self) -> None:
-        """外部请求停止录制。"""
+        """外部请求停止录制。
+
+        先给 ffmpeg 发 ``q`` 让它自己收尾（写索引），等待几秒再强制结束；
+        直接 kill 会让 mp4/mov 这类必须写 moov 的容器报废。
+        """
         self._stop_requested = True
-        if self._proc:
-            compat.kill_process_tree(self._proc)
+        proc = self._proc
+        if proc is None or proc.poll() is not None:
+            return
+        self._ask_quit(proc)
+
+    def _remux(self, src: Path, target_fmt: str) -> Optional[Path]:
+        """无损转封装（-c copy）：ts → mp4，几秒钟搞定，画质一点不掉。
+
+        失败就保留原 ts（ts 任何播放器都能放），不让用户白录一场。
+        """
+        dst = src.with_suffix(f".{target_fmt}")
+        base = [self.ffmpeg, "-hide_banner", "-loglevel", "error",
+                "-nostdin", "-y", "-i", str(src)]
+        tail = ["-c", "copy", "-movflags", "+faststart", str(dst)]
+        for extra in ([], ["-bsf:a", "aac_adtstoasc"]):
+            try:
+                proc = subprocess.run(base + extra + tail, capture_output=True,
+                                      text=True, encoding="utf-8",
+                                      errors="replace", timeout=600,
+                                      **compat.popen_kwargs(isolate_console=True))
+            except (OSError, subprocess.SubprocessError) as exc:
+                logger.warning("转封装失败（%s）：%s", src.name, exc)
+                return None
+            if proc.returncode == 0 and dst.is_file() and dst.stat().st_size:
+                src.unlink(missing_ok=True)
+                logger.info("已转封装为 %s", dst.name)
+                return dst
+            logger.debug("转封装尝试失败：%s", (proc.stderr or "").strip()[:200])
+        dst.unlink(missing_ok=True)
+        logger.warning("转封装 %s 失败，保留原 ts 文件", src.name)
+        return None
+
+    @staticmethod
+    def _ask_quit(proc: subprocess.Popen) -> None:
+        """给 ffmpeg 发 ``q``：它会正常收尾并写索引，比 kill 安全。"""
+        try:
+            if proc.stdin:
+                proc.stdin.write("q")
+                proc.stdin.flush()
+        except (OSError, ValueError):
+            pass
 
     # ------------------------------------------------------------------
     # 内部工具
     # ------------------------------------------------------------------
 
-    def _collect_outputs(self, folder: Path, stem: str) -> List[Path]:
+    def _collect_outputs(self, folder: Path, stem: str,
+                         fmt: Optional[str] = None) -> List[Path]:
+        ext = (fmt or self.fmt).lstrip(".").lower()
         if self.segment_seconds:
-            return sorted(Path(folder).glob(f"{stem}_*.{self.fmt}"))
-        target = Path(folder) / f"{stem}.{self.fmt}"
+            return sorted(Path(folder).glob(f"{stem}_*.{ext}"))
+        target = Path(folder) / f"{stem}.{ext}"
         return [target] if target.is_file() else []
 
     def _pump_progress(self, stream) -> None:

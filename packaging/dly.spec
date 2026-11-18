@@ -173,3 +173,16 @@ coll = COLLECT(
     upx=False,
     name=APP_NAME,
 )
+
+# PyInstaller 会把收集到的二进制重新打包改写；在这台机器上 ffprobe.exe 被改写后
+# 运行直接 0xC0000005（ffmpeg 正常）。构建完用原始可执行文件覆盖，
+# 保证 ffprobe 能正常读时长/编码（下载和录制都依赖它）。
+import shutil as _shutil
+
+_out_bin = Path(DISTPATH) / APP_NAME / "_internal" / "bin"
+if _out_bin.is_dir():
+    for _tool in ("ffmpeg", "ffprobe"):
+        _source_tool = find_tool(_tool)
+        if _source_tool:
+            _shutil.copy2(_source_tool, _out_bin / f"{_tool}.exe")
+            print(f"[打包修复] 覆盖 {_tool}: {_source_tool}")
