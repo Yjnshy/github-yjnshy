@@ -113,7 +113,7 @@ class AppState:
         self.monitor = None
         self.desktop = False          # 桌面窗口模式下关窗即退出，前端不显示浏览器模式的退出提示
         self.window_actions: Dict[str, Any] = {}   # 自绘标题栏的窗口操作（桌面模式由 desktop.launch 注入）
-        self.new_results = 0       # 上次查看历史后新完成的下载 / 录制数（铃铛红点）
+        self.new_results = self._load_new_results()  # 上次查看历史后新完成的下载 / 录制数（铃铛红点）
         self.last_request = time.monotonic()   # 最近一次收到 HTTP 请求的时刻（浏览器模式空闲自退用）
         self._quit = threading.Event()
         # 独立于 recorder 内部状态的停止信号：自动续录的探测间隙里也要能停下
@@ -165,6 +165,29 @@ class AppState:
             })
         return rows
 
+    @staticmethod
+    def _unread_file():
+        from dly.core import paths
+        return paths.data_dir() / "unread.json"
+
+    @classmethod
+    def _load_new_results(cls) -> int:
+        try:
+            import json
+            data = json.loads(cls._unread_file().read_text(encoding="utf-8"))
+            return max(0, min(99, int(data.get("new_results") or 0)))
+        except Exception:  # noqa: BLE001 文件不存在 / 坏了就当 0
+            return 0
+
+    def _save_new_results(self) -> None:
+        try:
+            import json
+            self._unread_file().write_text(
+                json.dumps({"new_results": self.new_results}, ensure_ascii=False),
+                encoding="utf-8")
+        except Exception:  # noqa: BLE001 写不了不影响主流程
+            pass
+
     def _save_history(self) -> None:
         try:
             path = self._history_file()
@@ -198,6 +221,7 @@ class AppState:
                 del self.history[: len(self.history) - MAX_HISTORY]
             if status in ("完成", "已停止"):
                 self.new_results = min(99, self.new_results + 1)
+                self._save_new_results()
             self._save_history()
             return self._history_seq
 
@@ -216,6 +240,7 @@ class AppState:
                             row.get("status") not in ("录制中", "下载中"):
                         if fields.get("status") in ("完成", "已停止"):
                             self.new_results = min(99, self.new_results + 1)
+                            self._save_new_results()
                         self._save_history()
                     return
 
@@ -1093,6 +1118,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/history/seen":
             with self.state._lock:
                 self.state.new_results = 0
+                self.state._save_new_results()
             self._json({"ok": True})
             return
 

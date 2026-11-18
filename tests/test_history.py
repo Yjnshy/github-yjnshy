@@ -90,7 +90,9 @@ def test_history_survives_app_restart():
     assert second.history[-1]["path"] == "/videos/a.mp4"
 
 
-def test_new_results_counter_for_bell_badge():
+def test_new_results_counter_for_bell_badge(monkeypatch, tmp_path):
+    from dly.core import paths
+    monkeypatch.setattr(paths, "data_dir", lambda: tmp_path)
     state = AppState()
     assert state.new_results == 0
 
@@ -112,3 +114,15 @@ def test_new_results_counter_for_bell_badge():
     assert state.new_results == 99
     state.add_history("record", "直播", "/tmp/d.ts", 1, "完成")
     assert state.new_results == 99
+
+
+def test_new_results_persists_across_restart(monkeypatch, tmp_path):
+    from dly.core import paths
+
+    monkeypatch.setattr(paths, "data_dir", lambda: tmp_path)
+    state = AppState()
+    state.add_history("download", "完成的任务", "/tmp/a.mp4", 1, "完成")
+    assert state.new_results == 1
+
+    restarted = AppState()
+    assert restarted.new_results == 1
