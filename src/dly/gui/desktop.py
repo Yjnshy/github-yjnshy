@@ -15,6 +15,8 @@ from __future__ import annotations
 import ctypes
 import logging
 import os
+import subprocess
+import sys
 import threading
 import time
 from ctypes import wintypes
@@ -128,13 +130,12 @@ def _load_webview():
 
 
 def _ensure_minimize_style(window) -> None:
-    """无边框窗口默认没有 WS_MINIMIZEBOX，任务栏点了只会聚焦、不会最小化。
+    """给所有同名顶层窗口补 WS_MINIMIZEBOX / WS_MAXIMIZEBOX。
 
-    补上最小化 / 最大化样式位，恢复任务栏图标的正常开关行为。
+    实测无边框窗口缺这两个样式位时，任务栏图标点了只会聚焦、不会最小化。
+    同名窗口可能有多个（临时窗口 / WebView2 宿主），所以全部处理。
     """
     user32 = ctypes.windll.user32
-    # 不要信 window.native.Handle：它可能是 WebView2 子窗口，改了也没用。
-    # 按标题找顶层窗口最稳。
     ENUM = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
     found = []
 
@@ -148,22 +149,18 @@ def _ensure_minimize_style(window) -> None:
         return True
 
     user32.EnumWindows(ENUM(cb), 0)
-    hwnd = found[0] if found else 0
-    if not hwnd:
-        # 某些会话里 EnumWindows 拿不到自己的窗口，直接按标题找
-        for title in (WINDOW_TITLE, "帅羊羊DLY", "DLY"):
-            candidate = user32.FindWindowW(None, title)
-            if candidate:
-                hwnd = candidate
-                break
-    if not hwnd:
-        return
-    style = user32.GetWindowLongPtrW(hwnd, -16)      # GWL_STYLE
-    wanted = 0x20000 | 0x10000                       # MINIMIZEBOX | MAXIMIZEBOX
-    if not (style & wanted):
-        user32.SetWindowLongPtrW(hwnd, -16, style | wanted)
-        user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0,
-                            0x0001 | 0x0002 | 0x0040)  # NOMOVE|NOSIZE|FRAMECHANGED
+    for title in (WINDOW_TITLE, "帅羊羊DLY", "DLY"):
+        candidate = user32.FindWindowW(None, title)
+        if candidate and candidate not in found:
+            found.append(candidate)
+
+    wanted = 0x20000 | 0x10000
+    for hwnd in found:
+        style = user32.GetWindowLongPtrW(hwnd, -16)
+        if (style & wanted) != wanted:
+            user32.SetWindowLongPtrW(hwnd, -16, style | wanted)
+            user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0,
+                                0x0001 | 0x0002 | 0x0040)
 
 
 def _focus_existing_instance() -> bool:
@@ -228,6 +225,13 @@ def launch(debug: bool = False) -> None:
         else:
             window.maximize()
         maximized["value"] = not maximized["value"]
+
+    if os.name == "nt" and getattr(sys, "frozen", False):
+        # 独立进程改样式最可靠（主程序线程里改不生效）
+        subprocess.Popen([sys.executable, "--patch-window-style"],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         creationflags=getattr(ctypes.windll.user32,
+                                               "CREATE_NO_WINDOW", 0))
 
     app.state.window_actions = {
         "minimize": window.minimize,

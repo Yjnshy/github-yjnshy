@@ -51,6 +51,12 @@ def main() -> int:
 
         return login_window.main()
 
+    # 一次性小助手：独立进程给无边框主窗口补最小化样式位
+    if "--patch-window-style" in sys.argv:
+        from dly.gui import window_style_helper
+
+        return window_style_helper.main()
+
     try:
         from dly.gui import launch
 

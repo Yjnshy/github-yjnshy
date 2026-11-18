@@ -846,9 +846,9 @@
       <span class="title-sep"></span>
       <div class="title-menus">
         <button type="button" onclick="activateTab('settings')">编辑(E)</button>
-        <button type="button" onclick="toggleDlyPopover('window-popover')">窗口(W)</button>
-        <button type="button" onclick="showHelp()">帮助(H)</button>
-        <button type="button" onclick="showAbout()">关于(A)</button>
+        <button class="popover-trigger" type="button" onclick="toggleDlyPopover('window-popover')">窗口(W)</button>
+        <button class="popover-trigger" type="button" onclick="showHelp()">帮助(H)</button>
+        <button class="popover-trigger" type="button" onclick="showAbout()">关于(A)</button>
       </div>
     </div>
     <div class="title-right">
@@ -925,7 +925,7 @@
         </svg>
         <span class="bell-badge" id="bell-badge" hidden>0</span>
       </button>
-      <button class="side-bell side-computer" type="button" onclick="openLoginPopover()"
+      <button class="side-bell side-computer popover-trigger" type="button" onclick="openLoginPopover()"
               title="平台账号登录" aria-label="平台账号登录">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16.5V20"/>
@@ -1679,6 +1679,13 @@ activateTab = function(name) {
     if (root && root.value && !$('file-tree').childElementCount) loadTreeRoot();
   }
 };
+
+document.addEventListener('mousedown', e => {
+  const pop = e.target.closest ? e.target.closest('.popover') : null;
+  const trigger = e.target.closest ? e.target.closest('.popover-trigger') : null;
+  if (pop || trigger) return;
+  document.querySelectorAll('.popover.show').forEach(p => p.classList.remove('show'));
+});
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') document.querySelectorAll('.popover.show')

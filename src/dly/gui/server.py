@@ -1134,6 +1134,45 @@ def _make_server(state: AppState) -> ThreadingHTTPServer:
     raise RuntimeError(f"无法启动本地服务：{last_error}")
 
 
+def _ensure_minimize_style_loop(state: "AppState") -> None:
+    """无边框窗口缺 WS_MINIMIZEBOX 时任务栏点不动；常驻补样式位。"""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        ENUM = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+        wanted = 0x20000 | 0x10000
+        while not state.quit_requested:
+            time.sleep(1)
+            if not state.desktop:
+                continue
+            found = []
+
+            def cb(h, _):
+                n = user32.GetWindowTextLengthW(h)
+                if n and user32.IsWindowVisible(h):
+                    buf = ctypes.create_unicode_buffer(n + 1)
+                    user32.GetWindowTextW(h, buf, n + 1)
+                    if "帅羊羊DLY" in buf.value:
+                        found.append(h)
+                return True
+
+            try:
+                user32.EnumWindows(ENUM(cb), 0)
+                for h in found:
+                    style = user32.GetWindowLongPtrW(h, -16)
+                    if (style & wanted) != wanted:
+                        user32.SetWindowLongPtrW(h, -16, style | wanted)
+                        user32.SetWindowPos(h, 0, 0, 0, 0, 0,
+                                            0x0001 | 0x0002 | 0x0040)
+            except Exception:  # noqa: BLE001
+                continue
+    except Exception:  # noqa: BLE001
+        return
+
+
 class AppContext:
     """一次界面运行所需的全部资源：共享状态、HTTP 服务与监听线程。"""
 
@@ -1148,6 +1187,10 @@ class AppContext:
 
     def start(self) -> None:
         self._thread.start()
+        if self.state.desktop:
+            threading.Thread(target=_ensure_minimize_style_loop,
+                             args=(self.state,), daemon=True,
+                             name="minimize-style").start()
 
     def wait(self, interval: float = 0.4) -> None:
         """阻塞到用户请求退出（关窗口或请求 /api/quit）。"""
