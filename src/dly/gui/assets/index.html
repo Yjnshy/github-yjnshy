@@ -564,8 +564,12 @@
   /* 侧栏底部：只有两个圆形图标按钮，收起侧栏也照样能点 */
   .side-bottom-row { display: flex; gap: 6px; }
   .side-bottom-row .side-bell {
-    width: 42px; height: 38px; flex: none; padding: 0;
-    justify-content: center; border-radius: 10px;
+    width: 38px; height: 36px; flex: none; padding: 0;
+    justify-content: center; border: 0; border-radius: 50%;
+    background: transparent;
+  }
+  .side-bottom-row .side-bell:hover {
+    background: var(--hover); border: 0; color: var(--text);
   }
   .side-computer { color: var(--accent-ink); }
   button, input, select, textarea, a, .side-bell {
@@ -832,7 +836,7 @@
       <span class="title-sep"></span>
       <div class="title-menus">
         <button type="button" onclick="activateTab('settings')">编辑(E)</button>
-        <button type="button" onclick="togglePopover('window-popover')">窗口(W)</button>
+        <button type="button" onclick="toggleDlyPopover('window-popover')">窗口(W)</button>
         <button type="button" onclick="showHelp()">帮助(H)</button>
         <button type="button" onclick="showAbout()">关于(A)</button>
       </div>
@@ -2546,7 +2550,7 @@ async function windowAction(action) {
   catch (e) { notify(e.message); }
 }
 
-function togglePopover(id) {
+function toggleDlyPopover(id) {
   const el = $(id);
   if (el && el.classList.contains('show')) closePopover(id);
   else openPopover(id);

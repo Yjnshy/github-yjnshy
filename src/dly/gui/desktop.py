@@ -124,63 +124,57 @@ def _load_webview():
     return webview
 
 
-def _taskbar_button_rect(hwnd: int):
-    """找到本程序在 Windows 任务栏上那个按钮的屏幕矩形。"""
+
+
+def _find_hwnd(window) -> int:
+    """兼容 Python.NET 的 IntPtr / int / 找不到句柄三种情况。"""
     try:
-        user32 = ctypes.windll.user32
-        tray = user32.FindWindowW("Shell_TrayWnd", None)
-        for cls in ("ReBarWindow32", "MSTaskSwWClass", "MSTaskListWClass"):
-            tray = user32.FindWindowExW(tray, None, cls, None)
-            if not tray:
-                return None
+        handle = window.native.Handle
+        h = int(handle)
+        if h and ctypes.windll.user32.IsWindow(h):
+            return h
+    except Exception:  # noqa: BLE001
+        pass
 
-        pid = wintypes.DWORD()
-        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-        found = []
-
-        ENUM = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
-
-        def cb(child, _):
-            child_pid = wintypes.DWORD()
-            user32.GetWindowThreadProcessId(child, ctypes.byref(child_pid))
-            if child_pid.value != pid.value:
-                return True
-            rect = wintypes.RECT()
-            if user32.GetWindowRect(child, ctypes.byref(rect)):
-                if rect.right > rect.left and rect.bottom > rect.top:
-                    found.append((rect.left, rect.top, rect.right, rect.bottom))
-            return True
-
-        user32.EnumChildWindows(tray, ENUM(cb), 0)
-        return found[0] if found else None
-    except Exception:  # noqa: BLE001 任务栏结构变了就放弃这次轮询
-        return None
-
-
-def _watch_taskbar_clicks(window) -> None:
-    """无边框窗口在 Win11 上点任务栏图标有时不还原，自己兜一下。"""
     user32 = ctypes.windll.user32
+    ENUM = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+    found = []
+
+    def cb(hwnd, _):
+        n = user32.GetWindowTextLengthW(hwnd)
+        if n and user32.IsWindowVisible(hwnd):
+            buf = ctypes.create_unicode_buffer(n + 1)
+            user32.GetWindowTextW(hwnd, buf, n + 1)
+            if "帅羊羊DLY" in buf.value:
+                found.append(hwnd)
+        return True
+
+    user32.EnumWindows(ENUM(cb), 0)
+    return found[0] if found else 0
+
+
+def _watch_minimize(window, state: dict) -> None:
+    """点任务栏图标不该把窗口缩掉：除主动最小化外，一律还原并置前。
+
+    Win11 的任务栏按钮是 XAML 元素、拿不到 HWND，所以不走矩形判断，
+    直接看窗口是不是进了最小化状态。
+    """
+    user32 = ctypes.windll.user32
+    hwnd = 0
     while True:
-        time.sleep(0.15)
+        time.sleep(0.25)
         try:
-            hwnd = int(window.native.Handle)
-            if not user32.IsWindow(hwnd):
+            if not hwnd:
+                hwnd = _find_hwnd(window)
+            if not hwnd or not user32.IsWindow(hwnd):
                 return
-            # 只有在按钮被按下、且鼠标确实停在本程序任务栏按钮上时才处理
-            if not (user32.GetAsyncKeyState(0x01) & 0x8000):
-                continue
-            pos = wintypes.POINT()
-            user32.GetCursorPos(ctypes.byref(pos))
-            rect = _taskbar_button_rect(hwnd)
-            if not rect:
-                continue
-            left, top, right, bottom = rect
-            if not (left <= pos.x <= right and top <= pos.y <= bottom):
-                continue
             if user32.IsIconic(hwnd):
-                user32.ShowWindow(hwnd, 9)      # SW_RESTORE
-            user32.SetForegroundWindow(hwnd)
-        except Exception:  # noqa: BLE001 窗口关闭时就退出轮询
+                if not state["allow_minimize"]:
+                    user32.ShowWindow(hwnd, 9)      # SW_RESTORE
+                    user32.SetForegroundWindow(hwnd)
+            else:
+                state["allow_minimize"] = False
+        except Exception:  # noqa: BLE001 窗口关闭时退出轮询
             return
 
 
@@ -215,14 +209,20 @@ def launch(debug: bool = False) -> None:
             window.maximize()
         maximized["value"] = not maximized["value"]
 
+    minimize_state = {"allow_minimize": False}
+
+    def _minimize() -> None:
+        minimize_state["allow_minimize"] = True
+        window.minimize()
+
     app.state.window_actions = {
-        "minimize": window.minimize,
+        "minimize": _minimize,
         "maximize": _toggle_maximize,
         "close": window.destroy,
     }
 
     if os.name == "nt":
-        threading.Thread(target=_watch_taskbar_clicks, args=(window,),
+        threading.Thread(target=_watch_minimize, args=(window, minimize_state),
                          daemon=True, name="taskbar-focus").start()
 
     def _quit_watcher() -> None:
