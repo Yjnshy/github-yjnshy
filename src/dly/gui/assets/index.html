@@ -475,6 +475,11 @@
   .task-row.clickable { cursor: pointer; }
   .task-row.clickable:hover { background: var(--hover); }
   .task-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .task-kind {
+    color: var(--accent-ink); background: var(--accent-soft);
+    justify-self: start; padding: 1px 7px; border-radius: 8px; font-size: 11px;
+    white-space: nowrap;
+  }
   .task-time, .task-size {
     color: var(--muted-ink); font-variant-numeric: tabular-nums;
     white-space: nowrap;
@@ -517,6 +522,66 @@
     color: var(--muted-ink); cursor: pointer;
   }
   .mini-btn:hover { background: var(--hover); color: var(--text); }
+
+  /* ---------------- 标题栏（仿 WorkBuddy） ---------------- */
+  .app-titlebar {
+    height: 38px; flex: none; display: flex; align-items: center;
+    justify-content: space-between; padding: 0 18px;
+    border-bottom: 1px solid var(--border); background: var(--surface);
+  }
+  .title-brand { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+  .title-brand img { width: 16px; height: 16px; }
+  .title-brand strong { font-weight: 600; color: var(--text); }
+  .title-ver {
+    font-size: 11px; color: var(--muted); background: var(--pill-bg);
+    padding: 1px 6px; border-radius: 8px;
+  }
+  .title-actions { display: flex; align-items: center; gap: 4px; }
+  .title-icon {
+    width: 28px; height: 28px; display: grid; place-items: center;
+    border: 0; border-radius: 7px; background: transparent;
+    color: var(--muted-ink); cursor: pointer;
+  }
+  .title-icon:hover { background: var(--hover); color: var(--text); }
+  .title-icon svg { width: 16px; height: 16px; stroke: currentColor; }
+
+  /* ---------------- 侧栏底部：铃铛 + 小卡片 ---------------- */
+  .side-bell {
+    width: 100%; display: flex; align-items: center; gap: 9px;
+    padding: 8px 10px; margin-bottom: 10px; border: 1px solid var(--border);
+    border-radius: 10px; background: var(--card); color: var(--muted-ink);
+    font-size: 12.5px; cursor: pointer;
+  }
+  .side-bell:hover { background: var(--hover); color: var(--text); }
+  .side-bell svg { width: 17px; height: 17px; stroke: currentColor; }
+  .side-note {
+    padding: 10px 11px; margin-bottom: 10px; border-radius: 10px;
+    background: var(--accent-card); border: 1px solid var(--accent-line);
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .side-note strong { font-size: 12.5px; color: var(--text); font-weight: 600; }
+  .side-note span { font-size: 11.5px; color: var(--muted-ink); line-height: 1.5; }
+  .side-note button {
+    align-self: flex-start; margin-top: 3px; padding: 3px 10px;
+    border: 1px solid var(--accent-line); border-radius: 8px;
+    background: var(--surface-2); color: var(--accent-ink);
+    font-size: 11.5px; cursor: pointer;
+  }
+  .side-note button:hover { background: var(--accent-soft); }
+  body.sidebar-compact .sidebar { width: 64px; padding: 16px 8px 12px; }
+  body.sidebar-compact .brand-text,
+  body.sidebar-compact .side-note,
+  body.sidebar-compact .side-bell span,
+  body.sidebar-compact .side-status,
+  body.sidebar-compact .side-meta,
+  body.sidebar-compact .side-theme { display: none; }
+  body.sidebar-compact .side-bell { justify-content: center; }
+
+  /* 历史表格：比任务表多一列类型 */
+  .history-table .task-head,
+  .history-table .task-row {
+    grid-template-columns: 74px 46px 1fr 66px 68px;
+  }
 
   /* ---------------- 主题切换过渡 ---------------- */
   body, .sidebar, .card, .log, .ctx-menu, .overlay .box, .badge, .pill,
@@ -654,6 +719,19 @@
   <div class="side-spacer"></div>
 
   <div class="side-bottom">
+    <button class="side-bell" type="button" onclick="activateTab('history')"
+            title="历史下载与录制">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/>
+        <path d="M10 20h4a2 2 0 0 1-4 0Z"/>
+      </svg>
+      <span>历史记录</span>
+    </button>
+    <div class="side-note">
+      <strong>记录都在本机</strong>
+      <span>下载与录制会自动留档，关掉程序也不丢</span>
+      <button type="button" onclick="activateTab('history')">查看记录</button>
+    </div>
     <div class="side-status">
       <span id="conn" class="badge">连接中…</span>
       <span id="ffmpeg-badge" class="badge">ffmpeg</span>
@@ -680,6 +758,36 @@
 </div>
 
 <main class="main">
+  <div class="app-titlebar">
+    <div class="title-brand">
+      <img src="logo.png" alt="" aria-hidden="true">
+      <strong>帅羊羊DLY</strong>
+      <span class="title-ver" id="title-version"></span>
+    </div>
+    <div class="title-actions">
+      <button class="title-icon" type="button" title="搜索历史记录"
+              aria-label="搜索历史记录" onclick="openHistory('all', true)">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round">
+          <circle cx="10.8" cy="10.8" r="6.6"/><path d="m16 16 4 4"/>
+        </svg>
+      </button>
+      <button class="title-icon" type="button" title="历史下载与录制"
+              aria-label="历史下载与录制" onclick="openHistory('all')">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/>
+          <path d="M10 20h4a2 2 0 0 1-4 0Z"/>
+        </svg>
+      </button>
+      <button class="title-icon" type="button" title="收起/展开侧栏"
+              aria-label="收起或展开侧栏" onclick="toggleSidebar()">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4.5" width="18" height="15" rx="2"/>
+          <path d="M9 4.5v15"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
   <header class="page-head">
     <div>
       <h1 id="page-title">下载视频</h1>
@@ -927,6 +1035,49 @@
       <div class="card log-card">
         <div class="log-head"><span>值守日志</span><span id="watch-count"></span></div>
         <div class="log" id="watch-log"></div>
+      </div>
+    </section>
+
+    <!-- 历史下载 / 录制 -->
+    <section class="panel" id="panel-history">
+      <div class="card feature">
+        <div class="card-head">
+          <div class="head-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3.5 12a8.5 8.5 0 1 0 2.2-5.7"/><path d="M3.5 4.5V9h4.5"/>
+              <path d="M12 7.5V12l3 1.8"/>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">历史下载与录制</div>
+            <div class="card-sub">点任意一行，直接在资源管理器里定位文件</div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field grow">
+            <span class="label">搜索标题</span>
+            <input type="text" id="his-search" placeholder="输入标题或文件名关键词…">
+          </div>
+          <div class="field" style="min-width:150px">
+            <span class="label">类型</span>
+            <select id="his-kind">
+              <option value="all">全部</option>
+              <option value="download">下载</option>
+              <option value="record">录制</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="card log-card" style="flex:1;min-height:260px">
+        <div class="log-head">
+          <span>全部记录</span>
+          <div class="log-actions">
+            <span id="his-count"></span>
+            <button class="mini-btn" id="his-clear" onclick="clearHistory()">清空记录</button>
+          </div>
+        </div>
+        <div class="task-table history-table" id="his-table"></div>
       </div>
     </section>
 
@@ -1204,6 +1355,9 @@ const PAGE_META = {
   watch:    ['无人值守', '批量盯直播间，开播自动录、下播自动停'],
   settings: ['设置', '默认参数、主题与常用维护都在这里']
 };
+const EXTRA_PAGE_META = {
+  history: ['历史记录', '所有下载与录制都留在本机，点一行定位文件']
+};
 const TAB_NAMES = Object.keys(PAGE_META);
 
 /* 界面偏好：由 /api/state 的 snapshot.settings 下发，保存后本地立即生效 */
@@ -1218,23 +1372,30 @@ function activateTab(name) {
   const leavingSettings = activeTab && activeTab.dataset.tab === 'settings' && name !== 'settings';
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
   document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
-  if (window.FluidNav) window.FluidNav.syncActive(name);
-  const meta = PAGE_META[name];
+  if (window.FluidNav && PAGE_META[name]) window.FluidNav.syncActive(name);
+  const meta = PAGE_META[name] || EXTRA_PAGE_META[name];
   if (meta) { $('page-title').textContent = meta[0]; $('page-sub').textContent = meta[1]; }
   // 设置页已有 Cookie 管理卡片，页头那组在设置页里显得重复
-  $('head-actions').style.display = name === 'settings' ? 'none' : '';
+  $('head-actions').style.display =
+    (name === 'settings' || name === 'history') ? 'none' : '';
   if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name);
   // 改完设置直接切走是最容易丢修改的操作，明确提醒一次
   if (leavingSettings && settingsDirty) {
     setTimeout(() => toast('设置页有未保存的修改，回去点「保存设置」才会保留', 'err'), 150);
   }
 }
+['his-kind', 'his-search'].forEach(id => {
+  const el = $(id);
+  if (el) el.addEventListener(id === 'his-search' ? 'input' : 'change',
+                              () => renderHistoryPage(true));
+});
+
 document.querySelectorAll('.tab').forEach(tab => {
   tab.onclick = () => activateTab(tab.dataset.tab);
 });
 window.addEventListener('hashchange', () => {
   const name = location.hash.replace('#', '');
-  if (TAB_NAMES.includes(name)) activateTab(name);
+  if (TAB_NAMES.includes(name) || name === 'history') activateTab(name);
 });
 
 /* ---------------- 请求封装 ---------------- */
@@ -1358,6 +1519,9 @@ function render() {
 
   renderHistory('download', 'dl-table');
   renderHistory('record', 'rec-table');
+  const titleVer = $('title-version');
+  if (titleVer && snapshot.version) titleVer.textContent = 'v' + snapshot.version;
+  renderHistoryPage();
   $('dl-btn').disabled = !!dl.active;
   $('dl-btn').textContent = dl.active ? '下载中…' : '开始下载';
   $('watch-start').disabled = !!watch.active;
@@ -2051,6 +2215,107 @@ function resetSettings() {
   toast('已放弃未保存的修改', 'ok');
 }
 
+
+/* ---------------- 标题栏 / 历史记录页 ---------------- */
+function toggleSidebar() {
+  document.body.classList.toggle('sidebar-compact');
+}
+
+function openHistory(kind, focusSearch) {
+  const sel = $('his-kind');
+  if (sel) sel.value = kind || 'all';
+  activateTab('history');
+  if (focusSearch) {
+    setTimeout(() => { const box = $('his-search'); if (box) box.focus(); }, 120);
+  }
+}
+
+async function clearHistory() {
+  if (!window.confirm('清空所有下载与录制记录？已下载的文件不会被删除。')) return;
+  try {
+    await api('/api/history/clear', {});
+    const box = $('his-table');
+    if (box) box.innerHTML = '';
+    renderHistoryPage(true);
+    toast('记录已清空', 'ok');
+  } catch (e) { notify(e.message); }
+}
+
+const HISTORY_PAGE_SIG = { key: '' };
+
+function renderHistoryPage(force) {
+  if (!snapshot || !$('his-table')) return;
+  const kind = $('his-kind') ? $('his-kind').value : 'all';
+  const keyword = ($('his-search') ? $('his-search').value : '').trim().toLowerCase();
+  const key = kind + '|' + keyword + '|' +
+    (snapshot.history || []).map(r => r.id + r.status + r.size).join(',');
+  if (!force && HISTORY_PAGE_SIG.key === key) return;
+  HISTORY_PAGE_SIG.key = key;
+
+  const rows = (snapshot.history || []).filter(r => {
+    if (kind !== 'all' && r.kind !== kind) return false;
+    if (keyword && !((r.name || '') + (r.path || '')).toLowerCase().includes(keyword)) return false;
+    return true;
+  }).reverse();
+
+  const counter = $('his-count');
+  if (counter) counter.textContent = rows.length ? rows.length + ' 条' : '';
+
+  const box = $('his-table');
+  box.innerHTML = '';
+  const head = document.createElement('div');
+  head.className = 'task-head';
+  ['时间', '类型', '内容', '大小', '状态'].forEach(text => {
+    const cell = document.createElement('span');
+    cell.textContent = text;
+    head.append(cell);
+  });
+  box.append(head);
+
+  if (!rows.length) {
+    const empty = document.createElement('div');
+    empty.className = 'task-empty';
+    empty.textContent = '还没有记录。下载完或录完一场，这里就会出现。';
+    box.append(empty);
+    return;
+  }
+
+  rows.forEach(r => {
+    const row = document.createElement('div');
+    row.className = 'task-row' + (r.path ? ' clickable' : '');
+
+    const time = document.createElement('span');
+    time.className = 'task-time';
+    time.textContent = fmtTaskTime(r.at);
+
+    const type = document.createElement('span');
+    type.className = 'task-kind';
+    type.textContent = r.kind === 'record' ? '录制' : '下载';
+
+    const name = document.createElement('span');
+    name.className = 'task-name';
+    name.textContent = r.name || '未命名';
+    name.title = r.path || r.name || '';
+
+    const size = document.createElement('span');
+    size.className = 'task-size';
+    size.textContent = fmtSize(r.size);
+
+    const badge = document.createElement('span');
+    const live = r.status === '录制中' || r.status === '下载中';
+    badge.className = 'task-badge '
+      + (r.status === '完成' ? 'ok' : r.status === '失败' ? 'bad' : live ? 'live' : '');
+    badge.textContent = r.status || '完成';
+
+    row.append(time, type, name, size, badge);
+    if (r.path) {
+      row.title = '点击打开所在位置：' + r.path;
+      row.onclick = () => api('/api/open', { path: r.path }).catch(e => notify(e.message));
+    }
+    box.append(row);
+  });
+}
+
 /* 问号按钮：展开/收起按钮下面的说明文字 */
 function toggleTips(btn) {
   const tips = btn.parentElement ? btn.parentElement.querySelector('.tips') : null;
@@ -2218,7 +2483,7 @@ function mountThemeToggles() {
 }
 
 const initTab = location.hash.replace('#', '');
-if (TAB_NAMES.includes(initTab)) activateTab(initTab);
+if (TAB_NAMES.includes(initTab) || initTab === 'history') activateTab(initTab);
 fillRooms([]);
 mountThemeToggles();
 bindSettingsInputs();

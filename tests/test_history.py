@@ -3,6 +3,18 @@
 from __future__ import annotations
 
 
+import pytest
+
+from dly.gui.server import AppState
+
+
+@pytest.fixture(autouse=True)
+def isolated_history(tmp_path, monkeypatch):
+    """历史现在会落盘，测试必须隔离到临时目录。"""
+    monkeypatch.setattr(AppState, "_history_file",
+                        staticmethod(lambda: tmp_path / "history.json"))
+
+
 def test_add_history_keeps_order_and_fields():
     from dly.gui.server import AppState
 
@@ -66,3 +78,13 @@ def test_update_history_ignores_unknown_id():
     state.update_history(9999, status="完成")     # 不应抛异常
     state.update_history(0, status="完成")
     assert state.history[-1]["status"] == "录制中"
+
+
+def test_history_survives_app_restart():
+    """关掉程序再打开，历史下载/录制还在。"""
+    first = AppState()
+    first.add_history("download", "昨天的视频", "/videos/a.mp4", 4096, "完成")
+
+    second = AppState()
+    assert second.history[-1]["name"] == "昨天的视频"
+    assert second.history[-1]["path"] == "/videos/a.mp4"

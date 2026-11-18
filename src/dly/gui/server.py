@@ -40,6 +40,7 @@ from dly import __version__
 from dly.core.compat import open_folder
 from dly.core.config import (config_file_path, load_config,
                              save_settings, settings_from_config)
+from dly.core import paths
 from dly.core.ffmpeg import find_ffmpeg
 from dly.core.logging import setup_logging
 from dly.core.transcode import FPS_CHOICES, normalize_fps
@@ -50,7 +51,7 @@ logger = logging.getLogger(__name__)
 HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 PORT_RANGE = 20
-MAX_HISTORY = 60
+MAX_HISTORY = 200
 MAX_EVENTS = 1200
 
 # 录制时长的单位换算：界面可填 30 s / 30 min / 1 h，内部一律按秒交给 ffmpeg
@@ -116,8 +117,9 @@ class AppState:
         # 独立于 recorder 内部状态的停止信号：自动续录的探测间隙里也要能停下
         self.record_stop = threading.Event()
         # 任务历史：界面把它画成表格，点一行就能跳到该文件所在目录
-        self.history: List[Dict[str, Any]] = []
-        self._history_seq = 0
+        self.history: List[Dict[str, Any]] = self._load_history()
+        self._history_seq = max((int(r.get("id") or 0)
+                                 for r in self.history), default=0)
 
     # ---- 事件流 ----
 
@@ -132,6 +134,45 @@ class AppState:
             self._next_id += 1
             if len(self._events) > MAX_EVENTS:
                 del self._events[: len(self._events) - MAX_EVENTS // 2]
+
+    @staticmethod
+    def _history_file() -> Path:
+        return paths.data_dir() / "history.json"
+
+    @classmethod
+    def _load_history(cls) -> List[Dict[str, Any]]:
+        """从磁盘读回历史记录（换一次进程也还在）。"""
+        try:
+            data = json.loads(cls._history_file().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+        if not isinstance(data, list):
+            return []
+        rows = []
+        for item in data[-MAX_HISTORY:]:
+            if not isinstance(item, dict) or not item.get("kind"):
+                continue
+            rows.append({
+                "id": int(item.get("id") or 0),
+                "kind": str(item.get("kind")),
+                "name": str(item.get("name") or ""),
+                "path": str(item.get("path") or ""),
+                "size": int(item.get("size") or 0),
+                "status": str(item.get("status") or "完成"),
+                "at": float(item.get("at") or 0),
+            })
+        return rows
+
+    def _save_history(self) -> None:
+        try:
+            path = self._history_file()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(self.history, ensure_ascii=False, indent=1),
+                           encoding="utf-8")
+            os.replace(tmp, path)
+        except OSError as exc:
+            logger.debug("保存历史记录失败: %s", exc)
 
     def add_history(self, kind: str, name: str, path: str = "",
                     size: int = 0, status: str = "完成") -> int:
@@ -153,6 +194,7 @@ class AppState:
             })
             if len(self.history) > MAX_HISTORY:
                 del self.history[: len(self.history) - MAX_HISTORY]
+            self._save_history()
             return self._history_seq
 
     def update_history(self, entry_id: int, **fields: Any) -> None:
@@ -165,6 +207,10 @@ class AppState:
                     if "size" in fields:
                         fields["size"] = int(fields["size"] or 0)
                     row.update(fields)
+                    # 进度刷新（只有 size 在变）不必每次落盘；落终态时再写
+                    if ("path" in fields or "status" in fields) and \
+                            row.get("status") not in ("录制中", "下载中"):
+                        self._save_history()
                     return
 
     def events_since(self, after: int) -> List[Dict[str, Any]]:
@@ -644,6 +690,7 @@ class Handler(BaseHTTPRequestHandler):
             "desktop": bool(getattr(self.state, "desktop", False)),
             "logins": sessions.status(),
             "history": list(self.state.history[-MAX_HISTORY:]),
+            "history_path": str(AppState._history_file()),
             "download": self.state.download,
             "record": self.state.record_snapshot(),
             "watch": self.state.watch,
@@ -932,6 +979,13 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 _PICK_LOCK.release()
             self._json({"path": picked, "cancelled": not picked})
+            return
+
+        if path == "/api/history/clear":
+            with self.state._lock:
+                self.state.history.clear()
+            self.state._save_history()
+            self._json({"ok": True})
             return
 
         if path == "/api/open":
