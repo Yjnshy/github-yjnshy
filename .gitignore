@@ -36,3 +36,12 @@ desktop.ini
 packaging/icon_candidates/
 packaging/make_icon_candidates.py
 packaging/make_icon_y_variants.py
+
+# ---- 本地临时 / 打包中间产物 ----
+.ptmp/
+.pytest-tmp/
+build_pack_*/
+build_release/
+_pack*.log
+_test*.log
+dl_check*.js
