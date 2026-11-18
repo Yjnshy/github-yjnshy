@@ -135,7 +135,28 @@ def launch(debug: bool = False) -> None:
         x=x, y=y,
         min_size=(min(MIN_SIZE[0], width), min(MIN_SIZE[1], height)),
         text_select=True,
+        # 去掉系统标题栏：界面里那一条自绘标题栏才是真正的最顶栏。
+        # easy_drag 让标题栏空白处也能拖动窗口（输入框 / 按钮不受影响）。
+        frameless=True,
+        easy_drag=True,
+        shadow=True,
     )
+
+    # 自绘标题栏的最小化 / 最大化 / 关闭由本地服务转发到窗口对象
+    maximized = {"value": False}
+
+    def _toggle_maximize() -> None:
+        if maximized["value"]:
+            window.restore()
+        else:
+            window.maximize()
+        maximized["value"] = not maximized["value"]
+
+    app.state.window_actions = {
+        "minimize": window.minimize,
+        "maximize": _toggle_maximize,
+        "close": window.destroy,
+    }
 
     def _quit_watcher() -> None:
         """收到退出请求时关掉窗口，让 GUI 主循环能返回。"""

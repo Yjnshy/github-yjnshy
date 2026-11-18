@@ -292,10 +292,11 @@ def test_sidebar_theme_toggle_replaces_quit_button(app):
     ctx, _ = app
     _, html = _get(ctx.url, "/")
     bottom = html.split('<div class="side-bottom">', 1)[1].split('</aside>', 1)[0]
-    assert 'quitApp' not in html
-    # 退出按钮只在浏览器模式显示（初始 hidden，由 snapshot.desktop 切换）
-    assert 'id="quit-btn" class="quit-btn" type="button" hidden' in bottom
-    assert "quit-btn').hidden = !!snapshot.desktop" in html
+    # 退出入口已挪到顶部「窗口(W)」菜单，底部那个永久隐藏
+    assert 'onclick="quitApp()"' in html
+    assert 'id="window-popover"' in html
+    assert "quit-btn').hidden = true" in html
+    assert '.quit-btn[hidden] { display: none !important; }' in html
     assert '<div class="side-links">' not in html
     assert 'id="theme-toggle-mini"' in bottom
     assert (bottom.index('side-status') < bottom.index('id="quit-btn"')
@@ -364,7 +365,7 @@ def test_frozen_fallback_switches_to_browser_mode():
     assert "state.busy()" in server                 # 有任务在跑绝不自动退出
     assert 'if idle >= idle_exit_seconds' in server
     assert '<button id="quit-btn" class="quit-btn" type="button" hidden>退出程序</button>' in html
-    assert "quit-btn').hidden = !!snapshot.desktop" in html
+    assert "quit-btn').hidden = true" in html
 
 
 def test_compat_format_defaults_to_true_and_roundtrips(tmp_path):

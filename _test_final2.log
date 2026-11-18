@@ -1,0 +1,35 @@
+..........s............................................................. [ 29%]
+........................................................................ [ 59%]
+........F.......................................................F....F.. [ 88%]
+............................                                             [100%]
+================================== FAILURES ===================================
+__________________ test_cli_segment_minutes_still_unlimited ___________________
+tests\test_recorder.py:140: in test_cli_segment_minutes_still_unlimited
+    assert "-t" not in joined
+E   AssertionError: assert '-t' not in 'ffmpeg -hid...0\\a_%03d.ts'
+E     
+E     '-t' is contained here:
+E       hy\.pytest-tmp\pytest-of-86173\pytest-0\test_cli_segment_minutes_still0\a_%03d.ts
+E     ?          ++
+_______________ test_sidebar_theme_toggle_replaces_quit_button ________________
+tests\test_settings.py:295: in test_sidebar_theme_toggle_replaces_quit_button
+    assert 'quitApp' not in html
+E   assert 'quitApp' not in '<!DOCTYPE h...n</html>\r\n'
+E     
+E     'quitApp' is contained here:
+E        onclick="quitApp()">退出程序</button>
+E     ?           +++++++
+E         </div>
+E       </div>
+E       ...
+E     
+E     ...Full output truncated, use '-vv' to show
+________________ test_frozen_fallback_switches_to_browser_mode ________________
+tests\test_settings.py:367: in test_frozen_fallback_switches_to_browser_mode
+    assert "quit-btn').hidden = !!snapshot.desktop" in html
+E   assert "quit-btn').hidden = !!snapshot.desktop" in '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-wid...showConfigPath(d.path)).catch(() => {});\npoll();\n</script>\n<script src="fluid-nav.js"></script>\n</body>\n</html>\n'
+=========================== short test summary info ===========================
+FAILED tests/test_recorder.py::test_cli_segment_minutes_still_unlimited - Ass...
+FAILED tests/test_settings.py::test_sidebar_theme_toggle_replaces_quit_button
+FAILED tests/test_settings.py::test_frozen_fallback_switches_to_browser_mode
+3 failed, 240 passed, 1 skipped in 21.37s

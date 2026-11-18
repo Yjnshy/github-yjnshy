@@ -112,6 +112,7 @@ class AppState:
         self.recorder = None
         self.monitor = None
         self.desktop = False          # 桌面窗口模式下关窗即退出，前端不显示浏览器模式的退出提示
+        self.window_actions: Dict[str, Any] = {}   # 自绘标题栏的窗口操作（桌面模式由 desktop.launch 注入）
         self.last_request = time.monotonic()   # 最近一次收到 HTTP 请求的时刻（浏览器模式空闲自退用）
         self._quit = threading.Event()
         # 独立于 recorder 内部状态的停止信号：自动续录的探测间隙里也要能停下
@@ -1014,6 +1015,19 @@ class Handler(BaseHTTPRequestHandler):
                             "truncated": len(found) >= 300})
             except OSError as exc:
                 self._json({"error": f"搜索失败：{exc}"}, 500)
+            return
+
+        if path == "/api/window":
+            action = (data.get("action") or "").strip()
+            handler = self.state.window_actions.get(action)
+            if not handler:
+                self._json({"error": "浏览器模式下不可用"}, 400)
+                return
+            try:
+                handler()
+                self._json({"ok": True})
+            except Exception as exc:  # noqa: BLE001
+                self._json({"error": str(exc)}, 500)
             return
 
         if path == "/api/history/clear":

@@ -1,0 +1,20 @@
+[
+ {
+  "id": 1,
+  "kind": "download",
+  "name": "视频A",
+  "path": "/tmp/a.mp4",
+  "size": 1024,
+  "status": "完成",
+  "at": 1794992464.341321
+ },
+ {
+  "id": 2,
+  "kind": "record",
+  "name": "直播B",
+  "path": "/tmp/b.ts",
+  "size": 2048,
+  "status": "已停止",
+  "at": 1794992464.3593166
+ }
+]
