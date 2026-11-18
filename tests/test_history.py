@@ -106,3 +106,9 @@ def test_new_results_counter_for_bell_badge():
 
     state.new_results = 0
     assert state.new_results == 0
+
+    state.new_results = 98
+    state.add_history("record", "直播", "/tmp/c.ts", 1, "完成")
+    assert state.new_results == 99
+    state.add_history("record", "直播", "/tmp/d.ts", 1, "完成")
+    assert state.new_results == 99

@@ -197,7 +197,7 @@ class AppState:
             if len(self.history) > MAX_HISTORY:
                 del self.history[: len(self.history) - MAX_HISTORY]
             if status in ("完成", "已停止"):
-                self.new_results += 1
+                self.new_results = min(99, self.new_results + 1)
             self._save_history()
             return self._history_seq
 
@@ -215,7 +215,7 @@ class AppState:
                     if ("path" in fields or "status" in fields) and \
                             row.get("status") not in ("录制中", "下载中"):
                         if fields.get("status") in ("完成", "已停止"):
-                            self.new_results += 1
+                            self.new_results = min(99, self.new_results + 1)
                         self._save_history()
                     return
 

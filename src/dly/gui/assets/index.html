@@ -1848,7 +1848,7 @@ function render() {
   const bellBadge = $('bell-badge');
   if (bellBadge) {
     const n = Number(snapshot.new_results || 0);
-    bellBadge.textContent = n > 99 ? '99+' : String(n);
+    bellBadge.textContent = String(Math.min(99, n));
     bellBadge.hidden = n <= 0;
   }
   const setFfmpeg = $('set-ffmpeg');
