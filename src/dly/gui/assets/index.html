@@ -454,6 +454,62 @@
   .login-hint[hidden] { display: none; }
   .login-hint span { flex: 1; min-width: 160px; }
 
+
+  /* ---------------- 任务记录表格 ---------------- */
+  .task-table {
+    display: flex; flex-direction: column; font-size: 12.5px;
+    flex: 1; min-height: 0; overflow-y: auto; background: var(--log-bg);
+  }
+  .task-head, .task-row {
+    display: grid; grid-template-columns: 74px 1fr 68px 50px;
+    gap: 8px; align-items: center; padding: 6px 10px;
+  }
+  .task-head {
+    color: var(--muted); font-size: 11.5px;
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 1;
+    background: var(--log-bg);
+  }
+  .task-row { border-bottom: 1px solid var(--border); color: var(--text); }
+  .task-row:last-child { border-bottom: none; }
+  .task-row.clickable { cursor: pointer; }
+  .task-row.clickable:hover { background: var(--hover); }
+  .task-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .task-time, .task-size {
+    color: var(--muted-ink); font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .task-badge {
+    justify-self: start; padding: 1px 7px; border-radius: 9px;
+    font-size: 11px; background: var(--badge-bg); color: var(--pill-ink);
+  }
+  .task-badge.ok { background: var(--badge-ok-bg); color: var(--ok); }
+  .task-badge.bad { background: var(--badge-bad-bg); color: var(--danger); }
+  .task-empty { padding: 14px 10px; color: var(--muted); font-size: 12.5px; }
+
+  /* ---------------- 说明折叠 ---------------- */
+  .tips-row { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; }
+  .icon-btn {
+    width: 20px; height: 20px; min-width: 20px; padding: 0; border-radius: 50%;
+    border: 1px solid var(--border-strong); background: var(--surface-2);
+    color: var(--muted-ink); font-size: 12px; line-height: 1; cursor: pointer;
+  }
+  .icon-btn:hover { background: var(--hover); color: var(--text); }
+  .icon-btn.on { border-color: var(--accent); color: var(--accent-ink);
+                 background: var(--accent-soft); }
+  .tips {
+    display: none; flex: 1; font-size: 12.5px;
+    color: var(--muted-ink); line-height: 1.75;
+  }
+  .tips.show { display: block; }
+  .log-actions { display: flex; align-items: center; gap: 10px; }
+  .mini-btn {
+    padding: 2px 8px; font-size: 11.5px; border-radius: 8px;
+    border: 1px solid var(--border-strong); background: var(--surface-2);
+    color: var(--muted-ink); cursor: pointer;
+  }
+  .mini-btn:hover { background: var(--hover); color: var(--text); }
+
   /* ---------------- 主题切换过渡 ---------------- */
   body, .sidebar, .card, .log, .ctx-menu, .overlay .box, .badge, .pill,
   input, textarea, select, button {
@@ -689,10 +745,14 @@
           </label>
           <span class="hint" id="dl-hint"></span>
         </div>
-        <p class="hint" style="margin:10px 0 0">
-          帧率选「原帧率」= 原始画质直存，最快；选具体数值会在下载完成后重新编码，
-          速度取决于电脑性能，文件名不变。
-        </p>
+        <div class="tips-row">
+          <button class="icon-btn" title="使用说明" aria-label="使用说明"
+                  onclick="toggleTips(this)">?</button>
+          <div class="tips">
+            帧率选「原帧率」= 原始画质直存，最快；选具体数值会在下载完成后重新编码，
+            速度取决于电脑性能，文件名不变。
+          </div>
+        </div>
       </div>
       <div class="login-hint" id="dl-login-hint" hidden>
         <span>这条链接需要登录才能下载高清或完整内容。登录一次就会记住，不用再操作。</span>
@@ -701,8 +761,15 @@
         <button class="ghost" onclick="startLogin('xiaohongshu', this)">登录小红书</button>
       </div>
       <div class="card log-card">
-        <div class="log-head"><span>运行日志</span><span id="dl-count"></span></div>
-        <div class="log" id="dl-log"></div>
+        <div class="log-head">
+          <span>下载记录</span>
+          <div class="log-actions">
+            <span id="dl-count"></span>
+            <button class="mini-btn" id="dl-log-btn" onclick="toggleRawLog('dl')">详细日志</button>
+          </div>
+        </div>
+        <div class="task-table" id="dl-table"></div>
+        <div class="log" id="dl-log" hidden></div>
       </div>
     </section>
 
@@ -775,13 +842,17 @@
             <input type="checkbox" id="rec-auto-next"> 到点后自动续录下一段
           </label>
         </div>
-        <p class="hint" style="margin:10px 0 0">
-          默认「原画直通」= 原样保存，CPU 几乎不占用；指定帧率会边录边转码，
-          CPU 占用明显升高，配置较低的电脑建议保持原画。<br>
-          录制时长可选秒 / 分钟 / 小时，录满自动停止并保存；填 0 表示不限时，需手动点「停止录制」。
-          <b>默认不勾「自动续录」= 只录这一段就结束</b>；勾选后到点会重新检查直播间，仍在开播就接着录下一段（文件名带 _part02）。<br>
-          抖音直播以匿名方式获取流地址，不会挤掉浏览器 / 手机上的登录（避免提示「账号在别处登录」）。
-        </p>
+        <div class="tips-row">
+          <button class="icon-btn" title="使用说明" aria-label="使用说明"
+                  onclick="toggleTips(this)">?</button>
+          <div class="tips">
+            默认「原画直通」= 原样保存，CPU 几乎不占用；指定帧率会边录边转码，
+            CPU 占用明显升高，配置较低的电脑建议保持原画。<br>
+            录制时长可选秒 / 分钟 / 小时，录满自动停止并保存；填 0 表示不限时，需手动点「停止录制」。
+            <b>默认不勾「自动续录」= 只录这一段就结束</b>；勾选后到点会重新检查直播间，仍在开播就接着录下一段（文件名带 _part02）。<br>
+            抖音直播以匿名方式获取流地址，不会挤掉浏览器 / 手机上的登录（避免提示「账号在别处登录」）。
+          </div>
+        </div>
       </div>
 
       <div class="card status-card">
@@ -793,8 +864,15 @@
       </div>
 
       <div class="card log-card">
-        <div class="log-head"><span>录制日志</span><span id="rec-count"></span></div>
-        <div class="log" id="rec-log"></div>
+        <div class="log-head">
+          <span>录制记录</span>
+          <div class="log-actions">
+            <span id="rec-count"></span>
+            <button class="mini-btn" id="rec-log-btn" onclick="toggleRawLog('rec')">详细日志</button>
+          </div>
+        </div>
+        <div class="task-table" id="rec-table"></div>
+        <div class="log" id="rec-log" hidden></div>
       </div>
     </section>
 
@@ -1219,8 +1297,6 @@ function appendLine(tab, ev) {
   line.textContent = ev.text;
   box.appendChild(line);
   counts[tab] = (counts[tab] || 0) + 1;
-  const counter = $(prefix + '-count');
-  if (counter) counter.textContent = counts[tab] + ' 条';
   while (box.childElementCount > MAX_LINES) box.removeChild(box.firstChild);
   box.scrollTop = box.scrollHeight;
 }
@@ -1271,6 +1347,9 @@ function render() {
   if (recOpen) recOpen.hidden = !(rec.last_file || rec.folder);
   const dlOpen = $('dl-open');
   if (dlOpen) dlOpen.hidden = !(dl.last_file || dl.folder);
+
+  renderHistory('download', 'dl-table');
+  renderHistory('record', 'rec-table');
   $('dl-btn').disabled = !!dl.active;
   $('dl-btn').textContent = dl.active ? '下载中…' : '开始下载';
   $('watch-start').disabled = !!watch.active;
@@ -1962,6 +2041,113 @@ function resetSettings() {
   setDirtyState(false);
   $('set-hint').textContent = '已恢复为已保存的设置';
   toast('已放弃未保存的修改', 'ok');
+}
+
+/* 问号按钮：展开/收起按钮下面的说明文字 */
+function toggleTips(btn) {
+  const tips = btn.parentElement ? btn.parentElement.querySelector('.tips') : null;
+  if (!tips) return;
+  const shown = tips.classList.toggle('show');
+  btn.classList.toggle('on', shown);
+  btn.setAttribute('aria-expanded', shown ? 'true' : 'false');
+}
+
+/* 在「任务表格」和「详细日志」之间切换 */
+function toggleRawLog(which) {
+  const log = $(which + '-log');
+  const table = $(which + '-table');
+  const btn = $(which + '-log-btn');
+  if (!log) return;
+  const showLog = !!log.hidden;
+  log.hidden = !showLog;
+  if (table) table.hidden = showLog;
+  if (btn) {
+    btn.textContent = showLog ? '隐藏日志' : '详细日志';
+    btn.classList.toggle('on', showLog);
+  }
+  if (showLog) log.scrollTop = log.scrollHeight;
+}
+
+function fmtSize(bytes) {
+  if (!bytes) return '';
+  const mb = bytes / 1048576;
+  if (mb >= 1024) return (mb / 1024).toFixed(1) + ' GB';
+  if (mb >= 1) return mb.toFixed(1) + ' MB';
+  return Math.max(1, Math.round(bytes / 1024)) + ' KB';
+}
+
+function fmtTaskTime(ts) {
+  const d = new Date((ts || 0) * 1000);
+  const p2 = n => String(n).padStart(2, '0');
+  return p2(d.getMonth() + 1) + '-' + p2(d.getDate()) + ' '
+       + p2(d.getHours()) + ':' + p2(d.getMinutes());
+}
+
+const HISTORY_SIG = {};
+
+/* 任务记录表格：一行一个产物，点行直接用资源管理器定位文件 */
+function renderHistory(kind, boxId) {
+  const box = $(boxId);
+  if (!box || !snapshot) return;
+  const rows = (snapshot.history || []).filter(r => r.kind === kind).reverse();
+  const sig = rows.map(r => r.id + r.status).join(',');
+  if (HISTORY_SIG[boxId] === sig) return;
+  HISTORY_SIG[boxId] = sig;
+
+  const counter = $(kind === 'record' ? 'rec-count' : 'dl-count');
+  if (counter) counter.textContent = rows.length ? rows.length + ' 条' : '';
+
+  box.innerHTML = '';
+  const head = document.createElement('div');
+  head.className = 'task-head';
+  ['时间', '内容', '大小', '状态'].forEach(text => {
+    const cell = document.createElement('span');
+    cell.textContent = text;
+    head.append(cell);
+  });
+  box.append(head);
+
+  if (!rows.length) {
+    const empty = document.createElement('div');
+    empty.className = 'task-empty';
+    empty.textContent = kind === 'record'
+      ? '还没有录制记录，录完一场会出现在这里'
+      : '还没有下载记录，下完一个会出现在这里';
+    box.append(empty);
+    return;
+  }
+
+  rows.slice(0, 20).forEach(r => {
+    const row = document.createElement('div');
+    row.className = 'task-row' + (r.path ? ' clickable' : '');
+
+    const time = document.createElement('span');
+    time.className = 'task-time';
+    time.textContent = fmtTaskTime(r.at);
+
+    const name = document.createElement('span');
+    name.className = 'task-name';
+    name.textContent = r.name || '未命名';
+    name.title = r.path || r.name || '';
+
+    const size = document.createElement('span');
+    size.className = 'task-size';
+    size.textContent = fmtSize(r.size);
+
+    const badge = document.createElement('span');
+    badge.className = 'task-badge '
+      + (r.status === '完成' ? 'ok' : r.status === '失败' ? 'bad' : '');
+    badge.textContent = r.status || '完成';
+
+    row.append(time, name, size, badge);
+    if (r.path) {
+      row.title = '点击打开所在位置：' + r.path;
+      row.onclick = () => {
+        api('/api/open', { path: r.path }).catch(e => notify(e.message));
+      };
+    }
+    box.append(row);
+  });
 }
 
 /* 打开刚录制/刚下载的文件位置（资源管理器里直接选中该文件） */

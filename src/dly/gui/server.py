@@ -49,6 +49,7 @@ logger = logging.getLogger(__name__)
 HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 PORT_RANGE = 20
+MAX_HISTORY = 60
 MAX_EVENTS = 1200
 
 # 录制时长的单位换算：界面可填 30 s / 30 min / 1 h，内部一律按秒交给 ffmpeg
@@ -113,6 +114,9 @@ class AppState:
         self._quit = threading.Event()
         # 独立于 recorder 内部状态的停止信号：自动续录的探测间隙里也要能停下
         self.record_stop = threading.Event()
+        # 任务历史：界面把它画成表格，点一行就能跳到该文件所在目录
+        self.history: List[Dict[str, Any]] = []
+        self._history_seq = 0
 
     # ---- 事件流 ----
 
@@ -127,6 +131,23 @@ class AppState:
             self._next_id += 1
             if len(self._events) > MAX_EVENTS:
                 del self._events[: len(self._events) - MAX_EVENTS // 2]
+
+    def add_history(self, kind: str, name: str, path: str = "",
+                    size: int = 0, status: str = "完成") -> None:
+        """记一条任务结果（下载 / 录制），供界面表格展示。"""
+        with self._lock:
+            self._history_seq += 1
+            self.history.append({
+                "id": self._history_seq,
+                "kind": kind,
+                "name": str(name),
+                "path": str(path),
+                "size": int(size or 0),
+                "status": status,
+                "at": time.time(),
+            })
+            if len(self.history) > MAX_HISTORY:
+                del self.history[: len(self.history) - MAX_HISTORY]
 
     def events_since(self, after: int) -> List[Dict[str, Any]]:
         with self._lock:
@@ -232,8 +253,15 @@ def _run_download(state: AppState, text: str, quality: str, outdir: str,
             state.download["last_file"] = str(engine.last_outputs[-1])
             state.download["folder"] = str(engine.last_outputs[-1].parent)
             state.download["outputs"] = [str(p) for p in engine.last_outputs]
+            for item in engine.last_outputs:
+                state.add_history("download", Path(item).stem, str(item),
+                                  Path(item).stat().st_size,
+                                  "完成")
         level = "ok" if ok == total and total else "warn"
         state.log("download", f"完成：成功 {ok} / 共 {total}", level)
+        if ok == 0:
+            state.add_history("download", str(text).split()[0][:60], "",
+                              0, "失败")
         if permission_denied["hit"] and ok == 0:
             # 原始报错是一串英文 Errno，普通用户看不懂，这里直说怎么办
             state.log("download",
@@ -368,6 +396,10 @@ def _run_record(state: AppState, url: str, outroot: str,
                 state.set_record(ended_at=time.monotonic(),
                                  last_file=str(path), folder=str(Path(path).parent))
                 state.log("record", f"已保存：{path}", "ok")
+                state.add_history(
+                    "record", live.title or Path(path).stem, str(path),
+                    Path(path).stat().st_size if Path(path).exists() else 0,
+                    "已停止" if state.record_stop.is_set() else "完成")
                 failures = 0
             except RecordingError as exc:
                 state.set_record(ended_at=time.monotonic())
@@ -566,6 +598,7 @@ class Handler(BaseHTTPRequestHandler):
             "ffmpeg": bool(find_ffmpeg(config.ffmpeg_path)),
             "desktop": bool(getattr(self.state, "desktop", False)),
             "logins": sessions.status(),
+            "history": list(self.state.history[-MAX_HISTORY:]),
             "download": self.state.download,
             "record": self.state.record_snapshot(),
             "watch": self.state.watch,
