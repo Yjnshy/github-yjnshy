@@ -126,64 +126,48 @@ def _load_webview():
 
 
 
-def _find_hwnd(window) -> int:
-    """兼容 Python.NET 的 IntPtr / int / 找不到句柄三种情况。"""
-    try:
-        handle = window.native.Handle
-        h = int(handle)
-        if h and ctypes.windll.user32.IsWindow(h):
-            return h
-    except Exception:  # noqa: BLE001
-        pass
 
+def _ensure_minimize_style(window) -> None:
+    """无边框窗口默认没有 WS_MINIMIZEBOX，任务栏点了只会聚焦、不会最小化。
+
+    补上最小化 / 最大化样式位，恢复任务栏图标的正常开关行为。
+    """
     user32 = ctypes.windll.user32
+    # 不要信 window.native.Handle：它可能是 WebView2 子窗口，改了也没用。
+    # 按标题找顶层窗口最稳。
     ENUM = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
     found = []
 
-    def cb(hwnd, _):
-        n = user32.GetWindowTextLengthW(hwnd)
-        if n and user32.IsWindowVisible(hwnd):
+    def cb(h, _):
+        n = user32.GetWindowTextLengthW(h)
+        if n and user32.IsWindowVisible(h):
             buf = ctypes.create_unicode_buffer(n + 1)
-            user32.GetWindowTextW(hwnd, buf, n + 1)
+            user32.GetWindowTextW(h, buf, n + 1)
             if "帅羊羊DLY" in buf.value:
-                found.append(hwnd)
+                found.append(h)
         return True
 
     user32.EnumWindows(ENUM(cb), 0)
-    return found[0] if found else 0
-
-
-def _watch_minimize(window, state: dict) -> None:
-    """点任务栏图标不该把窗口缩掉：除主动最小化外，一律还原并置前。
-
-    Win11 的任务栏按钮是 XAML 元素、拿不到 HWND，所以不走矩形判断，
-    直接看窗口是不是进了最小化状态。
-    """
-    user32 = ctypes.windll.user32
-    hwnd = 0
-    while True:
-        time.sleep(0.25)
-        try:
-            if not hwnd:
-                hwnd = _find_hwnd(window)
-            if not hwnd or not user32.IsWindow(hwnd):
-                return
-            if user32.IsIconic(hwnd):
-                if not state["allow_minimize"]:
-                    user32.ShowWindow(hwnd, 9)      # SW_RESTORE
-                    user32.SetForegroundWindow(hwnd)
-            else:
-                state["allow_minimize"] = False
-        except Exception:  # noqa: BLE001 窗口关闭时退出轮询
-            return
+    hwnd = found[0] if found else 0
+    if not hwnd:
+        # 某些会话里 EnumWindows 拿不到自己的窗口，直接按标题找
+        for title in (WINDOW_TITLE, "帅羊羊DLY", "DLY"):
+            candidate = user32.FindWindowW(None, title)
+            if candidate:
+                hwnd = candidate
+                break
+    if not hwnd:
+        return
+    style = user32.GetWindowLongPtrW(hwnd, -16)      # GWL_STYLE
+    wanted = 0x20000 | 0x10000                       # MINIMIZEBOX | MAXIMIZEBOX
+    if not (style & wanted):
+        user32.SetWindowLongPtrW(hwnd, -16, style | wanted)
+        user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0,
+                            0x0001 | 0x0002 | 0x0040)  # NOMOVE|NOSIZE|FRAMECHANGED
 
 
 def _focus_existing_instance() -> bool:
-    """已经有 DLY 窗口在跑就把它切到前台，自己退出。
-
-    测试时反复启动留下过两个进程，任务栏图标指向旧实例，点了没反应。
-    这里做单实例保护，避免再次出现「有图标但点不动」。
-    """
+    """已有 DLY 窗口时切到前台并退出本次启动，避免重复实例。"""
     if os.name != "nt":
         return False
     user32 = ctypes.windll.user32
@@ -206,7 +190,7 @@ def _focus_existing_instance() -> bool:
 
     user32.EnumWindows(ENUM(cb), 0)
     for hwnd in found:
-        user32.ShowWindow(hwnd, 9)          # SW_RESTORE
+        user32.ShowWindow(hwnd, 9)
         user32.SetForegroundWindow(hwnd)
     return bool(found)
 
@@ -245,21 +229,11 @@ def launch(debug: bool = False) -> None:
             window.maximize()
         maximized["value"] = not maximized["value"]
 
-    minimize_state = {"allow_minimize": False}
-
-    def _minimize() -> None:
-        minimize_state["allow_minimize"] = True
-        window.minimize()
-
     app.state.window_actions = {
-        "minimize": _minimize,
+        "minimize": window.minimize,
         "maximize": _toggle_maximize,
         "close": window.destroy,
     }
-
-    if os.name == "nt":
-        threading.Thread(target=_watch_minimize, args=(window, minimize_state),
-                         daemon=True, name="taskbar-focus").start()
 
     def _quit_watcher() -> None:
         """收到退出请求时关掉窗口，让 GUI 主循环能返回。"""
@@ -274,9 +248,24 @@ def launch(debug: bool = False) -> None:
     threading.Thread(target=_quit_watcher, daemon=True,
                      name="quit-watcher").start()
 
+    def _apply_style() -> None:
+        if os.name == "nt":
+            try:
+                _ensure_minimize_style(window)
+            except Exception:  # noqa: BLE001
+                logger.debug("补窗口样式失败", exc_info=True)
+
+    if os.name == "nt":
+        def _style_loop() -> None:
+            while True:
+                time.sleep(1)
+                _apply_style()
+
+        threading.Thread(target=_style_loop, daemon=True,
+                         name="window-style-loop").start()
+
     try:
-        # debug=True 会打开 DevTools，方便排查界面问题
-        webview.start(debug=debug)
+        webview.start(debug=debug, func=_apply_style)
     except Exception as exc:  # noqa: BLE001 WebView2 缺失等环境问题
         raise DesktopUnavailable(f"桌面窗口启动失败：{exc}") from exc
     finally:
