@@ -206,8 +206,9 @@ def test_player_floats_as_glass_in_tunnel(html):
     assert ".player.floating {" in html
     assert "backdrop-filter: blur(22px) saturate(170%);" in html
     assert "classList.toggle('floating', musicView === 'tunnel' && hasTracks)" in html
-    # 问号弹层里要带上页面副标题那句
-    assert "下载或提取的音频都在这里，点封面就能听" in html
+    # 这句挪进 ? 说明里：页面标题下不再显示，问号弹层的 fallback 里要有
+    assert "music:    ['歌单', '']," in html
+    assert "sub || '下载或提取的音频都在这里，点封面就能听'" in html
 
 
 def test_floating_player_can_be_hidden(html):
@@ -219,6 +220,12 @@ def test_floating_player_can_be_hidden(html):
     # 收起状态只在隧道视图生效，网格视图照常显示
     assert "const collapsed = floating && playerHidden;" in html
     assert "localStorage.setItem('dly.playerHidden'" in html
+    # 空副标题不留空行
+    assert "subEl.hidden = !meta[1];" in html
+    # 「隐藏后怎么调回来」绿色提示只在第一次出现
+    assert "localStorage.getItem('dly.playerHideTipShown') === '1'" in html
+    assert "localStorage.setItem('dly.playerHideTipShown', '1')" in html
+    assert "if (!tipShown) {" in html
 
 
 def test_tunnel_recycles_slots_across_spans_on_fast_scroll(html):
