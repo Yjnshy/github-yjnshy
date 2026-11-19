@@ -3670,13 +3670,18 @@ function closeCoverPicker() {
   coverTargetId = 0;
 }
 
-async function openCoverPicker(id) {
+async function openCoverPicker(id, afterExtract) {
   const modal = $('cover-modal');
   const grid = $('cover-grid');
   if (!modal || !grid) return;
   coverTargetId = id;
   grid.innerHTML = '';
-  $('cover-hint').textContent = '正在从视频里取画面…';
+  const track = (musicLib.tracks || []).find(t => t.id === id);
+  const heading = modal.querySelector('.modal-head h3');
+  if (heading) heading.textContent = track ? '挑一张封面 · ' + track.title : '挑一张封面';
+  $('cover-hint').textContent = afterExtract
+    ? '提取完成。默认用的是视频第一秒，往下挑一张更清楚的：'
+    : '正在从视频里取画面…';
   modal.hidden = false;
   try {
     const data = await api('/api/library/frames', { id, count: 8 });
@@ -3685,7 +3690,9 @@ async function openCoverPicker(id) {
       $('cover-hint').textContent = '这首歌没有原始视频（或缺少 ffmpeg），换不了封面。';
       return;
     }
-    $('cover-hint').textContent = '按视频时间抽了 ' + frames.length + ' 帧，点一张就用它。';
+    $('cover-hint').textContent =
+      (afterExtract ? '提取完成，默认用的是视频第一秒。' : '')
+      + '按视频时间抽了 ' + frames.length + ' 帧，点一张就用它。';
     frames.forEach(frame => {
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -3738,6 +3745,8 @@ async function extractAudioFromVideo() {
     musicLib.tracks = data.tracks;
     renderMusic();
     toast('已提取并加入歌单：' + (data.track && data.track.title || ''), 'ok');
+    // 刚抽出来的封面是第一秒画面，未必好看，直接把挑封面弹出来
+    if (data.track && data.track.id) openCoverPicker(data.track.id, true);
   } catch (e) { toast(e.message, 'err'); }
 }
 

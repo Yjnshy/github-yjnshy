@@ -147,3 +147,10 @@ def test_playback_modes_are_explicit(html):
     # 图标按钮：点一下切换，图标随模式换
     assert 'data-mode="list"' in html and 'data-mode="single"' in html
     assert "function cyclePlayMode(" in html
+
+
+def test_extract_audio_offers_cover_pick(html):
+    """「从视频提取」完成后要直接把挑封面弹出来，而不是让用户再去找换封面。"""
+    assert "openCoverPicker(data.track.id, true)" in html
+    assert "提取完成，默认用的是视频第一秒。" in html
+    assert "function openCoverPicker(id, afterExtract)" in html
