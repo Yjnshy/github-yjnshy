@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import mimetypes
 import re
 import os
 import subprocess
@@ -42,6 +43,7 @@ from dly.core.config import (config_file_path, load_config,
                              save_settings, settings_from_config)
 from dly.core import paths
 from dly.core.ffmpeg import find_ffmpeg
+from dly.core.library import Library, is_audio, is_video
 from dly.core.logging import setup_logging
 from dly.core.transcode import FPS_CHOICES, normalize_fps
 from dly.cookies import sessions
@@ -122,6 +124,8 @@ class AppState:
         self.history: List[Dict[str, Any]] = self._load_history()
         self._history_seq = max((int(r.get("id") or 0)
                                  for r in self.history), default=0)
+        # 本地歌单：下载/提取出来的音频在这里排队，界面上的「歌单」页读它
+        self.library = Library()
 
     # ---- 事件流 ----
 
@@ -314,7 +318,9 @@ class _LogBridge(logging.Handler):
 # ----------------------------------------------------------------------
 
 def _run_download(state: AppState, text: str, quality: str, outdir: str,
-                  fps: int = 0, keep_original: bool = False) -> None:
+                  fps: int = 0, keep_original: bool = False,
+                  add_to_library: bool = False,
+                  extract_mp3: bool = False) -> None:
     from dly.downloader.engine import DownloadEngine
 
     with state._lock:  # noqa: SLF001 内部状态，避免并发重复启动
@@ -378,6 +384,20 @@ def _run_download(state: AppState, text: str, quality: str, outdir: str,
             state.add_history("download", Path(item).stem, str(item),
                               Path(item).stat().st_size
                               if Path(item).exists() else 0, "完成")
+        # 歌单：音频下载直接收进去；视频按用户勾选顺手抽一条 mp3
+        for item in outputs:
+            try:
+                if is_audio(item):
+                    if add_to_library:
+                        state.library.add(item, source="download")
+                        state.log("download", f"已加入歌单：{Path(item).name}")
+                elif extract_mp3:
+                    track = state.library.add_extracted(item)
+                    state.log("download",
+                              f"已提取音频并加入歌单：{Path(track['path']).name}")
+            except Exception as exc:  # noqa: BLE001 提取失败不该毁掉下载结果
+                logger.exception("加入歌单失败")
+                state.log("download", f"加入歌单失败：{exc}", "warn")
         level = "ok" if ok == total and total else "warn"
         state.log("download", f"完成：成功 {ok} / 共 {total}", level)
         if permission_denied["hit"] and ok == 0:
@@ -702,6 +722,89 @@ class Handler(BaseHTTPRequestHandler):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self._send(code, body, "application/json; charset=utf-8")
 
+    # ---- 媒体文件 ----
+
+    def _track_id(self) -> int:
+        from urllib.parse import parse_qs
+
+        query = parse_qs(urlparse(self.path).query)
+        try:
+            return int(query.get("id", ["0"])[0] or 0)
+        except ValueError:
+            return 0
+
+    def _send_cover(self) -> None:
+        """封面图：按曲目 id 取，只允许读歌单里登记过的那张。"""
+        path = self.state.library.cover_of(self._track_id())
+        if not path:
+            self._send(404, b"", "image/jpeg")
+            return
+        try:
+            data = path.read_bytes()
+        except OSError:
+            self._send(404, b"", "image/jpeg")
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "private, max-age=86400")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _send_audio(self) -> None:
+        """音频：必须支持 Range。
+
+        浏览器播本地音频时先发 ``Range: bytes=0-``，拖动进度条还要再发
+        区间请求；不支持 206 的话时间轴会跳回开头、时长显示成 Infinity。
+        """
+        track = self.state.library.get(self._track_id())
+        if not track:
+            self._send(404, b"", "audio/mpeg")
+            return
+        path = Path(track["path"])
+        if not path.is_file():
+            self._send(404, b"", "audio/mpeg")
+            return
+
+        size = path.stat().st_size
+        start, end, status = 0, size - 1, 200
+        raw = (self.headers.get("Range") or "").strip()
+        match = re.match(r"bytes=(\d*)-(\d*)$", raw)
+        if match and (match.group(1) or match.group(2)):
+            if match.group(1):
+                start = int(match.group(1))
+                if match.group(2):
+                    end = min(int(match.group(2)), size - 1)
+            else:                       # bytes=-500 → 最后 500 字节
+                start = max(0, size - int(match.group(2)))
+            if start > end or start >= size:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            status = 206
+
+        length = end - start + 1
+        ctype = mimetypes.guess_type(path.name)[0] or "audio/mpeg"
+        self.send_response(status)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(length))
+        if status == 206:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        with path.open("rb") as fh:
+            fh.seek(start)
+            left = length
+            while left > 0:
+                chunk = fh.read(min(65536, left))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                left -= len(chunk)
+
     def _read_json(self) -> Dict[str, Any]:
         length = int(self.headers.get("Content-Length") or 0)
         if not length:
@@ -813,6 +916,23 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"sites": sessions.status()})
             return
 
+        if path == "/api/library":
+            library = self.state.library
+            self._json({
+                "tracks": library.public(),
+                "folder": str(library.root),
+                "ffmpeg": bool(find_ffmpeg(load_config().ffmpeg_path)),
+            })
+            return
+
+        if path == "/api/media/audio":
+            self._send_audio()
+            return
+
+        if path == "/api/media/cover":
+            self._send_cover()
+            return
+
         self._json({"error": "not found"}, 404)
 
     # ---- POST ----
@@ -849,9 +969,86 @@ class Handler(BaseHTTPRequestHandler):
             fps = normalize_fps(data.get("fps"))
             threading.Thread(target=_run_download,
                              args=(self.state, text, quality, outdir, fps,
-                                   bool(data.get("keep_original"))),
+                                   bool(data.get("keep_original")),
+                                   bool(data.get("add_to_library")),
+                                   bool(data.get("extract_mp3"))),
                              daemon=True).start()
             self._json({"ok": True})
+            return
+
+        if path == "/api/library/add":
+            target = (data.get("path") or "").strip()
+            try:
+                track = self.state.library.add(target, source="import")
+            except FileNotFoundError as exc:
+                self._json({"error": str(exc)}, 400)
+                return
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("加入歌单失败")
+                self._json({"error": f"加入歌单失败：{exc}"}, 500)
+                return
+            self._json({"ok": True, "track": track, "tracks": self.state.library.public()})
+            return
+
+        if path == "/api/library/extract":
+            target = (data.get("path") or "").strip()
+            if not target:
+                self._json({"error": "先选一个视频文件"}, 400)
+                return
+            if not is_video(target) and not is_audio(target):
+                self._json({"error": "只支持视频或音频文件"}, 400)
+                return
+            try:
+                if is_audio(target):
+                    track = self.state.library.add(target, source="import")
+                else:
+                    track = self.state.library.add_extracted(target)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("提取音频失败")
+                self._json({"error": f"提取失败：{exc}"}, 500)
+                return
+            self._json({"ok": True, "track": track, "tracks": self.state.library.public()})
+            return
+
+        if path == "/api/library/update":
+            try:
+                track_id = int(data.get("id") or 0)
+            except (TypeError, ValueError):
+                track_id = 0
+            fields = {k: v for k, v in data.items() if k in ("title", "last_pos")}
+            if not self.state.library.update(track_id, **fields):
+                self._json({"error": "曲目不存在"}, 404)
+                return
+            self._json({"ok": True})
+            return
+
+        if path == "/api/library/remove":
+            try:
+                track_id = int(data.get("id") or 0)
+            except (TypeError, ValueError):
+                track_id = 0
+            ok = self.state.library.remove(track_id,
+                                           bool(data.get("delete_file")))
+            self._json({"ok": ok, "tracks": self.state.library.public()})
+            return
+
+        if path == "/api/pick-media":
+            # 选音频/视频文件：歌单导入和「从视频提取」都用它
+            from dly.core.folder_dialog import pick_file
+
+            if not _PICK_LOCK.acquire(blocking=False):
+                self._json({"error": "已经有一个选择窗口开着"}, 409)
+                return
+            try:
+                picked = pick_file((data.get("path") or "").strip(),
+                                   data.get("title") or "选择音频或视频")
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("选择媒体文件失败")
+                self._json({"error": str(exc)}, 500)
+                return
+            finally:
+                _PICK_LOCK.release()
+            self._json({"path": picked, "cancelled": not picked})
             return
 
         if path == "/api/record/probe":

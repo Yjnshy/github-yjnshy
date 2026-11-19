@@ -311,15 +311,15 @@ def test_fluid_nav_script_is_served(app):
 
 
 def test_fluid_nav_dom_has_one_shared_capsule(app):
-    """五个入口共用一枚胶囊，按钮文字改由 aria-label 提供。"""
+    """六个入口共用一枚胶囊，按钮文字改由 aria-label 提供。"""
     ctx, _ = app
     _, html = _get(ctx.url, "/")
     assert html.count('class="fluid-tip"') == 1
     assert 'id="fluid-tip-track"' in html
-    assert html.count('class="fluid-tip-row"') == 5
+    assert html.count('class="fluid-tip-row"') == 6
     assert 'src="fluid-nav.js"' in html
     assert '<span>下载视频</span>' not in html
-    for name in ("下载视频", "录制直播", "无人值守", "目录管理", "设置"):
+    for name in ("下载视频", "录制直播", "无人值守", "歌单", "目录管理", "设置"):
         assert 'aria-label="%s"' % name in html
     assert 'fluid-tip-key' not in html      # 提示里不再显示快捷键
     assert 'Ctrl+1' not in html
