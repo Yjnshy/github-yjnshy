@@ -126,13 +126,13 @@ def test_tunnel_click_can_skip_switching_track(html):
     assert "localStorage.setItem('dly.tunnelPlays'" in html
 
 
-def test_dragging_slider_does_not_move_window(html):
-    """pywebview 的 easy_drag 会在 window 上监听 mousedown：滑块和隧道画布必须截住事件，
-    否则拖进度条 / 拖隧道时整个窗口会跟着跑。"""
-    assert "function blockWindowDrag(" in html
-    assert "['pl-seek', 'pl-vol'].forEach(id => blockWindowDrag($(id)))" in html
-    module = (HTML_PATH.parent / "music-tunnel.js").read_text(encoding="utf-8")
-    assert "addEventListener('mousedown', event => event.stopPropagation())" in module
+def test_only_titlebar_drags_window(html):
+    """pywebview 的 easy_drag 监听 window 的 mousedown，整页都能拖窗口。
+    现在反过来：只有标题栏空白处放行，其余一律截断（选文字、拖滑块、拖隧道都不再挪窗口）。"""
+    assert "const inTitlebar = !!target.closest('.app-titlebar');" in html
+    assert "if (!inTitlebar || interactive) e.stopPropagation();" in html
+    # 必须用冒泡阶段且注册在最后，否则会打断「点外面关弹层」
+    assert "});   // 用冒泡阶段" in html
 
 
 def test_playback_modes_are_explicit(html):

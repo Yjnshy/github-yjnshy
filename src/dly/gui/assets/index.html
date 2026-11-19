@@ -3690,10 +3690,17 @@ function bindAudio() {
   }
 }
 
-/* 进度条和音量条：拖它们的时候不能把窗口一起拖走（pywebview easy_drag 在 window 上监听） */
-function blockWindowDrag(el) {
-  if (el) el.addEventListener('mousedown', e => e.stopPropagation());
-}
+/* pywebview 的 easy_drag 在 window 上监听 mousedown，等于整页都能拖窗口：
+   选个文字、拖个滑块、拖隧道的画面，窗口都会跟着跑。与其一处一处堵，
+   不如反过来——只允许标题栏空白处拖窗口，其余全部截断（默认行为不受影响，
+   文字照样能选中、进度条照样能拖）。 */
+document.addEventListener('mousedown', e => {
+  const target = e.target;
+  if (!target || target.nodeType !== 1) return;
+  const inTitlebar = !!target.closest('.app-titlebar');
+  const interactive = !!target.closest('button, input, select, textarea, a, label');
+  if (!inTitlebar || interactive) e.stopPropagation();
+});   // 用冒泡阶段、且注册在最后：先让页面自己的「点外面关弹层」跑完，再拦住 window
 
 async function pickMediaFile(title) {
   try {
@@ -3883,7 +3890,7 @@ fillRooms([]);
 mountThemeToggles();
 bindSettingsInputs();
 bindAudio();
-['pl-seek', 'pl-vol'].forEach(id => blockWindowDrag($(id)));
+
 
 try {
   const saved = localStorage.getItem('dly.tunnelPlays');

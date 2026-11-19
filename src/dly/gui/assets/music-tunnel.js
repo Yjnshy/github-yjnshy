@@ -601,9 +601,6 @@ export function mountMusicTunnel(host, options = {}) {
     if (next) selectSlot(next, true);
   }
 
-  // pywebview 的 easy_drag 在 window 上监听 mousedown，任何位置的拖动都会带着窗口走。
-  // 画布上要拖动穿行，必须在这里截住，别让事件冒到 window。
-  renderer.domElement.addEventListener('mousedown', event => event.stopPropagation());
   renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
   renderer.domElement.addEventListener('pointerdown', onPointerDown);
   renderer.domElement.addEventListener('pointermove', onPointerMove);
