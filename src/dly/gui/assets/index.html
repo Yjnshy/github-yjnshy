@@ -574,7 +574,8 @@
   .music-card { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
   .music-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
   .music-head h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; color: var(--text); }
-  .music-tools { display: flex; gap: 8px; flex: none; }
+  .music-tools { display: flex; align-items: center; gap: 8px; flex: none; }
+  .music-opt { gap: 5px; font-size: 12px; white-space: nowrap; }
   .music-grid {
     display: grid; gap: 16px 14px; align-items: start;
     grid-template-columns: repeat(auto-fill, minmax(146px, 1fr));
@@ -1334,6 +1335,10 @@
             <p class="hint" id="music-hint">下载的音频会自动进来；也可以用下面的按钮导入本地文件、从视频抽一条。</p>
           </div>
           <div class="music-tools">
+            <label class="check music-opt" title="关闭后，点隧道里的封面只换主封面，不切换正在播放的歌">
+              <input type="checkbox" id="opt-tunnel-play" checked
+                     onchange="setTunnelPlays(this.checked)"> 点封面切歌
+            </label>
             <button class="ghost" id="music-view-btn" onclick="toggleMusicView()">隧道视图</button>
             <button class="ghost" onclick="importAudioFile()">导入音频</button>
             <button class="ghost" onclick="extractAudioFromVideo()">从视频提取</button>
@@ -3294,6 +3299,22 @@ let tunnel = null;
 let musicView = 'grid';
 let tunnelSig = '';
 let tunnelSelecting = false;   // 隧道里点选时已经在动画，别再让页面反向同步一次
+let tunnelPlays = true;        // 点隧道封面是否切换播放（false = 只换主封面）
+
+function syncTunnelTip() {
+  const tip = document.querySelector('.music-tunnel-tip');
+  if (!tip) return;
+  tip.textContent = tunnelPlays
+    ? '滚轮 / 上下拖动穿过封面隧道 · 悬停吸起 · 点封面开始播放'
+    : '滚轮 / 上下拖动穿过封面隧道 · 悬停吸起 · 点封面只换主封面（不切歌）';
+}
+
+function setTunnelPlays(value) {
+  tunnelPlays = !!value;
+  try { localStorage.setItem('dly.tunnelPlays', tunnelPlays ? '1' : '0'); } catch (e) { /* 隐私模式 */ }
+  syncTunnelTip();
+  toast(tunnelPlays ? '点封面会切歌' : '点封面只换主封面，不换歌', 'ok');
+}
 
 function tunnelTracks() {
   return playableTracks().map(t => ({
@@ -3315,6 +3336,8 @@ function mountTunnel() {
     tunnel = window.MusicTunnel.mount(host, {
       tracks,
       onSelect: id => {
+        // 关闭「点封面切歌」时：隧道自己已经把封面飞到中央，这里不动播放
+        if (!tunnelPlays) return;
         tunnelSelecting = true;
         playTrack(id);
         tunnelSelecting = false;
@@ -3757,6 +3780,12 @@ fillRooms([]);
 mountThemeToggles();
 bindSettingsInputs();
 bindAudio();
+try {
+  const saved = localStorage.getItem('dly.tunnelPlays');
+  if (saved !== null) tunnelPlays = saved === '1';
+} catch (e) { /* 隐私模式读不到就用默认值 */ }
+if ($('opt-tunnel-play')) $('opt-tunnel-play').checked = tunnelPlays;
+syncTunnelTip();
 refreshLibrary(false);
 document.addEventListener('keydown', handleMusicKeys);
 document.addEventListener('click', e => {

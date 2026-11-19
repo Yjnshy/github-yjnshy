@@ -114,3 +114,13 @@ def test_tunnel_view_is_wired(html):
     assert '"three": "/three/three.module.min.js"' in html
     assert "EffectComposer" in module and "UnrealBloomPass" in module
     assert "toggleMusicView()" in html
+
+
+def test_tunnel_click_can_skip_switching_track(html):
+    """隧道里点封面可以只换主封面不切歌：开关要存在，且 onSelect 里要有这个分支。"""
+    assert 'id="opt-tunnel-play"' in html
+    assert "function setTunnelPlays(" in html
+    assert "if (!tunnelPlays) return;" in html
+    # 开关状态存在本地，刷新后保持
+    assert "localStorage.getItem('dly.tunnelPlays')" in html
+    assert "localStorage.setItem('dly.tunnelPlays'" in html
