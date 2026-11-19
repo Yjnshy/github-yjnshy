@@ -664,7 +664,7 @@
     border-radius: 6px; background: rgba(20,18,32,.7); color: #fff; font-size: 11px;
   }
 
-  .music-tunnel-wrap { flex: 1; min-height: 0; display: flex; }
+  .music-tunnel-wrap { flex: 1; min-height: 0; display: flex; position: relative; }
   .music-tunnel-wrap[hidden] { display: none !important; }
   .music-tunnel {
     width: 100%; height: auto; flex: 1; min-height: 240px; display: flex;
@@ -683,6 +683,32 @@
   .player[hidden] { display: none !important; }
 
   /* 隧道视图里的播放条：液态玻璃，浮在三维画面上 */
+  .player-hide {
+    display: none; position: absolute; top: 6px; right: 8px; width: 22px; height: 22px;
+    padding: 0; border: 0; border-radius: 8px; cursor: pointer;
+    background: rgba(255, 255, 255, .10); color: rgba(244, 242, 255, .8);
+    place-items: center;
+  }
+  .player-hide svg { width: 14px; height: 14px; stroke: currentColor; }
+  .player-hide:hover { background: rgba(255, 255, 255, .2); color: #fff; }
+  .player.floating .player-hide { display: grid; }
+  .player.collapsed { display: none !important; }
+
+  .player-restore {
+    position: absolute; right: 26px; bottom: 24px; z-index: 7;
+    width: 40px; height: 40px; padding: 0; border-radius: 50%; cursor: pointer;
+    display: grid; place-items: center;
+    background: linear-gradient(180deg, rgba(46, 41, 70, .52), rgba(20, 18, 33, .62));
+    border: 1px solid rgba(255, 255, 255, .22);
+    box-shadow: 0 10px 26px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .25);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    backdrop-filter: blur(16px) saturate(160%);
+    color: rgba(244, 242, 255, .9);
+  }
+  .player-restore[hidden] { display: none !important; }
+  .player-restore svg { width: 18px; height: 18px; stroke: currentColor; }
+  .player-restore:hover { color: #fff; transform: translateY(-1px); }
+
   .player.floating {
     position: absolute; left: 22px; right: 22px; bottom: 16px; z-index: 6;
     margin: 0; border-radius: 16px;
@@ -1446,6 +1472,12 @@
         <div class="music-grid" id="music-grid"></div>
         <div class="music-tunnel-wrap" id="music-tunnel-wrap" hidden>
           <div class="music-tunnel" id="music-tunnel"></div>
+          <button class="player-restore" type="button" id="pl-restore" hidden
+                  onclick="togglePlayerHidden()" title="显示播放条" aria-label="显示播放条">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round">
+              <path d="M9 18V6l10-2v12"/><circle cx="7" cy="18" r="2.4"/><circle cx="17" cy="16" r="2.4"/>
+            </svg>
+          </button>
         </div>
         <div class="task-empty" id="music-empty">还没有歌。导入一个音频，或在下载页下一条音频。</div>
       </div>
@@ -1464,6 +1496,11 @@
           </button>
           <button class="icon-btn" type="button" onclick="nextTrack()" title="下一首（Shift+→）">⏭</button>
         </div>
+        <button class="player-hide" type="button" id="pl-hide" onclick="togglePlayerHidden()"
+                title="隐藏播放条" aria-label="隐藏播放条">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"
+               stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
         <div class="player-progress">
           <span class="player-time" id="pl-cur">00:00</span>
           <input type="range" id="pl-seek" min="0" max="1000" step="1" value="0"
@@ -3560,6 +3597,7 @@ function setMusicView(view) {
   // 隧道视图：播放条浮在画面底部，做成液态玻璃；网格视图回到普通卡片
   const player = $('player');
   if (player) player.classList.toggle('floating', musicView === 'tunnel' && hasTracks);
+  applyPlayerHidden();
   if (musicView === 'tunnel') mountTunnel();
   else destroyTunnel();
 }
@@ -3684,6 +3722,7 @@ function playTrack(id) {
     toast('播放失败：' + (err && err.message ? err.message : '未知原因'), 'err');
   });
   $('player').hidden = false;
+  applyPlayerHidden();
   // 页面里切歌（点网格、上一首/下一首）时，隧道里的主封面也跟着换
   if (tunnel && !tunnelSelecting) tunnel.selectTrack(id);
   renderMusic();
@@ -3834,6 +3873,26 @@ async function pickMediaFile(title) {
     toast(e.message, 'err');
     return '';
   }
+}
+
+/* ---- 播放条：隧道视图里可以收起，收起后右下角留一个小圆钮再放出来 ---- */
+let playerHidden = false;
+try { playerHidden = localStorage.getItem('dly.playerHidden') === '1'; } catch (e) { /* 隐私模式 */ }
+
+function applyPlayerHidden() {
+  const player = $('player');
+  if (!player) return;
+  const floating = player.classList.contains('floating');
+  const collapsed = floating && playerHidden;
+  player.classList.toggle('collapsed', collapsed);
+  if ($('pl-restore')) $('pl-restore').hidden = !collapsed;
+}
+
+function togglePlayerHidden() {
+  playerHidden = !playerHidden;
+  try { localStorage.setItem('dly.playerHidden', playerHidden ? '1' : '0'); } catch (e) { /* 隐私模式 */ }
+  applyPlayerHidden();
+  toast(playerHidden ? '播放条已隐藏，右下角小圆钮可以调回来' : '播放条已显示', 'ok');
 }
 
 /* ---- 挑封面：从原视频抽几帧让用户选 ---- */

@@ -208,3 +208,14 @@ def test_player_floats_as_glass_in_tunnel(html):
     assert "classList.toggle('floating', musicView === 'tunnel' && hasTracks)" in html
     # 问号弹层里要带上页面副标题那句
     assert "下载或提取的音频都在这里，点封面就能听" in html
+
+
+def test_floating_player_can_be_hidden(html):
+    """隧道里的玻璃播放条可以收起，收起后右下角留一个圆钮能调回来。"""
+    assert 'id="pl-hide"' in html and 'id="pl-restore"' in html
+    assert "function togglePlayerHidden(" in html
+    assert "function applyPlayerHidden(" in html
+    assert ".player.collapsed { display: none !important; }" in html
+    # 收起状态只在隧道视图生效，网格视图照常显示
+    assert "const collapsed = floating && playerHidden;" in html
+    assert "localStorage.setItem('dly.playerHidden'" in html
