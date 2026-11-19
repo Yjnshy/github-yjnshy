@@ -676,6 +676,11 @@
   .player-time { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
   .player-extra { display: flex; align-items: center; gap: 6px; }
   .player-extra .vol { width: 72px; accent-color: var(--accent); }
+  .player-mode {
+    height: 26px; padding: 0 4px; border: 1px solid var(--border);
+    border-radius: 8px; background: var(--surface-2); color: var(--text);
+    font-size: 11.5px; cursor: pointer;
+  }
   .player { user-select: none; }
   #audio { display: none; }
 
@@ -1375,7 +1380,12 @@
           <span class="player-time" id="pl-dur">00:00</span>
         </div>
         <div class="player-extra">
-          <button class="icon-btn" type="button" id="pl-mode" onclick="cycleMode()" title="循环模式">列表</button>
+          <select class="player-mode" id="pl-mode" onchange="setPlayMode(this.value)"
+                  title="播放模式" aria-label="播放模式">
+            <option value="list">顺序播放</option>
+            <option value="single">单曲循环</option>
+            <option value="shuffle">随机播放</option>
+          </select>
           <button class="icon-btn" type="button" id="pl-speed" onclick="cycleSpeed()" title="播放速度">1.0×</button>
           <input type="range" id="pl-vol" class="vol" min="0" max="100" value="100"
                  aria-label="音量">
@@ -3281,7 +3291,7 @@ function renderHistory(kind, boxId) {
 let musicLib = { tracks: [], folder: '', ffmpeg: false };
 let dlActivePrev = false;          // 上一帧的下载状态，用来在结束时刷新歌单
 const player = { id: 0, mode: 'list', speed: 1, seeking: false, savedAt: 0 };
-const MODE_LABEL = { list: '列表', single: '单曲', shuffle: '随机' };
+const MODE_LABEL = { list: '顺序播放', single: '单曲循环', shuffle: '随机播放' };
 const SPEEDS = [1, 1.25, 1.5, 2, 0.75];
 const SOURCE_LABEL = { download: '下载', extract: '提取', import: '导入' };
 
@@ -3527,6 +3537,15 @@ function nextTrack(auto) {
     while (next.id === player.id);
   } else {
     const index = list.findIndex(t => t.id === player.id);
+    if (auto && player.mode === 'list' && index === list.length - 1) {
+      // 顺序播放：放完最后一首就停，不绕回开头
+      const audio = $('audio');
+      audio.pause();
+      audio.currentTime = 0;
+      setPlayIcon(false);
+      toast('顺序播放已到最后一首', 'ok');
+      return;
+    }
     next = list[(index + 1) % list.length];
   }
   playTrack(next.id);
@@ -3540,12 +3559,11 @@ function prevTrack() {
   playTrack(prev.id);
 }
 
-function cycleMode() {
-  player.mode = player.mode === 'list' ? 'single'
-    : player.mode === 'single' ? 'shuffle' : 'list';
-  const btn = $('pl-mode');
-  if (btn) btn.textContent = MODE_LABEL[player.mode];
-  toast('循环模式：' + MODE_LABEL[player.mode], 'ok');
+function setPlayMode(mode) {
+  player.mode = MODE_LABEL[mode] ? mode : 'list';
+  if ($('pl-mode')) $('pl-mode').value = player.mode;
+  try { localStorage.setItem('dly.playMode', player.mode); } catch (e) { /* 隐私模式 */ }
+  toast('播放模式：' + MODE_LABEL[player.mode], 'ok');
 }
 
 function cycleSpeed() {
@@ -3793,6 +3811,10 @@ try {
 } catch (e) { /* 隐私模式读不到就用默认值 */ }
 if ($('opt-tunnel-play')) $('opt-tunnel-play').checked = tunnelPlays;
 syncTunnelTip();
+try {
+  const savedMode = localStorage.getItem('dly.playMode');
+  if (savedMode && MODE_LABEL[savedMode]) setPlayMode(savedMode);
+} catch (e) { /* 隐私模式 */ }
 refreshLibrary(false);
 document.addEventListener('keydown', handleMusicKeys);
 document.addEventListener('click', e => {

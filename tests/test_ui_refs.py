@@ -133,3 +133,14 @@ def test_dragging_slider_does_not_move_window(html):
     assert "['pl-seek', 'pl-vol'].forEach(id => blockWindowDrag($(id)))" in html
     module = (HTML_PATH.parent / "music-tunnel.js").read_text(encoding="utf-8")
     assert "addEventListener('mousedown', event => event.stopPropagation())" in module
+
+
+def test_playback_modes_are_explicit(html):
+    """三种播放模式要能直接选：顺序播放 / 单曲循环 / 随机播放。"""
+    assert 'id="pl-mode"' in html
+    for label in ("顺序播放", "单曲循环", "随机播放"):
+        assert label in html
+    assert "function setPlayMode(" in html
+    # 顺序播放放完最后一首要停，而不是绕回第一首
+    assert "auto && player.mode === 'list' && index === list.length - 1" in html
+    assert "localStorage.setItem('dly.playMode'" in html

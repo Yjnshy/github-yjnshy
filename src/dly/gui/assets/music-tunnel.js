@@ -459,12 +459,12 @@ export function mountMusicTunnel(host, options = {}) {
       slot.hero = state.reduced ? (isHero ? 1 : 0)
         : damp(slot.hero, isHero ? 1 : 0, 2.8, dt);
 
-      const scale = 1 + 0.14 * slot.lift + 0.7 * slot.hero;
-      const z = slot.z + 2 * slot.lift + 1.3 * slot.hero;
+      const scale = 1 + 0.06 * slot.lift + 0.7 * slot.hero;
+      const z = slot.z + 0.5 * slot.lift + 1.3 * slot.hero;
 
       // 倾斜整个盒子：封面是盒子的一面，所以怎么斜都不会和盒体错位
-      const tiltX = isHovered && !state.reduced ? pointer.y * 0.35 : 0;
-      const tiltY = isHovered && !state.reduced ? -pointer.x * 0.35 : 0;
+      const tiltX = isHovered && !state.reduced ? pointer.y * 0.18 : 0;
+      const tiltY = isHovered && !state.reduced ? -pointer.x * 0.18 : 0;
 
       dummy.position.set(slot.baseX, slot.baseY, z + slot.jz);
       dummy.rotation.set(tiltX, tiltY, slot.rz);
@@ -697,12 +697,18 @@ export function mountMusicTunnel(host, options = {}) {
     setPaused(value) { state.paused = !!value; },
     setTravel(value) { state.travel = value; },
     selectTrack(trackId) {
-      // 外部切歌：挑一张属于该曲目的封面飞入中央（不回调，避免回声）
-      const slot = slots.find(s => {
-        const track = tracks[s.track % Math.max(1, tracks.length)];
-        return track && track.id === trackId;
-      });
-      if (slot) selectSlot(slot, false);
+      // 外部切歌（自动下一首、上一首/下一首按钮）：挑离当前视角最近的一层里，
+      // 属于这首歌的封面飞入中央。不能随便取第一张，否则相机会被拽到隧道深处。
+      const targetZ = camera.position.z - 11;
+      let best = null;
+      let bestDistance = Infinity;
+      for (const slot of slots) {
+        const track = tracks[slot.track % Math.max(1, tracks.length)];
+        if (!track || track.id !== trackId) continue;
+        const distance = Math.abs(slot.z - targetZ);
+        if (distance < bestDistance) { bestDistance = distance; best = slot; }
+      }
+      if (best) selectSlot(best, false);
     },
     stats() {
       return {
@@ -713,6 +719,11 @@ export function mountMusicTunnel(host, options = {}) {
         travel: +state.travel.toFixed(2),
         hovered: !!state.hovered,
         hero: state.heroSlot ? state.heroSlot.index : -1,
+        heroTrack: (() => {
+          if (!state.heroSlot) return -1;
+          const track = tracks[state.heroSlot.track % Math.max(1, tracks.length)];
+          return track ? track.id : -1;
+        })(),
         loaded: textures.filter(t => !!t.image).length,
       };
     },
