@@ -222,10 +222,14 @@ def test_floating_player_can_be_hidden(html):
     assert "localStorage.setItem('dly.playerHidden'" in html
     # 空副标题不留空行
     assert "subEl.hidden = !meta[1];" in html
-    # 「隐藏后怎么调回来」绿色提示只在第一次出现
-    assert "localStorage.getItem('dly.playerHideTipShown') === '1'" in html
-    assert "localStorage.setItem('dly.playerHideTipShown', '1')" in html
+    # 隐藏/恢复两条绿色提示都只在第一次出现
+    assert "const key = playerHidden ? 'dly.playerHideTipShown' : 'dly.playerShowTipShown';" in html
+    assert "const msg = playerHidden ? '播放条已隐藏，右下角小圆钮可以调回来' : '播放条已显示';" in html
+    assert "localStorage.getItem(key) === '1'" in html
+    assert "localStorage.setItem(key, '1')" in html
     assert "if (!tipShown) {" in html
+    # 恢复按钮 hover 用不透明深色，避免玻璃重绘时整颗钮变全白
+    assert "background: linear-gradient(180deg, #3a3457, #242033);" in html
 
 
 def test_tunnel_recycles_slots_across_spans_on_fast_scroll(html):
