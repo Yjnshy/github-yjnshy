@@ -3293,6 +3293,7 @@ function playableTracks() {
 let tunnel = null;
 let musicView = 'grid';
 let tunnelSig = '';
+let tunnelSelecting = false;   // 隧道里点选时已经在动画，别再让页面反向同步一次
 
 function tunnelTracks() {
   return playableTracks().map(t => ({
@@ -3313,7 +3314,11 @@ function mountTunnel() {
   try {
     tunnel = window.MusicTunnel.mount(host, {
       tracks,
-      onSelect: id => playTrack(id),
+      onSelect: id => {
+        tunnelSelecting = true;
+        playTrack(id);
+        tunnelSelecting = false;
+      },
       reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     });
     window.__dlyTunnel = tunnel;
@@ -3465,6 +3470,8 @@ function playTrack(id) {
     toast('播放失败：' + (err && err.message ? err.message : '未知原因'), 'err');
   });
   $('player').hidden = false;
+  // 页面里切歌（点网格、上一首/下一首）时，隧道里的主封面也跟着换
+  if (tunnel && !tunnelSelecting) tunnel.selectTrack(id);
   renderMusic();
 }
 
