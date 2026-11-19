@@ -228,8 +228,12 @@ def test_floating_player_can_be_hidden(html):
     assert "localStorage.getItem(key) === '1'" in html
     assert "localStorage.setItem(key, '1')" in html
     assert "if (!tipShown) {" in html
-    # 恢复按钮 hover 用不透明深色，避免玻璃重绘时整颗钮变全白
+    # 恢复按钮 hover 用不透明深色压过通用 button:hover 的浅色背景，避免整颗钮全白
+    assert "button.player-restore:hover {" in html
     assert "background: linear-gradient(180deg, #3a3457, #242033);" in html
+    assert "button:hover:not(:disabled) { border-color: var(--btn-hover-line)" in html
+    # svg 不拦截指针，hover/click 落在按钮本身
+    assert ".player-restore svg { width: 18px; height: 18px; stroke: currentColor; pointer-events: none; }" in html
 
 
 def test_tunnel_recycles_slots_across_spans_on_fast_scroll(html):

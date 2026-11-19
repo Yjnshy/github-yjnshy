@@ -706,9 +706,11 @@
     color: rgba(244, 242, 255, .9);
   }
   .player-restore[hidden] { display: none !important; }
-  .player-restore svg { width: 18px; height: 18px; stroke: currentColor; }
-  /* hover 用不透明深色盖住玻璃在重绘时透出的白，图标也用柔和白，避免整颗钮突然全白 */
-  .player-restore:hover {
+  .player-restore svg { width: 18px; height: 18px; stroke: currentColor; pointer-events: none; }
+  /* hover 用不透明深色盖住玻璃透白。注意要压过通用 button:hover:not(:disabled)
+     的浅色 --btn-hover-bg（浅色主题下近纯白，正是「整颗钮全白」的元凶）：
+     这里用同等特异性 button.player-restore:hover 且声明在后面。 */
+  button.player-restore:hover {
     color: #f4f2ff;
     background: linear-gradient(180deg, #3a3457, #242033);
     border-color: rgba(255, 255, 255, .32);
