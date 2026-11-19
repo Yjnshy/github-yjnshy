@@ -751,6 +751,33 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _send_frame(self) -> None:
+        """候选封面帧：只允许读歌单缓存目录里的 frame_<id>_<i>.jpg。"""
+        from urllib.parse import parse_qs
+
+        query = parse_qs(urlparse(self.path).query)
+        try:
+            track_id = int(query.get("id", ["0"])[0] or 0)
+            index = int(query.get("i", ["0"])[0] or 0)
+        except ValueError:
+            self._send(404, b"", "image/jpeg")
+            return
+        path = self.state.library.root / "frames" / f"{track_id}_{index}.jpg"
+        if not path.is_file():
+            self._send(404, b"", "image/jpeg")
+            return
+        try:
+            data = path.read_bytes()
+        except OSError:
+            self._send(404, b"", "image/jpeg")
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
     def _send_audio(self) -> None:
         """音频：必须支持 Range。
 
@@ -935,6 +962,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send_cover()
             return
 
+        if path == "/api/media/frame":
+            self._send_frame()
+            return
+
         self._json({"error": "not found"}, 404)
 
     # ---- POST ----
@@ -1010,6 +1041,35 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": f"提取失败：{exc}"}, 500)
                 return
             self._json({"ok": True, "track": track, "tracks": self.state.library.public()})
+            return
+
+        if path == "/api/library/frames":
+            try:
+                track_id = int(data.get("id") or 0)
+            except (TypeError, ValueError):
+                track_id = 0
+            frames = self.state.library.frames(track_id, int(data.get("count") or 8)
+                                               if str(data.get("count") or "").isdigit()
+                                               else 8)
+            self._json({
+                "ok": True,
+                "frames": [{"i": f["i"], "at": f["at"],
+                            "url": f"/api/media/frame?id={track_id}&i={f['i']}"}
+                           for f in frames],
+            })
+            return
+
+        if path == "/api/library/cover":
+            try:
+                track_id = int(data.get("id") or 0)
+                index = int(data.get("i") or 0)
+            except (TypeError, ValueError):
+                self._json({"error": "参数不对"}, 400)
+                return
+            if not self.state.library.use_frame(track_id, index):
+                self._json({"error": "这一帧不可用，重新挑一张试试"}, 400)
+                return
+            self._json({"ok": True, "tracks": self.state.library.public()})
             return
 
         if path == "/api/library/update":

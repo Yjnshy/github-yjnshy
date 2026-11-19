@@ -73,7 +73,7 @@ export function mountMusicTunnel(host, options = {}) {
   const count = Math.max(1, tracks.length);
   const bgColor = new THREE.Color('#05060f');
 
-  const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false,
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false,
                                              powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -98,13 +98,13 @@ export function mountMusicTunnel(host, options = {}) {
         void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
       fragmentShader: `varying vec2 vUv;
         void main(){
-          vec3 top = vec3(0.02,0.03,0.10);
-          vec3 bottom = vec3(0.10,0.09,0.34);
+          vec3 top = vec3(0.008,0.010,0.030);
+          vec3 bottom = vec3(0.020,0.020,0.060);
           vec3 col = mix(bottom, top, pow(vUv.y, 0.85));
           vec2 c = vec2(0.56,0.62);
           float d = length((vUv - c) * vec2(1.0,1.35));
-          col += vec3(0.30,0.26,0.62) * smoothstep(0.62,0.0,d) * 0.55;
-          col += vec3(0.85,0.80,1.00) * smoothstep(0.16,0.0,d) * 0.35;
+          col += vec3(0.22,0.19,0.48) * smoothstep(0.40,0.0,d) * 0.42;
+          col += vec3(0.80,0.76,1.00) * smoothstep(0.12,0.0,d) * 0.34;
           gl_FragColor = vec4(col,1.0);
         }`,
     }),
@@ -136,8 +136,18 @@ export function mountMusicTunnel(host, options = {}) {
 
   // ---- 封面素材 ----
   const loader = new THREE.TextureLoader();
+  // 封面是异步解码的：没加载完时贴图是黑的，一路挂上去会看到一批封面「啪啪」刷出来。
+  // 全部就绪后再统一显示，只闪一下（通常几十毫秒）。
+  let pendingCovers = tracks.length;
+  let coversReady = tracks.length === 0;
   const textures = tracks.map(track => {
-    const tex = loader.load(track.coverUrl);
+    const tex = loader.load(track.coverUrl, () => {
+      pendingCovers -= 1;
+      if (pendingCovers <= 0) coversReady = true;
+    }, undefined, () => {
+      pendingCovers -= 1;
+      if (pendingCovers <= 0) coversReady = true;
+    });
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 4;
     tex.minFilter = THREE.LinearMipmapLinearFilter;
@@ -311,6 +321,7 @@ export function mountMusicTunnel(host, options = {}) {
     bodyMesh.instanceMatrix.needsUpdate = true;
 
     frontMeshes.forEach(mesh => {
+      mesh.visible = coversReady;
       mesh.userData.slots.forEach(slot => {
         mesh.setMatrixAt(slot.frontIdx, slot.matrixFront);
       });
@@ -321,6 +332,10 @@ export function mountMusicTunnel(host, options = {}) {
   let pickTick = 0;
   function pick() {
     if ((pickTick++ % 3) !== 0) return;       // 每三帧拾取一次，够跟手也省 CPU
+    if (Math.abs(state.vel) > 0.5) {          // 正在穿行：封面一直从指针下掠过，
+      state.hovered = null;                   // 抬起/放下会此起彼伏，看着就是频闪
+      return;
+    }
     raycaster.setFromCamera(pointer, camera);
     const hits = raycaster.intersectObjects(frontMeshes, false);
     const hit = hits.find(h => h.instanceId !== undefined);

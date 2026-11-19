@@ -149,3 +149,38 @@ def test_tunnel_assets_are_served(tmp_path, monkeypatch):
             raise AssertionError("静态白名单失效，任意文件被暴露")
     finally:
         ctx.shutdown()
+
+
+def test_frames_need_original_video(tmp_path, monkeypatch, fake_mp3: Path):
+    """纯音频入库的曲目没有原视频，换封面接口要如实返回空列表而不是报错。"""
+    monkeypatch.setattr(paths, "data_dir", lambda: tmp_path)
+    monkeypatch.setattr(srv, "DEFAULT_PORT", PORT + 2)
+    ctx = srv.create_app(desktop=False)
+    ctx.start()
+    try:
+        body = json.dumps({"path": str(fake_mp3)}).encode()
+        req = urllib.request.Request(
+            ctx.url + "api/library/add", data=body, method="POST",
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as res:
+            track = json.loads(res.read())["track"]
+
+        req = urllib.request.Request(
+            ctx.url + "api/library/frames",
+            data=json.dumps({"id": track["id"]}).encode(), method="POST",
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=10) as res:
+            assert json.loads(res.read())["frames"] == []
+
+        req = urllib.request.Request(
+            ctx.url + "api/library/cover",
+            data=json.dumps({"id": track["id"], "i": 99}).encode(), method="POST",
+            headers={"Content-Type": "application/json"})
+        try:
+            urllib.request.urlopen(req, timeout=5)
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 400
+        else:
+            raise AssertionError("不存在的帧不该被接受")
+    finally:
+        ctx.shutdown()

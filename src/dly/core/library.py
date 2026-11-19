@@ -18,6 +18,7 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import subprocess
 import threading
 import time
@@ -101,6 +102,13 @@ def _gradient_cover(out: Path, seed: str) -> bool:
         return False
 
 
+def _grab_frame(video: Path, out: Path, at: float, ffmpeg: str) -> bool:
+    """在指定时间点抽一帧，缩成 512×512。"""
+    scale = "scale=512:512:force_original_aspect_ratio=increase,crop=512:512"
+    return _run([ffmpeg, "-y", "-ss", f"{at:.2f}", "-i", str(video),
+                 "-frames:v", "1", "-vf", scale, "-q:v", "3", str(out)], 90)
+
+
 def make_cover(src: str | Path, out: Path, title: str = "") -> bool:
     """给曲目生成 512×512 封面：视频抽帧 > 内嵌封面 > 渐变。"""
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -177,6 +185,7 @@ class Library:
                 "added_at": float(item.get("added_at") or 0),
                 "last_pos": float(item.get("last_pos") or 0),
                 "source": str(item.get("source") or "import"),
+                "video": str(item.get("video") or ""),
             })
         return rows
 
@@ -208,6 +217,10 @@ class Library:
                     "source": t["source"],
                     "missing": missing,
                     "has_cover": bool(t["cover"]) and Path(t["cover"]).is_file(),
+                    # 换封面后文件变了但 URL 还是 ?id=N，加个版本号让浏览器重新取图
+                    "cover_ver": (int(Path(t["cover"]).stat().st_mtime * 1000)
+                                  if t["cover"] and Path(t["cover"]).is_file() else 0),
+                    "has_video": bool(t.get("video")) and Path(t["video"]).is_file(),
                 })
             return rows
 
@@ -229,7 +242,8 @@ class Library:
 
     def add(self, path: str | Path, title: str = "",
             cover_src: str | Path | None = None,
-            source: str = "import") -> Dict[str, Any]:
+            source: str = "import",
+            video: str | Path | None = None) -> Dict[str, Any]:
         """收进歌单。同一个文件重复添加时只更新标题/封面，不产生重复条目。"""
         target = Path(path).expanduser().resolve()
         if not target.is_file():
@@ -249,6 +263,7 @@ class Library:
             row = {
                 "id": track_id,
                 "title": title or target.stem,
+                "video": str(Path(video).resolve()) if video else "",
                 "path": str(target),
                 "cover": str(cover) if str(cover) else "",
                 "duration": duration_of(target),
@@ -303,6 +318,59 @@ class Library:
                 return True
         return False
 
+    # ---- 封面挑选 ----
+
+    def frames(self, track_id: int, count: int = 8) -> List[Dict[str, Any]]:
+        """从原始视频里按时间点抽一批候选封面，返回 [{i, path}]。
+
+        结果缓存到 ``frames/<id>_<i>.jpg``，视频没变就不会重复抽。
+        没有原始视频（纯音频下载）时返回空列表，界面据此提示无法换封面。
+        """
+        track = self.get(track_id)
+        if not track:
+            return []
+        video = Path(track.get("video") or "")
+        ffmpeg = _ffmpeg_path()
+        if not ffmpeg or not video.is_file():
+            return []
+        duration = track.get("duration") or duration_of(video)
+        if duration <= 1:
+            return []
+        cache = self.root / "frames"
+        cache.mkdir(parents=True, exist_ok=True)
+        percent = [0.06, 0.18, 0.30, 0.42, 0.54, 0.66, 0.78, 0.92][:max(1, count)]
+        out: List[Dict[str, Any]] = []
+        for index, ratio in enumerate(percent):
+            target = cache / f"{track_id}_{index}.jpg"
+            if not target.is_file():
+                _grab_frame(video, target, max(0.2, duration * ratio), ffmpeg)
+            if target.is_file():
+                out.append({"i": index, "path": str(target),
+                            "at": round(duration * ratio, 1)})
+        return out
+
+    def use_frame(self, track_id: int, index: int) -> bool:
+        """把选中的候选帧设为正式封面。"""
+        track = self.get(track_id)
+        if not track:
+            return False
+        source = self.root / "frames" / f"{track_id}_{int(index)}.jpg"
+        if not source.is_file():
+            return False
+        cover = self.covers / f"{track_id}.jpg"
+        cover.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copyfile(source, cover)
+        except OSError:
+            return False
+        with self._lock:
+            for row in self.tracks:
+                if row["id"] == track_id:
+                    row["cover"] = str(cover)
+                    self._save()
+                    return True
+        return False
+
     def add_extracted(self, video: str | Path, title: str = "") -> Dict[str, Any]:
         """从视频抽一条 mp3（放在原视频旁边）再入库，封面取视频首帧。"""
         video_path = Path(video)
@@ -310,4 +378,5 @@ class Library:
         if not audio:
             raise RuntimeError("提取音频失败：请确认 ffmpeg 可用、文件没有损坏")
         return self.add(audio, title=title or video_path.stem,
-                        cover_src=video_path, source="extract")
+                        cover_src=video_path, source="extract",
+                        video=video_path)

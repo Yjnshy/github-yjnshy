@@ -585,7 +585,8 @@
     background: transparent; text-align: left; cursor: pointer; min-width: 0;
   }
   .track-cover {
-    display: block; aspect-ratio: 1 / 1; border-radius: 12px; overflow: hidden;
+    position: relative; display: block; aspect-ratio: 1 / 1;
+    border-radius: 12px; overflow: hidden;
     background: var(--pill-bg); box-shadow: 0 1px 2px var(--box-shadow);
     transition: transform .16s, box-shadow .16s;
   }
@@ -599,6 +600,41 @@
   .track.playing .track-cover { outline: 2px solid var(--accent); outline-offset: 1px; }
   .track.playing .track-title { color: var(--accent-ink); font-weight: 600; }
   .track.missing { opacity: .42; }
+  .track-edit {
+    position: absolute; left: 6px; right: 6px; bottom: 6px; padding: 3px 0;
+    border: 0; border-radius: 7px; cursor: pointer;
+    background: rgba(20, 18, 32, .72); color: #fff; font-size: 11.5px;
+    opacity: 0; transition: opacity .15s;
+  }
+  .track:hover .track-edit, .track-edit:focus-visible { opacity: 1; }
+
+  /* 挑封面弹层 */
+  .modal {
+    position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;
+    background: var(--scrim); padding: 24px;
+  }
+  .modal[hidden] { display: none !important; }
+  .modal-card {
+    width: min(680px, 100%); max-height: 86vh; overflow: auto;
+    background: var(--card); border-radius: 16px; padding: 18px 20px 20px;
+    box-shadow: 0 20px 60px var(--shadow);
+  }
+  .modal-head { display: flex; align-items: center; justify-content: space-between; }
+  .modal-head h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--text); }
+  .cover-grid {
+    margin-top: 12px; display: grid; gap: 10px;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  }
+  .cover-pick {
+    padding: 0; border: 1px solid var(--border); border-radius: 10px;
+    overflow: hidden; cursor: pointer; background: var(--pill-bg); position: relative;
+  }
+  .cover-pick img { width: 100%; aspect-ratio: 1/1; object-fit: cover; display: block; }
+  .cover-pick:hover { border-color: var(--accent); }
+  .cover-pick span {
+    position: absolute; right: 4px; bottom: 4px; padding: 1px 6px;
+    border-radius: 6px; background: rgba(20,18,32,.7); color: #fff; font-size: 11px;
+  }
 
   .music-tunnel-wrap[hidden] { display: none !important; }
   .music-tunnel {
@@ -626,9 +662,14 @@
   .player-controls { display: flex; align-items: center; gap: 2px; }
   .play-btn {
     width: 34px; height: 34px; flex: none; border: 0; border-radius: 50%;
-    background: var(--accent); color: #fff; font-size: 12px; cursor: pointer;
+    background: var(--accent); color: #fff; cursor: pointer;
+    display: grid; place-items: center; padding: 0;
   }
   .play-btn:hover { background: var(--accent-dark); }
+  .play-btn svg { width: 15px; height: 15px; fill: currentColor; display: block; }
+  .play-btn .pl-icon-pause { display: none; }
+  .play-btn.playing .pl-icon-play { display: none; }
+  .play-btn.playing .pl-icon-pause { display: block; }
   .player-progress { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .player-progress input { flex: 1; min-width: 0; accent-color: var(--accent); }
   .player-time { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
@@ -1315,7 +1356,10 @@
         </div>
         <div class="player-controls">
           <button class="icon-btn" type="button" onclick="prevTrack()" title="上一首（Shift+←）">⏮</button>
-          <button class="play-btn" type="button" id="pl-play" onclick="togglePlay()" title="播放 / 暂停（空格）">▶</button>
+          <button class="play-btn" type="button" id="pl-play" onclick="togglePlay()" title="播放 / 暂停（空格）">
+            <svg class="pl-icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5.4 19.2 12 9 18.6Z"/></svg>
+            <svg class="pl-icon-pause" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="5.4" width="3.2" height="13.2" rx="1.3"/><rect x="14" y="5.4" width="3.2" height="13.2" rx="1.3"/></svg>
+          </button>
           <button class="icon-btn" type="button" onclick="nextTrack()" title="下一首（Shift+→）">⏭</button>
         </div>
         <div class="player-progress">
@@ -1333,6 +1377,18 @@
       </div>
       <audio id="audio" preload="metadata"></audio>
     </section>
+
+    <!-- 挑封面：从原视频里抽几帧给用户选 -->
+    <div class="modal" id="cover-modal" hidden>
+      <div class="modal-card">
+        <div class="modal-head">
+          <h3>挑一张封面</h3>
+          <button class="icon-btn" type="button" onclick="closeCoverPicker()" aria-label="关闭">×</button>
+        </div>
+        <p class="hint" id="cover-hint">正在从视频里取画面…</p>
+        <div class="cover-grid" id="cover-grid"></div>
+      </div>
+    </div>
 
     <!-- 目录管理 -->
     <section class="panel" id="panel-files">
@@ -3241,7 +3297,9 @@ let tunnelSig = '';
 function tunnelTracks() {
   return playableTracks().map(t => ({
     id: t.id,
-    coverUrl: t.has_cover ? '/api/media/cover?id=' + t.id : 'logo.png',
+    coverUrl: t.has_cover
+      ? '/api/media/cover?id=' + t.id + '&v=' + (t.cover_ver || 0)
+      : 'logo.png',
   }));
 }
 
@@ -3319,12 +3377,14 @@ function renderMusic() {
   if (empty) empty.hidden = tracks.length > 0;
   grid.innerHTML = '';
   tracks.forEach(t => {
-    const item = document.createElement('button');
-    item.type = 'button';
+    const item = document.createElement('div');
     item.className = 'track' + (t.id === player.id ? ' playing' : '')
       + (t.missing ? ' missing' : '');
     item.title = t.missing ? '文件已被移动或删除' : t.title;
+    item.setAttribute('role', 'button');
+    item.tabIndex = 0;
     item.onclick = () => playTrack(t.id);
+    item.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') playTrack(t.id); };
 
     const cover = document.createElement('span');
     cover.className = 'track-cover';
@@ -3332,8 +3392,17 @@ function renderMusic() {
       const img = document.createElement('img');
       img.loading = 'lazy';
       img.alt = '';
-      img.src = '/api/media/cover?id=' + t.id;
+      img.src = '/api/media/cover?id=' + t.id + '&v=' + (t.cover_ver || 0);
       cover.append(img);
+    }
+    if (t.has_video && !t.missing) {
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'track-edit';
+      edit.textContent = '换封面';
+      edit.title = '从这个视频里重新挑一帧';
+      edit.onclick = ev => { ev.stopPropagation(); openCoverPicker(t.id); };
+      cover.append(edit);
     }
     const title = document.createElement('span');
     title.className = 'track-title';
@@ -3363,7 +3432,9 @@ function updatePlayerBar() {
   $('player-sub').textContent = (track.duration ? fmtClock(track.duration) : '未知时长')
     + ' · ' + (SOURCE_LABEL[track.source] || '音频');
   const cover = $('player-cover');
-  cover.src = track.has_cover ? '/api/media/cover?id=' + track.id : 'logo.png';
+  cover.src = track.has_cover
+    ? '/api/media/cover?id=' + track.id + '&v=' + (track.cover_ver || 0)
+    : 'logo.png';
   $('pl-dur').textContent = (audio.duration && isFinite(audio.duration))
     ? fmtClock(audio.duration)
     : (track.duration ? fmtClock(track.duration) : '00:00');
@@ -3372,7 +3443,7 @@ function updatePlayerBar() {
 
 function setPlayIcon(playing) {
   const btn = $('pl-play');
-  if (btn) btn.textContent = playing ? '⏸' : '▶';
+  if (btn) btn.classList.toggle('playing', !!playing);
 }
 
 function playTrack(id) {
@@ -3510,6 +3581,63 @@ async function pickMediaFile(title) {
   }
 }
 
+/* ---- 挑封面：从原视频抽几帧让用户选 ---- */
+let coverTargetId = 0;
+
+function closeCoverPicker() {
+  const modal = $('cover-modal');
+  if (modal) modal.hidden = true;
+  coverTargetId = 0;
+}
+
+async function openCoverPicker(id) {
+  const modal = $('cover-modal');
+  const grid = $('cover-grid');
+  if (!modal || !grid) return;
+  coverTargetId = id;
+  grid.innerHTML = '';
+  $('cover-hint').textContent = '正在从视频里取画面…';
+  modal.hidden = false;
+  try {
+    const data = await api('/api/library/frames', { id, count: 8 });
+    const frames = data.frames || [];
+    if (!frames.length) {
+      $('cover-hint').textContent = '这首歌没有原始视频（或缺少 ffmpeg），换不了封面。';
+      return;
+    }
+    $('cover-hint').textContent = '按视频时间抽了 ' + frames.length + ' 帧，点一张就用它。';
+    frames.forEach(frame => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'cover-pick';
+      btn.onclick = () => applyCover(frame.i);
+      const img = document.createElement('img');
+      img.src = frame.url;
+      img.alt = '';
+      const tag = document.createElement('span');
+      tag.textContent = fmtClock(frame.at);
+      btn.append(img, tag);
+      grid.append(btn);
+    });
+  } catch (e) {
+    $('cover-hint').textContent = e.message;
+  }
+}
+
+async function applyCover(index) {
+  const id = coverTargetId;
+  if (!id) return;
+  try {
+    const data = await api('/api/library/cover', { id, i: index });
+    musicLib.tracks = data.tracks;
+    renderMusic();
+    closeCoverPicker();
+    toast('封面已更新', 'ok');
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+}
+
 async function importAudioFile() {
   const path = await pickMediaFile('选择音频文件');
   if (!path) return;
@@ -3624,6 +3752,12 @@ bindSettingsInputs();
 bindAudio();
 refreshLibrary(false);
 document.addEventListener('keydown', handleMusicKeys);
+document.addEventListener('click', e => {
+  if (e.target && e.target.id === 'cover-modal') closeCoverPicker();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeCoverPicker();
+});
 window.addEventListener('pagehide', () => savePosition(true));
 // 把实际生效的配置文件路径显示出来，避免用户不知道改的是哪一份
 fetch('/api/settings').then(r => r.json()).then(d => showConfigPath(d.path)).catch(() => {});
