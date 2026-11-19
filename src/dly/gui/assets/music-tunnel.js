@@ -9,6 +9,11 @@
  */
 
 import * as THREE from './three/three.module.min.js';
+import { EffectComposer } from './three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from './three/addons/postprocessing/RenderPass.js';
+import { ShaderPass } from './three/addons/postprocessing/ShaderPass.js';
+import { UnrealBloomPass } from './three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from './three/addons/postprocessing/OutputPass.js';
 
 const S = 2.9;              // 封面边长
 const G = 4.4;              // 格间距
@@ -35,6 +40,117 @@ function slotVisible(i, j, k, h) {
   if (Math.max(Math.abs(i), Math.abs(j)) > 1 && h < 0.5) return false;
   return true;
 }
+
+/* 后期调色：轻微色差、从右上光核打出的体积光、暗角、细颗粒 */
+const GradeShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    uTime: { value: 0 },
+    uResolution: { value: new THREE.Vector2(1, 1) },
+  },
+  vertexShader: `varying vec2 vUv;
+    void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: `varying vec2 vUv;
+    uniform sampler2D tDiffuse;
+    uniform float uTime;
+    uniform vec2 uResolution;
+    float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    void main(){
+      vec2 uv = vUv;
+      vec2 d = uv - 0.5;
+      // 轻微色差：R/B 向相反方向偏一点，G 不动
+      float r = texture2D(tDiffuse, uv + d * 0.0015).r;
+      float g = texture2D(tDiffuse, uv).g;
+      float b = texture2D(tDiffuse, uv - d * 0.0015).b;
+      vec3 col = vec3(r, g, b);
+
+      // 体积光：从右上光核朝像素方向 18 次采样，权重每次 ×0.9
+      vec2 light = vec2(0.53, 0.47);
+      vec2 stepv = (light - uv) / 18.0;
+      vec3 rays = vec3(0.0);
+      float weight = 1.0;
+      vec2 p = uv;
+      for (int i = 0; i < 18; i++) {
+        p += stepv;
+        vec3 s = texture2D(tDiffuse, p).rgb;
+        float lum = dot(s, vec3(0.299, 0.587, 0.114));
+        rays += s * smoothstep(0.90, 1.0, lum) * weight;
+        weight *= 0.9;
+      }
+      float avoid = smoothstep(0.20, 0.42, length((uv - light) * vec2(1.6, 1.0)));
+      col += rays * 0.07 * avoid * vec3(0.92, 0.90, 1.0);
+
+      // 暗角
+      float vignette = 1.0 - dot(d * vec2(1.0, 1.25), d * vec2(1.0, 1.25)) * 1.35;
+      col *= clamp(vignette, 0.0, 1.0);
+
+      // 颗粒
+      float n = hash(uv * uResolution + fract(uTime) * 97.0) - 0.5;
+      col += n * 0.011;
+      gl_FragColor = vec4(col, 1.0);
+    }`,
+};
+
+
+/* 封面材质：倒角 + 细暗边 + 纸纹 + 覆膜扫光 + 边缘淡紫。
+   颜色按 sRGB→线性处理（pow 2.2），交给 OutputPass 统一转回。 */
+const CoverShader = {
+  uniforms: {
+    map: { value: null },
+    uTime: { value: 0 },
+    fogColor: { value: new THREE.Color(0x05060f) },
+    fogNear: { value: D * 2.2 },
+    fogFar: { value: D * 10.5 },
+  },
+  vertexShader: `
+    attribute vec2 aState;            // x = lift, y = hero
+    varying vec2 vUv;
+    varying float vFogDepth;
+    varying vec2 vState;
+    void main(){
+      vUv = uv;
+      vState = aState;
+      vec4 mv = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+      vFogDepth = -mv.z;
+      gl_Position = projectionMatrix * mv;
+    }`,
+  fragmentShader: `
+    uniform sampler2D map;
+    uniform float uTime;
+    uniform vec3 fogColor;
+    uniform float fogNear;
+    uniform float fogFar;
+    varying vec2 vUv;
+    varying float vFogDepth;
+    varying vec2 vState;
+    float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    void main(){
+      vec3 col = texture2D(map, vUv).rgb;   // 纹理按 sRGB 上传，取样已是线性
+
+      float edge = min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y));
+      // 最外 .014 是倒角：左上亮、右下暗
+      float bevel = smoothstep(0.0, 0.014, edge);
+      float corner = (1.0 - vUv.x) * 0.5 + vUv.y * 0.5;
+      col *= mix(0.72, 1.0, bevel);
+      col += vec3(0.05, 0.05, 0.07) * (1.0 - bevel) * corner;
+      // 倒角内侧一条细暗边
+      float inner = smoothstep(0.014, 0.020, edge);
+      col *= mix(0.93, 1.0, inner);
+      // 纸张颗粒
+      col += (hash(vUv * 700.0) - 0.5) * 0.009;
+      // 覆膜高光：从左上方斜扫，抬起/主封面时更亮
+      float sweep = fract(uTime * 0.07 + vUv.y * 0.6) * 2.6 - 0.8;
+      float band = exp(-pow((vUv.x * 0.7 + (1.0 - vUv.y) * 0.3) - sweep, 2.0) * 90.0);
+      col += band * (0.04 + 0.12 * max(vState.y, vState.x)) * vec3(1.0, 0.95, 1.0);
+      // 边缘淡紫 fresnel
+      float rim = pow(1.0 - bevel, 6.0);
+      col += rim * vec3(0.70, 0.67, 0.94) * 0.07;
+
+      float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
+      col = mix(col, fogColor, fogFactor);
+      gl_FragColor = vec4(col, 1.0);
+    }`,
+};
 
 function radialTexture() {
   const size = 32;
@@ -80,7 +196,7 @@ export function mountMusicTunnel(host, options = {}) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.18;
+  renderer.toneMappingExposure = 1.05;
   renderer.domElement.style.display = 'block';
   host.appendChild(renderer.domElement);
 
@@ -90,6 +206,15 @@ export function mountMusicTunnel(host, options = {}) {
 
   const camera = new THREE.PerspectiveCamera(32, 16 / 9, 0.5, 200);
   camera.position.set(0, 0, CAM_Z0);
+
+  // ---- 后期：RenderPass → 半分辨率 Bloom → 调色 → OutputPass ----
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  const bloomPass = new UnrealBloomPass(new THREE.Vector2(640, 360), 0.18, 0.20, 1.1);
+  composer.addPass(bloomPass);
+  const gradePass = new ShaderPass(GradeShader);
+  composer.addPass(gradePass);
+  composer.addPass(new OutputPass());
 
   // ---- 背景板：隧道尽头的一团光 ----
   const bgMesh = new THREE.Mesh(
@@ -191,11 +316,24 @@ export function mountMusicTunnel(host, options = {}) {
   const coverMeshes = [];
   byTrack.forEach((list, trackIndex) => {
     const tex = textures[trackIndex % Math.max(1, textures.length)] || null;
-    const frontMat = new THREE.MeshBasicMaterial({ map: tex });
-    if (!tex) frontMat.color.set(0x272238);
+    const frontMat = new THREE.ShaderMaterial({
+      uniforms: {
+        map: { value: tex },
+        uTime: { value: 0 },
+        fogColor: { value: bgColor },
+        fogNear: { value: D * 2.2 },
+        fogFar: { value: D * 10.5 },
+      },
+      vertexShader: CoverShader.vertexShader,
+      fragmentShader: CoverShader.fragmentShader,
+    });
     // 顺序：+x, -x, +y, -y, +z(封面), -z(背面)
     const materials = [sideMat, sideMat, sideMat, sideMat, frontMat, backMat];
-    const mesh = new THREE.InstancedMesh(boxGeo, materials, list.length);
+    // 每张封面的 lift/hero 用实例属性传进着色器
+    const geo = boxGeo.clone();
+    geo.setAttribute('aState', new THREE.InstancedBufferAttribute(
+      new Float32Array(list.length * 2), 2));
+    const mesh = new THREE.InstancedMesh(geo, materials, list.length);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.frustumCulled = false;
     list.forEach((slot, index) => {
@@ -221,6 +359,10 @@ export function mountMusicTunnel(host, options = {}) {
     let h = width / targetAspect;
     if (h > height) { h = height; w = height * targetAspect; }
     renderer.setSize(Math.round(w), Math.round(h), true);
+    composer.setSize(Math.round(w), Math.round(h));
+    if (gradePass.uniforms.uResolution) {
+      gradePass.uniforms.uResolution.value.set(Math.round(w), Math.round(h));
+    }
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
@@ -315,10 +457,14 @@ export function mountMusicTunnel(host, options = {}) {
       dummy.scale.setScalar(scale);
       dummy.updateMatrix();
       slot.mesh.setMatrixAt(slot.meshIdx, dummy.matrix);
+      const stateAttr = slot.mesh.geometry.attributes.aState;
+      stateAttr.array[slot.meshIdx * 2] = slot.lift;
+      stateAttr.array[slot.meshIdx * 2 + 1] = slot.hero;
     }
     coverMeshes.forEach(mesh => {
       mesh.visible = coversReady;
       mesh.instanceMatrix.needsUpdate = true;
+      mesh.geometry.attributes.aState.needsUpdate = true;
     });
   }
 
@@ -493,7 +639,12 @@ export function mountMusicTunnel(host, options = {}) {
 
     updateSlots(dt);
     pick();
-    renderer.render(scene, camera);
+    gradePass.uniforms.uTime.value = time;
+    coverMeshes.forEach(mesh => {
+      const mat = mesh.material[4];
+      if (mat && mat.uniforms) mat.uniforms.uTime.value = time;
+    });
+    composer.render();
   }
   state.raf = requestAnimationFrame(frame);
 
@@ -521,6 +672,9 @@ export function mountMusicTunnel(host, options = {}) {
       points.material.dispose();
       bgMesh.geometry.dispose();
       bgMesh.material.dispose();
+      composer.dispose();
+      bloomPass.dispose();
+      gradePass.material.dispose();
       renderer.dispose();
       el.remove();
     },

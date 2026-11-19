@@ -899,9 +899,14 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, png, "image/png")
             return
 
-        if path in ("/pixel-toggle.js", "/fluid-nav.js", "/music-tunnel.js",
-                    "/three/three.module.min.js", "/three/three.core.min.js"):
-            # 主题开关 / 流体导航 / 歌单隧道（含内置的 three.js）；
+        allowed_script = (
+            path in ("/pixel-toggle.js", "/fluid-nav.js", "/music-tunnel.js",
+                     "/three/three.module.min.js", "/three/three.core.min.js")
+            or (path.startswith("/three/addons/") and ".." not in path
+                and path.endswith(".js"))
+        )
+        if allowed_script:
+            # 主题开关 / 流体导航 / 歌单隧道（含内置 three.js 与其后期处理 addon）；
             # assets 整体随包分发，按白名单开放，避免变成任意文件服务器
             try:
                 script = files("dly.gui").joinpath("assets" + path).read_bytes()

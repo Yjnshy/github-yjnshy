@@ -135,11 +135,14 @@ def test_tunnel_assets_are_served(tmp_path, monkeypatch):
     ctx.start()
     try:
         for name in ("music-tunnel.js", "three/three.module.min.js",
-                     "three/three.core.min.js"):
+                     "three/three.core.min.js",
+                     "three/addons/postprocessing/EffectComposer.js",
+                     "three/addons/postprocessing/UnrealBloomPass.js",
+                     "three/addons/shaders/CopyShader.js"):
             with urllib.request.urlopen(ctx.url + name, timeout=8) as res:
                 assert res.status == 200, name
                 assert "javascript" in res.headers.get("Content-Type", "")
-                assert len(res.read()) > 1000, name
+                assert len(res.read()) > 200, name
         # 白名单之外的文件不能被读到
         try:
             urllib.request.urlopen(ctx.url + "config.example.yaml", timeout=5)

@@ -85,6 +85,12 @@ def test_tunnel_view_is_wired(html):
     assert "renderer.domElement.setPointerCapture" in module
     assert "host.setPointerCapture" not in module
     assert 'id="music-tunnel"' in html
+    # addon 里写的是 `from 'three'`，靠 import map 指到本地包
+    assert '"three": "/three/three.module.min.js"' in html
+    assert "EffectComposer" in module and "UnrealBloomPass" in module
+    # addon 里写的是 `from 'three'`，靠 import map 指到本地包
+    assert '"three": "/three/three.module.min.js"' in html
+    assert "EffectComposer" in module and "UnrealBloomPass" in module
     assert "toggleMusicView()" in html
 
 
@@ -101,4 +107,10 @@ def test_tunnel_view_is_wired(html):
     assert "renderer.domElement.setPointerCapture" in module
     assert "host.setPointerCapture" not in module
     assert 'id="music-tunnel"' in html
+    # addon 里写的是 `from 'three'`，靠 import map 指到本地包
+    assert '"three": "/three/three.module.min.js"' in html
+    assert "EffectComposer" in module and "UnrealBloomPass" in module
+    # addon 里写的是 `from 'three'`，靠 import map 指到本地包
+    assert '"three": "/three/three.module.min.js"' in html
+    assert "EffectComposer" in module and "UnrealBloomPass" in module
     assert "toggleMusicView()" in html
