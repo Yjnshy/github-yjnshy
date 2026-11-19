@@ -676,11 +676,11 @@
   .player-time { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
   .player-extra { display: flex; align-items: center; gap: 6px; }
   .player-extra .vol { width: 72px; accent-color: var(--accent); }
-  .player-mode {
-    height: 26px; padding: 0 4px; border: 1px solid var(--border);
-    border-radius: 8px; background: var(--surface-2); color: var(--text);
-    font-size: 11.5px; cursor: pointer;
-  }
+  .mode-btn { width: 28px; height: 28px; display: grid; place-items: center; }
+  .mode-btn svg { width: 17px; height: 17px; stroke: currentColor; display: none; }
+  .mode-btn[data-mode="list"] svg[data-mode="list"],
+  .mode-btn[data-mode="single"] svg[data-mode="single"],
+  .mode-btn[data-mode="shuffle"] svg[data-mode="shuffle"] { display: block; }
   .player { user-select: none; }
   #audio { display: none; }
 
@@ -1380,12 +1380,28 @@
           <span class="player-time" id="pl-dur">00:00</span>
         </div>
         <div class="player-extra">
-          <select class="player-mode" id="pl-mode" onchange="setPlayMode(this.value)"
-                  title="播放模式" aria-label="播放模式">
-            <option value="list">顺序播放</option>
-            <option value="single">单曲循环</option>
-            <option value="shuffle">随机播放</option>
-          </select>
+          <button class="icon-btn mode-btn" type="button" id="pl-mode"
+                  data-mode="list" onclick="cyclePlayMode()" title="顺序播放"
+                  aria-label="播放模式">
+            <svg class="mode-icon" data-mode="list" viewBox="0 0 24 24" fill="none"
+                 stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3.6 6.4h10.2M3.6 12h10.2M3.6 17.6h6.4"/>
+              <path d="M15.4 15.2l4.4 2.4-4.4 2.4z"/>
+            </svg>
+            <svg class="mode-icon" data-mode="single" viewBox="0 0 24 24" fill="none"
+                 stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6.2 8.6h9.6a2.6 2.6 0 0 1 2.6 2.6v1.4"/>
+              <path d="M17.8 15.4H8.2a2.6 2.6 0 0 1-2.6-2.6v-1.4"/>
+              <path d="M14.9 6.1 17.4 8.6 14.9 11.1"/>
+              <path d="M9.1 12.9 6.6 15.4 9.1 17.9"/>
+            </svg>
+            <svg class="mode-icon" data-mode="shuffle" viewBox="0 0 24 24" fill="none"
+                 stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3.5 7h3l10.5 10h3.5"/>
+              <path d="M3.5 17h3L17 7h3.5"/>
+              <path d="M18 4.6 20.6 7 18 9.4M18 14.6 20.6 17 18 19.4"/>
+            </svg>
+          </button>
           <button class="icon-btn" type="button" id="pl-speed" onclick="cycleSpeed()" title="播放速度">1.0×</button>
           <input type="range" id="pl-vol" class="vol" min="0" max="100" value="100"
                  aria-label="音量">
@@ -3561,9 +3577,19 @@ function prevTrack() {
 
 function setPlayMode(mode) {
   player.mode = MODE_LABEL[mode] ? mode : 'list';
-  if ($('pl-mode')) $('pl-mode').value = player.mode;
+  const btn = $('pl-mode');
+  if (btn) {
+    btn.dataset.mode = player.mode;
+    btn.title = MODE_LABEL[player.mode] + '（点击切换）';
+  }
   try { localStorage.setItem('dly.playMode', player.mode); } catch (e) { /* 隐私模式 */ }
   toast('播放模式：' + MODE_LABEL[player.mode], 'ok');
+}
+
+function cyclePlayMode() {
+  const order = ['list', 'single', 'shuffle'];
+  const index = order.indexOf(player.mode);
+  setPlayMode(order[(index + 1) % order.length]);
 }
 
 function cycleSpeed() {

@@ -304,6 +304,7 @@ export function mountMusicTunnel(host, options = {}) {
           rz: (jitter1 - 0.5) * 0.14,
           lift: 0,
           hero: 0,
+          hide: 0,
           flying: 0,
           track: Math.abs(3 * i + 5 * j + 2 * k) % count,
         });
@@ -410,7 +411,7 @@ export function mountMusicTunnel(host, options = {}) {
 
     state.heroSlot = slot;
     state.vel = 0;
-    state.travelTarget = CAM_Z0 - (slot.z + 11);    // 相机停在这层前方，主封面占约八成高度
+    state.travelTarget = CAM_Z0 - (slot.z + 15);    // 相机停在这层前方，主封面占六成左右
     state.lastInput = performance.now();
 
     if (notify) {
@@ -451,15 +452,27 @@ export function mountMusicTunnel(host, options = {}) {
       }
     }
 
+    // 选中主封面后，比它更靠近相机的那些层会挡在它前面（截图里的问题）。
+    // 让它们淡出——相当于给主封面让出视线，而不是把主封面硬推到镜头前。
+    // 主封面的实际 z（含抖动与向前抬起的 1.3），比它更靠前的层都要让开
+    const heroFrontZ = state.heroSlot
+      ? state.heroSlot.z + (state.heroSlot.jz || 0) + 1.3 : null;
+
     for (const slot of slots) {
       const isHovered = slot === state.hovered;
       const isHero = slot === state.heroSlot;
+      // 整组封面绕 Z 倾斜 0.2 弧度，一张 2.9 宽的封面在 z 上要占 ±1 左右；
+      // 想让主封面彻底不被压住，得把比它「最靠后那一角」还靠前的都藏起来
+      const wantHide = heroFrontZ !== null && !isHero
+        && (slot.z + (slot.jz || 0)) > heroFrontZ - 1.2;
+      slot.hide = state.reduced ? (wantHide ? 1 : 0)
+        : damp(slot.hide, wantHide ? 1 : 0, 6, dt);
       slot.lift = state.reduced ? (isHovered ? 1 : 0)
         : damp(slot.lift, isHovered ? 1 : 0, 8, dt);
       slot.hero = state.reduced ? (isHero ? 1 : 0)
         : damp(slot.hero, isHero ? 1 : 0, 2.8, dt);
 
-      const scale = 1 + 0.06 * slot.lift + 0.7 * slot.hero;
+      const scale = (1 + 0.06 * slot.lift + 0.7 * slot.hero) * (1 - slot.hide);
       const z = slot.z + 0.5 * slot.lift + 1.3 * slot.hero;
 
       // 倾斜整个盒子：封面是盒子的一面，所以怎么斜都不会和盒体错位
@@ -699,7 +712,7 @@ export function mountMusicTunnel(host, options = {}) {
     selectTrack(trackId) {
       // 外部切歌（自动下一首、上一首/下一首按钮）：挑离当前视角最近的一层里，
       // 属于这首歌的封面飞入中央。不能随便取第一张，否则相机会被拽到隧道深处。
-      const targetZ = camera.position.z - 11;
+      const targetZ = camera.position.z - 15;
       let best = null;
       let bestDistance = Infinity;
       for (const slot of slots) {

@@ -144,3 +144,6 @@ def test_playback_modes_are_explicit(html):
     # 顺序播放放完最后一首要停，而不是绕回第一首
     assert "auto && player.mode === 'list' && index === list.length - 1" in html
     assert "localStorage.setItem('dly.playMode'" in html
+    # 图标按钮：点一下切换，图标随模式换
+    assert 'data-mode="list"' in html and 'data-mode="single"' in html
+    assert "function cyclePlayMode(" in html
