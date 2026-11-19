@@ -3362,7 +3362,7 @@ function mountTunnel() {
   try {
     tunnel = window.MusicTunnel.mount(host, {
       tracks,
-      onSelect: id => handleTunnelSelect(id),
+      onSelect: (id, info) => handleTunnelSelect(id, !!(info && info.hero)),
       reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     });
     window.__dlyTunnel = tunnel;
@@ -3388,7 +3388,7 @@ function mountTunnel() {
 let tunnelClickTimer = 0;
 let lastHeroClick = 0;
 
-function handleTunnelSelect(id) {
+function handleTunnelSelect(id, isHero) {
   if (!tunnelPlays) return;                 // 关掉「点封面切歌」时只换封面
   const audio = $('audio');
   const isCurrent = player.id === id && !!audio.src;
@@ -3399,6 +3399,9 @@ function handleTunnelSelect(id) {
     lastHeroClick = 0;
     return;
   }
+  // 同一首歌在隧道里有多张封面：点「不是中央那张」的，只换主封面，不动播放
+  // （否则会被当成单击中央封面而暂停，看起来就是「这张点了不播」）
+  if (!isHero) return;
   // 自己数连击：原生 dblclick 依赖系统双击间隔，这里两个事件都由 pointerup 触发，
   // 自己判更稳（也方便测试）。
   // 约定：双击中央封面 = 从头播放；单击 = 暂停 / 继续（单击要让位 300ms 等双击）

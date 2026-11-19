@@ -169,10 +169,19 @@ def test_switching_track_starts_from_zero(html):
 
 def test_center_cover_single_pause_double_replay(html):
     """中央封面：单击暂停/继续，双击从头播放。自己数连击，别依赖原生 dblclick。"""
-    assert "function handleTunnelSelect(id)" in html
+    assert "function handleTunnelSelect(id, isHero)" in html
     assert "if (now - lastHeroClick < 320)" in html
     assert "audio.currentTime = 0;" in html
     assert "tunnelClickTimer = setTimeout(() => { togglePlay(); }, 300);" in html
     # 主封面要能被点中（早前被排除在拾取之外，点正中间毫无反应）
     module = (HTML_PATH.parent / "music-tunnel.js").read_text(encoding="utf-8")
     assert "if (slot === state.heroSlot) {" in module
+
+
+def test_same_song_other_cover_does_not_toggle(html):
+    """同一首歌在隧道里有好几张封面：点不是中央那张，只换主封面，不能暂停。"""
+    assert "function handleTunnelSelect(id, isHero)" in html
+    assert "if (!isHero) return;" in html
+    module = (HTML_PATH.parent / "music-tunnel.js").read_text(encoding="utf-8")
+    assert "state.onSelect(track.id, { hero: true })" in module
+    assert "state.onSelect(track.id, { hero: false })" in module

@@ -416,7 +416,8 @@ export function mountMusicTunnel(host, options = {}) {
 
     if (notify) {
       const track = tracks[slot.track % Math.max(1, tracks.length)];
-      if (track) state.onSelect(track.id);
+      // hero=false：这是「同一首歌的另一张封面」，页面据此只换主封面、别动播放状态
+      if (track) state.onSelect(track.id, { hero: false });
     }
   }
 
@@ -547,10 +548,10 @@ export function mountMusicTunnel(host, options = {}) {
     if (wasDrag || performance.now() - dragStart > 700) return;
     const slot = state.hovered;
     if (!slot) return;
+    const track = tracks[slot.track % Math.max(1, tracks.length)];
     if (slot === state.heroSlot) {
-      // 点的就是中央主封面：不再飞一次，只把「用户点了它」告诉页面
-      const track = tracks[slot.track % Math.max(1, tracks.length)];
-      if (track) state.onSelect(track.id);
+      // 点的就是中央主封面：不再飞一次，只告诉页面「点的是主封面」
+      if (track) state.onSelect(track.id, { hero: true });
       return;
     }
     selectSlot(slot, true);
