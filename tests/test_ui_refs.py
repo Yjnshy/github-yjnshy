@@ -124,3 +124,12 @@ def test_tunnel_click_can_skip_switching_track(html):
     # 开关状态存在本地，刷新后保持
     assert "localStorage.getItem('dly.tunnelPlays')" in html
     assert "localStorage.setItem('dly.tunnelPlays'" in html
+
+
+def test_dragging_slider_does_not_move_window(html):
+    """pywebview 的 easy_drag 会在 window 上监听 mousedown：滑块和隧道画布必须截住事件，
+    否则拖进度条 / 拖隧道时整个窗口会跟着跑。"""
+    assert "function blockWindowDrag(" in html
+    assert "['pl-seek', 'pl-vol'].forEach(id => blockWindowDrag($(id)))" in html
+    module = (HTML_PATH.parent / "music-tunnel.js").read_text(encoding="utf-8")
+    assert "addEventListener('mousedown', event => event.stopPropagation())" in module

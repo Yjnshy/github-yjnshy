@@ -35,9 +35,8 @@ function hash2(i, j) {
 /* 棋盘格 + 随机稀疏；中央格永远空着，让相机有路可走，
    点某张封面时再把它飞到中央当主封面 */
 function slotVisible(i, j, k, h) {
-  if (i === 0 && j === 0) return false;
   if ((i + j + k) % 2 !== 0) return false;
-  if (Math.max(Math.abs(i), Math.abs(j)) > 1 && h < 0.5) return false;
+  if (Math.max(Math.abs(i), Math.abs(j)) > 1 && h < 0.62) return false;
   return true;
 }
 
@@ -125,7 +124,14 @@ const CoverShader = {
     varying vec2 vState;
     float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
     void main(){
-      vec3 col = texture2D(map, vUv).rgb;   // 纹理按 sRGB 上传，取样已是线性
+      // 远处轻微虚化：越远取样半径越大，画面才有景深，不像一面贴图墙
+      float dof = smoothstep(14.0, 34.0, vFogDepth);
+      vec2 texel = vec2((0.5 + dof * 3.6) / 512.0, (0.5 + dof * 3.6) / 512.0);
+      vec3 col = texture2D(map, vUv).rgb * 0.36
+               + texture2D(map, vUv + vec2(texel.x, 0.0)).rgb * 0.16
+               + texture2D(map, vUv - vec2(texel.x, 0.0)).rgb * 0.16
+               + texture2D(map, vUv + vec2(0.0, texel.y)).rgb * 0.16
+               + texture2D(map, vUv - vec2(0.0, texel.y)).rgb * 0.16;
 
       float edge = min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y));
       // 最外 .014 是倒角：左上亮、右下暗
@@ -285,11 +291,17 @@ export function mountMusicTunnel(host, options = {}) {
       for (let i = -7; i <= 7; i++) {
         const h = hash2(i + k * 3, j);
         if (!slotVisible(i, j, k, h)) continue;
+        // 抖动与旋转都用哈希算，重建场景时位置不变
+        const jitter1 = hash2(i * 7.1 + k, j * 3.7);
+        const jitter2 = hash2(j * 5.3 - k, i * 2.9);
+        const jitter3 = hash2(i * 1.7 + j * 4.1, k * 6.3);
         slots.push({
           i, j, k, layer,
           z: -k * D,
-          baseX: i * G,
-          baseY: j * G,
+          baseX: i * G + (jitter1 - 0.5) * 2.2,
+          baseY: j * G + (jitter2 - 0.5) * 1.8,
+          jz: (jitter3 - 0.5) * 1.6,
+          rz: (jitter1 - 0.5) * 0.14,
           lift: 0,
           hero: 0,
           flying: 0,
@@ -301,6 +313,11 @@ export function mountMusicTunnel(host, options = {}) {
   slots.forEach((slot, index) => { slot.index = index; });
 
   // ---- 几何：一个盒子，封面就是 +Z 面 ----
+  // 整片封面绕 Z 倾斜 0.2 弧度：参考图里没有一张是正对相机的
+  const coverGroup = new THREE.Group();
+  coverGroup.rotation.z = 0.2;
+  scene.add(coverGroup);
+
   const boxGeo = new THREE.BoxGeometry(S, S, TH);
   const sideMat = new THREE.MeshStandardMaterial({ color: 0x252136, roughness: 0.85,
                                                    metalness: 0.05 });
@@ -340,7 +357,7 @@ export function mountMusicTunnel(host, options = {}) {
       slot.mesh = mesh;
     });
     mesh.userData.slots = list;
-    scene.add(mesh);
+    coverGroup.add(mesh);
     coverMeshes.push(mesh);
   });
 
@@ -449,8 +466,8 @@ export function mountMusicTunnel(host, options = {}) {
       const tiltX = isHovered && !state.reduced ? pointer.y * 0.35 : 0;
       const tiltY = isHovered && !state.reduced ? -pointer.x * 0.35 : 0;
 
-      dummy.position.set(slot.baseX, slot.baseY, z);
-      dummy.rotation.set(tiltX, tiltY, 0);
+      dummy.position.set(slot.baseX, slot.baseY, z + slot.jz);
+      dummy.rotation.set(tiltX, tiltY, slot.rz);
       dummy.scale.setScalar(scale);
       dummy.updateMatrix();
       slot.mesh.setMatrixAt(slot.meshIdx, dummy.matrix);
@@ -563,6 +580,9 @@ export function mountMusicTunnel(host, options = {}) {
     if (next) selectSlot(next, true);
   }
 
+  // pywebview 的 easy_drag 在 window 上监听 mousedown，任何位置的拖动都会带着窗口走。
+  // 画布上要拖动穿行，必须在这里截住，别让事件冒到 window。
+  renderer.domElement.addEventListener('mousedown', event => event.stopPropagation());
   renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
   renderer.domElement.addEventListener('pointerdown', onPointerDown);
   renderer.domElement.addEventListener('pointermove', onPointerMove);
@@ -573,6 +593,11 @@ export function mountMusicTunnel(host, options = {}) {
   const observer = new ResizeObserver(layout);
   observer.observe(host);
   layout();
+
+  // 一进来就让最近那层的中央封面当主封面：参考图里正中始终是一张大的
+  state.heroSlot = slots.find(s => s.i === 0 && s.j === 0 && s.k === 0)
+    || slots.find(s => s.layer === 0 && Math.abs(s.baseX) < G && Math.abs(s.baseY) < G)
+    || null;
 
   // ---- 主循环 ----
   let last = performance.now();

@@ -676,6 +676,7 @@
   .player-time { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
   .player-extra { display: flex; align-items: center; gap: 6px; }
   .player-extra .vol { width: 72px; accent-color: var(--accent); }
+  .player { user-select: none; }
   #audio { display: none; }
 
   /* 侧栏底部：只有两个圆形图标按钮，收起侧栏也照样能点 */
@@ -3601,6 +3602,11 @@ function bindAudio() {
   }
 }
 
+/* 进度条和音量条：拖它们的时候不能把窗口一起拖走（pywebview easy_drag 在 window 上监听） */
+function blockWindowDrag(el) {
+  if (el) el.addEventListener('mousedown', e => e.stopPropagation());
+}
+
 async function pickMediaFile(title) {
   try {
     const data = await api('/api/pick-media', { title });
@@ -3780,6 +3786,7 @@ fillRooms([]);
 mountThemeToggles();
 bindSettingsInputs();
 bindAudio();
+['pl-seek', 'pl-vol'].forEach(id => blockWindowDrag($(id)));
 try {
   const saved = localStorage.getItem('dly.tunnelPlays');
   if (saved !== null) tunnelPlays = saved === '1';
