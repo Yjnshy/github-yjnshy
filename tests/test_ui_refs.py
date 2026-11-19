@@ -219,3 +219,17 @@ def test_floating_player_can_be_hidden(html):
     # 收起状态只在隧道视图生效，网格视图照常显示
     assert "const collapsed = floating && playerHidden;" in html
     assert "localStorage.setItem('dly.playerHidden'" in html
+
+
+def test_tunnel_recycles_slots_across_spans_on_fast_scroll(html):
+    """一次滚很远/缩放时，被甩到身后的封面要按跨越的档数一次回收到位，
+    否则前方出现空洞、没有新封面补出来；主封面让路的判定也要有上限，
+    不能把整条隧道都淡出。"""
+    module = (HTML_PATH.parent / "music-tunnel.js").read_text(encoding="utf-8")
+    # 回收按 (slot.z - camZ - 1) / (LAYERS * D) 的跨度倍数搬，而不是只挪一档
+    assert "const spans = Math.ceil((slot.z - camZ - 1) / (LAYERS * D));" in module
+    assert "slot.z -= spans * LAYERS * D;" in module
+    # 主封面让路只作用到紧邻几层（heroFrontZ + 3 * D），避免远处的层全被藏掉
+    assert "slotZ < heroFrontZ + 3 * D" in module
+    # 滚轮 delta 夹幅，防止一帧跳几十单位
+    assert "Math.max(-120, Math.min(120, event.deltaY))" in module

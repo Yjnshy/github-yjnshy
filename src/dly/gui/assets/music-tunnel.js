@@ -444,7 +444,10 @@ export function mountMusicTunnel(host, options = {}) {
     const camZ = camera.position.z;
     for (const slot of slots) {
       if (slot.z > camZ + 1 && !slot.flying) {
-        slot.z -= LAYERS * D;
+        // 一次滚很远时，只挪一档（77 单位）追不上相机，会在前方留下空洞、
+        // 已经掠过的封面反而挡在镜头后面 —— 按需要的档数一次挪到位
+        const spans = Math.ceil((slot.z - camZ - 1) / (LAYERS * D));
+        slot.z -= spans * LAYERS * D;
         slot.baseX = slot.i * G;
         slot.baseY = slot.j * G;
         if (slot === state.heroSlot) state.heroSlot = null;
@@ -462,10 +465,13 @@ export function mountMusicTunnel(host, options = {}) {
     for (const slot of slots) {
       const isHovered = slot === state.hovered;
       const isHero = slot === state.heroSlot;
-      // 整组封面绕 Z 倾斜 0.2 弧度，一张 2.9 宽的封面在 z 上要占 ±1 左右；
-      // 想让主封面彻底不被压住，得把比它「最靠后那一角」还靠前的都藏起来
+      // 整组封面绕 Z 倾斜 0.2 弧度，一张 2.9 宽的封面在 z 上要占 ±1 左右，
+      // 所以要比主封面「最靠后那一角」再靠前的层让开。
+      // 但只让开紧邻的两层：不加这个上限，一次滚很远之后主封面可能落在很远的地方，
+      // 判定会把它前面的整条隧道全藏掉，画面就空了。
+      const slotZ = slot.z + (slot.jz || 0);
       const wantHide = heroFrontZ !== null && !isHero
-        && (slot.z + (slot.jz || 0)) > heroFrontZ - 1.2;
+        && slotZ > heroFrontZ - 1.2 && slotZ < heroFrontZ + 3 * D;
       slot.hide = state.reduced ? (wantHide ? 1 : 0)
         : damp(slot.hide, wantHide ? 1 : 0, 6, dt);
       slot.lift = state.reduced ? (isHovered ? 1 : 0)
@@ -515,7 +521,8 @@ export function mountMusicTunnel(host, options = {}) {
   function onWheel(event) {
     event.preventDefault();
     state.travelTarget = null;
-    state.vel += event.deltaY * 0.004;
+    // 触控板/鼠标的 deltaY 有时候一次就上千，夹一下，免得一帧跳几十个单位
+    state.vel += Math.max(-120, Math.min(120, event.deltaY)) * 0.004;
     state.lastInput = performance.now();
   }
 
@@ -743,6 +750,8 @@ export function mountMusicTunnel(host, options = {}) {
           return track ? track.id : -1;
         })(),
         loaded: textures.filter(t => !!t.image).length,
+        ahead: slots.filter(s => s.z < camera.position.z - 2).length,
+        behind: slots.filter(s => s.z > camera.position.z + 1).length,
       };
     },
   };
