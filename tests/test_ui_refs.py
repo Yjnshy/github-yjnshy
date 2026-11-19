@@ -157,9 +157,11 @@ def test_extract_audio_offers_cover_pick(html):
 
 
 def test_switching_track_starts_from_zero(html):
-    """切换歌曲必须从头播放：不能沿用上一首的进度，也不能被「记住位置」拉回去。"""
-    assert "const sameTrack = player.id === id && !!audio.src;" in html
-    assert "const resume = sameTrack ? Math.max(0, audio.currentTime || 0) : 0;" in html
+    """切换歌曲必须从头播放；点当前这首则不重新加载，只切换播放/暂停。"""
+    assert "if (player.id === id && audio.src) {" in html
+    assert "togglePlay();" in html
+    # 换歌不再用 last_pos 恢复位置
+    assert "const resume = Math.max(0, track.last_pos || 0);" not in html
     # 切换瞬间的 timeupdate 带着上一首的 currentTime，不能写进新曲目的进度
     assert "if (player.switching) return;" in html
     assert "if (!player.id || player.switching) return;" in html

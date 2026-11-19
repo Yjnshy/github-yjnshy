@@ -3506,10 +3506,12 @@ function playTrack(id) {
   if (!track) return;
   if (track.missing) { toast('这个文件已经被移动或删除了', 'err'); return; }
   const audio = $('audio');
-  const sameTrack = player.id === id && !!audio.src;
-  // 换歌一律从头放。以前用 track.last_pos 恢复，会「接着上一首听到的位置」播，
-  // 而且切换瞬间 timeupdate 还会带着旧曲目的时间把新曲目的进度写脏。
-  const resume = sameTrack ? Math.max(0, audio.currentTime || 0) : 0;
+  // 点的就是当前这首：不重新加载（会卡一下并从 0 起播），直接当播放/暂停按钮用
+  if (player.id === id && audio.src) {
+    togglePlay();
+    return;
+  }
+  // 换歌一律从头放；切换瞬间 timeupdate 会带着上一首的 currentTime，靠 switching 挡掉
   player.id = id;
   player.switching = true;      // 加载完成前不记进度、不动进度条
   audio.src = '/api/media/audio?id=' + id;
@@ -3518,8 +3520,6 @@ function playTrack(id) {
   if ($('pl-cur')) $('pl-cur').textContent = '00:00';
   audio.onloadedmetadata = () => {
     player.switching = false;
-    // 只有点回当前这首才沿用位置；位置上比总长短 2 秒以上才跳
-    if (resume > 1 && resume < (audio.duration || 0) - 2) audio.currentTime = resume;
   };
   audio.volume = Number($('pl-vol').value || 100) / 100;
   audio.play().then(() => setPlayIcon(true)).catch(err => {
