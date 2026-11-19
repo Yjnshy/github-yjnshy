@@ -189,6 +189,27 @@
     gap: 18px; flex: none; margin-bottom: 22px;
   }
   .page-head h1 { margin: 0; font-size: 27px; font-weight: 700; letter-spacing: -.3px; }
+  .head-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .head-title-row { display: flex; align-items: center; gap: 8px; }
+  .q-btn {
+    width: 21px; height: 21px; flex: none; padding: 0; border-radius: 50%;
+    border: 1px solid var(--border-strong); background: var(--surface-2);
+    color: var(--muted-ink); font-size: 12px; font-weight: 600; cursor: pointer;
+    display: grid; place-items: center;
+  }
+  .q-btn:hover { color: var(--accent-ink); border-color: var(--accent-line); }
+  .q-btn[hidden] { display: none !important; }
+  .anchor-wrap { position: relative; display: inline-flex; }
+  .pop-row { display: flex; gap: 8px; margin-top: 10px; }
+  .pop-row .ghost { flex: 1; }
+  .popover.anchored {
+    /* 必须显式改成 absolute —— 否则还是 .popover 的 fixed，top:100% 会算成整屏高度 */
+    position: absolute;
+    left: 0; right: auto; top: calc(100% + 8px); bottom: auto; width: 306px;
+  }
+  /* 靠右的按钮（⋯）要向左展开，否则会顶出窗口 */
+  .popover.anchored.right { left: auto; right: 0; }
+  .music-actions[hidden], .head-actions[hidden] { display: none !important; }
   .page-head p { margin: 3px 0 0; font-size: 12.5px; color: var(--muted); }
   .head-actions { display: flex; align-items: center; gap: 8px; flex: none; padding-top: 4px; }
   .head-label { font-size: 12px; color: var(--muted); }
@@ -571,13 +592,19 @@
   .dl-progress-text { flex: none; max-width: 280px; font-size: 11.5px; color: var(--muted-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   /* 歌单：封面网格 + 底部播放条 */
-  .music-card { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+  /* 歌单：工具条搬到页头，卡片只负责内容，隧道撑满剩余高度 */
+  #panel-music { min-height: 0; }
+  #panel-music .music-card {
+    flex: 1; min-height: 0; margin-bottom: 0; padding: 14px 16px; gap: 0;
+    display: flex; flex-direction: column;
+  }
   .music-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
   .music-head h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; color: var(--text); }
   .music-tools { display: flex; align-items: center; gap: 8px; flex: none; }
   .music-opt { gap: 5px; font-size: 12px; white-space: nowrap; }
   .music-grid {
-    display: grid; gap: 16px 14px; align-items: start;
+    flex: 1; min-height: 0; overflow-y: auto; align-content: start;
+    display: grid; gap: 16px 14px;
     grid-template-columns: repeat(auto-fill, minmax(146px, 1fr));
   }
   .music-grid[hidden] { display: none !important; }
@@ -637,16 +664,14 @@
     border-radius: 6px; background: rgba(20,18,32,.7); color: #fff; font-size: 11px;
   }
 
+  .music-tunnel-wrap { flex: 1; min-height: 0; display: flex; }
   .music-tunnel-wrap[hidden] { display: none !important; }
   .music-tunnel {
-    width: 100%; height: 420px; flex: none; display: flex; align-items: center;
-    justify-content: center; overflow: hidden; border-radius: 14px;
-    background: #05060f; cursor: grab;
+    width: 100%; height: auto; flex: 1; min-height: 240px; display: flex;
+    align-items: center; justify-content: center; overflow: hidden;
+    border-radius: 12px; background: #05060f; cursor: grab;
   }
   .music-tunnel:active { cursor: grabbing; }
-  .music-tunnel-tip {
-    margin: 8px 0 0; font-size: 11.5px; color: var(--muted); text-align: center;
-  }
 
   .player {
     position: sticky; bottom: 0; margin-top: 12px; padding: 10px 14px;
@@ -1072,10 +1097,25 @@
 
 <main class="main">
   <header class="page-head">
-    <div>
-      <h1 id="page-title">下载视频</h1>
+    <div class="head-main">
+      <div class="head-title-row">
+        <h1 id="page-title">下载视频</h1>
+        <div class="anchor-wrap">
+          <button class="q-btn popover-trigger" type="button" id="music-help-btn" hidden
+                  onclick="toggleDlyPopover('music-help-pop')" title="隧道怎么用">?</button>
+          <div class="popover info-popover anchored" id="music-help-pop" role="dialog"
+               aria-label="隧道说明">
+            <div class="pop-head">
+              <strong>封面隧道怎么用</strong>
+              <button type="button" onclick="closePopover('music-help-pop')" aria-label="关闭">×</button>
+            </div>
+            <div class="pop-body" id="music-help-body"></div>
+          </div>
+        </div>
+      </div>
       <p id="page-sub">粘贴分享链接，一键保存无水印视频</p>
     </div>
+
     <div class="head-actions" id="head-actions">
       <span class="head-label">Cookie 来源</span>
       <select id="browser" title="Cookie 来源">
@@ -1086,6 +1126,41 @@
       </select>
       <button class="ghost" onclick="checkCookie()">测试</button>
       <button class="ghost" onclick="clearCookie()">清缓存</button>
+    </div>
+
+    <!-- 歌单页的工具条：原来在卡片里，现在搬到页头右侧 -->
+    <div class="head-actions music-actions" id="music-actions" hidden>
+      <label class="check music-opt" title="关闭后，点隧道里的封面只换主封面，不切换正在播放的歌">
+        <input type="checkbox" id="opt-tunnel-play" checked
+               onchange="setTunnelPlays(this.checked)"> 点封面切歌
+      </label>
+      <button class="ghost" id="music-view-btn" onclick="toggleMusicView()">隧道视图</button>
+      <button class="ghost" onclick="importAudioFile()">导入音频</button>
+      <button class="ghost" onclick="extractAudioFromVideo()">从视频提取</button>
+      <button class="ghost" onclick="refreshLibrary(true)" title="刷新歌单">↻</button>
+      <div class="anchor-wrap">
+        <button class="ghost popover-trigger" type="button"
+                onclick="syncMusicBrowser(); toggleDlyPopover('music-more-pop')" title="更多">⋯</button>
+        <div class="popover menu-popover anchored right" id="music-more-pop" role="menu" aria-label="更多">
+          <div class="pop-head">
+            <strong>下载设置</strong>
+            <button type="button" onclick="closePopover('music-more-pop')" aria-label="关闭">×</button>
+          </div>
+          <div class="pop-body">
+            <label class="label" for="music-browser">Cookie 来源</label>
+            <select id="music-browser" title="Cookie 来源">
+              <option value="chrome">Chrome</option>
+              <option value="edge">Edge</option>
+              <option value="firefox">Firefox</option>
+              <option value="brave">Brave</option>
+            </select>
+            <div class="pop-row">
+              <button class="ghost" type="button" onclick="checkCookie()">测试</button>
+              <button class="ghost" type="button" onclick="clearCookie()">清缓存</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -1335,26 +1410,9 @@
     <!-- 歌单 -->
     <section class="panel" id="panel-music">
       <div class="card music-card">
-        <div class="music-head">
-          <div class="music-head-text">
-            <h2>我的歌单</h2>
-            <p class="hint" id="music-hint">下载的音频会自动进来；也可以用下面的按钮导入本地文件、从视频抽一条。</p>
-          </div>
-          <div class="music-tools">
-            <label class="check music-opt" title="关闭后，点隧道里的封面只换主封面，不切换正在播放的歌">
-              <input type="checkbox" id="opt-tunnel-play" checked
-                     onchange="setTunnelPlays(this.checked)"> 点封面切歌
-            </label>
-            <button class="ghost" id="music-view-btn" onclick="toggleMusicView()">隧道视图</button>
-            <button class="ghost" onclick="importAudioFile()">导入音频</button>
-            <button class="ghost" onclick="extractAudioFromVideo()">从视频提取</button>
-            <button class="ghost" onclick="refreshLibrary(true)">↻ 刷新</button>
-          </div>
-        </div>
         <div class="music-grid" id="music-grid"></div>
         <div class="music-tunnel-wrap" id="music-tunnel-wrap" hidden>
           <div class="music-tunnel" id="music-tunnel"></div>
-          <p class="music-tunnel-tip">滚轮 / 上下拖动穿过封面隧道 · 悬停吸起 · 点封面开始播放</p>
         </div>
         <div class="task-empty" id="music-empty">还没有歌。导入一个音频，或在下载页下一条音频。</div>
       </div>
@@ -1877,9 +1935,17 @@ function activateTab(name) {
   if (window.FluidNav && PAGE_META[name]) window.FluidNav.syncActive(name);
   const meta = PAGE_META[name] || EXTRA_PAGE_META[name];
   if (meta) { $('page-title').textContent = meta[0]; $('page-sub').textContent = meta[1]; }
-  // 设置页已有 Cookie 管理卡片，页头那组在设置页里显得重复
-  $('head-actions').style.display =
-    (name === 'settings' || name === 'history' || name === 'files') ? 'none' : '';
+  // 歌单页：页头右侧换成歌单工具条，Cookie 那一组收进「⋯」里
+  const isMusic = name === 'music';
+  $('head-actions').hidden =
+    isMusic || name === 'settings' || name === 'history' || name === 'files';
+  if ($('music-actions')) $('music-actions').hidden = !isMusic;
+  if ($('music-help-btn')) $('music-help-btn').hidden = !isMusic;
+  if (!isMusic) closePopover('music-help-pop');
+  if (isMusic) {
+    if ($('music-browser') && $('browser')) $('music-browser').value = $('browser').value;
+    syncTunnelTip();
+  }
   if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name);
   // 改完设置直接切走是最容易丢修改的操作，明确提醒一次
   if (leavingSettings && settingsDirty) {
@@ -2289,7 +2355,16 @@ async function probeLive(url, seq) {
 $('rec-url').addEventListener('input', scheduleProbe);
 
 /* 页头与设置页各有一份 Cookie 来源下拉，保持显示一致 */
-$('browser').addEventListener('change', e => { $('set-browser').value = e.target.value; });
+$('browser').addEventListener('change', e => {
+  $('set-browser').value = e.target.value;
+  if ($('music-browser')) $('music-browser').value = e.target.value;
+});
+if ($('music-browser')) {
+  $('music-browser').addEventListener('change', e => {
+    $('browser').value = e.target.value;
+    $('browser').dispatchEvent(new Event('change'));
+  });
+}
 $('set-browser').addEventListener('change', e => { $('browser').value = e.target.value; });
 
 async function startRecord() {
@@ -3328,12 +3403,23 @@ let tunnelSig = '';
 let tunnelSelecting = false;   // 隧道里点选时已经在动画，别再让页面反向同步一次
 let tunnelPlays = true;        // 点隧道封面是否切换播放（false = 只换主封面）
 
+function syncMusicBrowser() {
+  if ($('music-browser') && $('browser')) $('music-browser').value = $('browser').value;
+}
+
 function syncTunnelTip() {
-  const tip = document.querySelector('.music-tunnel-tip');
-  if (!tip) return;
-  tip.textContent = tunnelPlays
-    ? '滚轮 / 上下拖动穿过封面隧道 · 悬停吸起 · 点封面开始播放 · 单击中央封面暂停/继续 · 双击重播'
-    : '滚轮 / 上下拖动穿过封面隧道 · 悬停吸起 · 点封面只换主封面（不切歌）';
+  const body = $('music-help-body');
+  if (!body) return;
+  const lines = [
+    '滚轮 / 上下拖动：穿过封面隧道',
+    '悬停：把封面轻轻吸起来',
+    tunnelPlays ? '点封面：开始播放这首歌' : '点封面：只换主封面，不切歌',
+    '单击中央封面：暂停 / 继续',
+    '双击中央封面：从头重播',
+    '方向键：在同层里换一张封面',
+  ];
+  body.innerHTML = lines.map(t => '<div>' + t + '</div>').join('')
+    + '<div style="margin-top:6px;color:var(--muted)">歌单页的「⋯」里还有 Cookie 来源、测试缓存。</div>';
 }
 
 function setTunnelPlays(value) {

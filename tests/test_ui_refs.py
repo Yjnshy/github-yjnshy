@@ -185,3 +185,17 @@ def test_same_song_other_cover_does_not_toggle(html):
     module = (HTML_PATH.parent / "music-tunnel.js").read_text(encoding="utf-8")
     assert "state.onSelect(track.id, { hero: true })" in module
     assert "state.onSelect(track.id, { hero: false })" in module
+
+
+def test_music_toolbar_moved_to_header(html):
+    """歌单工具条搬到页头右侧；Cookie 三个控件收进「⋯」；说明进「?」弹层。"""
+    assert 'id="music-actions"' in html
+    assert 'id="music-help-btn"' in html
+    assert 'id="music-help-pop"' in html
+    assert 'id="music-more-pop"' in html
+    assert 'id="music-browser"' in html
+    # 卡片里不该再有工具条和说明行
+    assert 'class="music-head"' not in html
+    assert 'music-tunnel-tip' not in html
+    # 弹层要显式 absolute，否则 top:100% 会算成整屏高度跑到屏幕外
+    assert "position: absolute;\n    left: 0; right: auto;" in html
