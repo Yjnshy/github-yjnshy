@@ -295,6 +295,7 @@
     font-size: 12.5px; color: var(--muted-ink); cursor: pointer; user-select: none;
   }
   .check input { width: auto; margin: 0; accent-color: var(--accent); }
+  .check[hidden] { display: none !important; }
 
   /* 录制状态卡 */
   .status-card { display: flex; align-items: center; gap: 14px; padding: 14px 20px; }
@@ -988,8 +989,8 @@
         <div class="row">
           <div class="field">
             <span class="label">画质</span>
-            <select id="dl-quality">
-              <option value="best">最佳画质</option>
+            <select id="dl-quality" onchange="syncKeepOriginal()">
+              <option value="best">最佳画质（原画质）</option>
               <option value="1080">1080P</option>
               <option value="720">720P</option>
               <option value="480">480P</option>
@@ -999,7 +1000,7 @@
           </div>
           <div class="field">
             <span class="label">帧率</span>
-            <select id="dl-fps">
+            <select id="dl-fps" onchange="syncKeepOriginal()">
               <option value="0">原帧率（不转码）</option>
               <option value="60">60 fps</option>
               <option value="50">50 fps</option>
@@ -1018,8 +1019,8 @@
         <div class="row">
           <button class="primary" id="dl-btn" onclick="startDownload()">开始下载</button>
           <button class="ghost" id="dl-open" onclick="openLast('download')" hidden>打开文件位置</button>
-          <label class="check">
-            <input type="checkbox" id="dl-keep"> 保留原片
+          <label class="check" id="dl-keep-wrap" hidden>
+            <input type="checkbox" id="dl-keep"> 保留原素材
           </label>
           <span class="hint" id="dl-hint"></span>
         </div>
@@ -1032,7 +1033,8 @@
                   onclick="toggleTips(this)">?</button>
           <div class="tips">
             帧率选「原帧率」= 原始画质直存，最快；选具体数值会在下载完成后重新编码，
-            速度取决于电脑性能，文件名不变。
+            速度取决于电脑性能，文件名不变。只有会改动原文件时（选了具体帧率，
+            或画质不是「最佳画质」）才会出现「保留原素材」，勾上就另存一份原始文件。
           </div>
         </div>
       </div>
@@ -1925,6 +1927,7 @@ function applyDefaults() {
   setFps('dl-fps', snapshot.fps);
   setFps('rec-fps', snapshot.record_fps);
   setFps('watch-fps', snapshot.record_fps);
+  syncKeepOriginal();
   // 配置里的 segment_minutes 本是值守用的切分间隔，这里只借来当录制页的初始时长
   $('rec-seg').value = snapshot.segment_minutes || 0;
   $('rec-seg-unit').value = 'min';   // 配置文件里按分钟存，界面默认也用分钟
@@ -1959,6 +1962,15 @@ function setFps(id, value) {
 function fpsOf(id) {
   const el = $(id);
   return parseInt((el && el.value) || '0', 10) || 0;
+}
+
+/* 「保留原素材」只在对原文件动过手时才有意义：选了具体帧率要转码，
+   或者没选最佳画质（原画质）。原帧率 + 最佳画质 = 原始文件直存，整项藏起来。 */
+function syncKeepOriginal() {
+  const wrap = $('dl-keep-wrap');
+  if (!wrap) return;
+  const quality = $('dl-quality') ? $('dl-quality').value : 'best';
+  wrap.hidden = fpsOf('dl-fps') <= 0 && quality === 'best';
 }
 
 /* ---------------- 动作 ---------------- */
@@ -2524,6 +2536,7 @@ function syncDefaultsToPages(s, force) {
   $('dl-quality').value = s.quality || 'best';
   $('dl-keep').checked = !!s.keep_original;
   setFps('dl-fps', s.fps);
+  syncKeepOriginal();
   setFps('rec-fps', s.record_fps);
   setFps('watch-fps', s.record_fps);
   $('watch-interval').value = s.poll_interval || 60;

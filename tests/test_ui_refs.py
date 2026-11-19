@@ -57,3 +57,16 @@ def test_bell_badge_not_hidden_by_compact_sidebar(html):
     rule = re.search(r"body\.sidebar-compact[^{]*\{[^}]*display: none", html)
     assert rule, "紧凑侧栏的隐藏规则没找到"
     assert ".side-bell span:not(.bell-badge)" in html
+
+
+def test_keep_original_only_shown_when_file_will_change(html):
+    """「保留原素材」只在会动原文件时出现：原帧率 + 最佳画质时整项藏起来。"""
+    assert 'id="dl-keep-wrap" hidden' in html
+    assert 'id="dl-keep"' in html
+    # 两个下拉变化都要重新判断显隐
+    assert html.count('onchange="syncKeepOriginal()"') == 2
+    # 显隐规则：帧率为 0（原帧率）且画质 best（原画质）才隐藏
+    body = html.split("function syncKeepOriginal()", 1)[1].split("\n}", 1)[0]
+    assert "fpsOf('dl-fps') <= 0" in body and "quality === 'best'" in body
+    # label 用了 inline-flex，hidden 属性需要 !important 才能压住
+    assert ".check[hidden] { display: none !important; }" in html
