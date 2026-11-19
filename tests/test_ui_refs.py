@@ -165,3 +165,14 @@ def test_switching_track_starts_from_zero(html):
     # 切换瞬间的 timeupdate 带着上一首的 currentTime，不能写进新曲目的进度
     assert "if (player.switching) return;" in html
     assert "if (!player.id || player.switching) return;" in html
+
+
+def test_center_cover_single_pause_double_replay(html):
+    """中央封面：单击暂停/继续，双击从头播放。自己数连击，别依赖原生 dblclick。"""
+    assert "function handleTunnelSelect(id)" in html
+    assert "if (now - lastHeroClick < 320)" in html
+    assert "audio.currentTime = 0;" in html
+    assert "tunnelClickTimer = setTimeout(() => { togglePlay(); }, 300);" in html
+    # 主封面要能被点中（早前被排除在拾取之外，点正中间毫无反应）
+    module = (HTML_PATH.parent / "music-tunnel.js").read_text(encoding="utf-8")
+    assert "if (slot === state.heroSlot) {" in module

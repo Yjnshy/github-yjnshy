@@ -3332,7 +3332,7 @@ function syncTunnelTip() {
   const tip = document.querySelector('.music-tunnel-tip');
   if (!tip) return;
   tip.textContent = tunnelPlays
-    ? '滚轮 / 上下拖动穿过封面隧道 · 悬停吸起 · 点封面开始播放'
+    ? '滚轮 / 上下拖动穿过封面隧道 · 悬停吸起 · 点封面开始播放 · 单击中央封面暂停/继续 · 双击重播'
     : '滚轮 / 上下拖动穿过封面隧道 · 悬停吸起 · 点封面只换主封面（不切歌）';
 }
 
@@ -3362,13 +3362,7 @@ function mountTunnel() {
   try {
     tunnel = window.MusicTunnel.mount(host, {
       tracks,
-      onSelect: id => {
-        // 关闭「点封面切歌」时：隧道自己已经把封面飞到中央，这里不动播放
-        if (!tunnelPlays) return;
-        tunnelSelecting = true;
-        playTrack(id);
-        tunnelSelecting = false;
-      },
+      onSelect: id => handleTunnelSelect(id),
       reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     });
     window.__dlyTunnel = tunnel;
@@ -3386,6 +3380,42 @@ function mountTunnel() {
     if (btn) btn.textContent = '隧道视图';
   }
 }
+
+/* 隧道里点封面：
+   - 点到别的歌 → 直接切过去（从头放）
+   - 点到正在放的这首 → 等 240ms 看是不是双击：
+     双击 = 播放/暂停，单击 = 从头重播 */
+let tunnelClickTimer = 0;
+let lastHeroClick = 0;
+
+function handleTunnelSelect(id) {
+  if (!tunnelPlays) return;                 // 关掉「点封面切歌」时只换封面
+  const audio = $('audio');
+  const isCurrent = player.id === id && !!audio.src;
+  if (!isCurrent) {
+    tunnelSelecting = true;
+    playTrack(id);
+    tunnelSelecting = false;
+    lastHeroClick = 0;
+    return;
+  }
+  // 自己数连击：原生 dblclick 依赖系统双击间隔，这里两个事件都由 pointerup 触发，
+  // 自己判更稳（也方便测试）。
+  // 约定：双击中央封面 = 从头播放；单击 = 暂停 / 继续（单击要让位 300ms 等双击）
+  const now = performance.now();
+  if (now - lastHeroClick < 320) {
+    lastHeroClick = 0;
+    clearTimeout(tunnelClickTimer);
+    audio.currentTime = 0;
+    audio.play().catch(() => {});
+    toast('从头播放', 'ok');
+    return;
+  }
+  lastHeroClick = now;
+  clearTimeout(tunnelClickTimer);
+  tunnelClickTimer = setTimeout(() => { togglePlay(); }, 300);
+}
+
 
 function destroyTunnel() {
   if (!tunnel) return;
@@ -3851,6 +3881,7 @@ mountThemeToggles();
 bindSettingsInputs();
 bindAudio();
 ['pl-seek', 'pl-vol'].forEach(id => blockWindowDrag($(id)));
+
 try {
   const saved = localStorage.getItem('dly.tunnelPlays');
   if (saved !== null) tunnelPlays = saved === '1';

@@ -507,8 +507,7 @@ export function mountMusicTunnel(host, options = {}) {
     const hit = hits.find(h => h.instanceId !== undefined);
     if (!hit) { state.hovered = null; return; }
     const slot = hit.object.userData.slots[hit.instanceId];
-    state.hovered = (slot && slot !== state.heroSlot
-                     && slot.z < camera.position.z - 1) ? slot : null;
+    state.hovered = (slot && slot.z < camera.position.z - 1) ? slot : null;
   }
 
   // ---- 输入 ----
@@ -546,7 +545,15 @@ export function mountMusicTunnel(host, options = {}) {
     dragging = false;
     renderer.domElement.releasePointerCapture?.(event.pointerId);
     if (wasDrag || performance.now() - dragStart > 700) return;
-    if (state.hovered) selectSlot(state.hovered, true);
+    const slot = state.hovered;
+    if (!slot) return;
+    if (slot === state.heroSlot) {
+      // 点的就是中央主封面：不再飞一次，只把「用户点了它」告诉页面
+      const track = tracks[slot.track % Math.max(1, tracks.length)];
+      if (track) state.onSelect(track.id);
+      return;
+    }
+    selectSlot(slot, true);
   }
   function onPointerLeave() { state.hovered = null; }
 
