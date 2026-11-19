@@ -3506,12 +3506,19 @@ function playTrack(id) {
   if (!track) return;
   if (track.missing) { toast('这个文件已经被移动或删除了', 'err'); return; }
   const audio = $('audio');
+  const sameTrack = player.id === id && !!audio.src;
+  // 换歌一律从头放。以前用 track.last_pos 恢复，会「接着上一首听到的位置」播，
+  // 而且切换瞬间 timeupdate 还会带着旧曲目的时间把新曲目的进度写脏。
+  const resume = sameTrack ? Math.max(0, audio.currentTime || 0) : 0;
   player.id = id;
+  player.switching = true;      // 加载完成前不记进度、不动进度条
   audio.src = '/api/media/audio?id=' + id;
   audio.playbackRate = player.speed;
-  const resume = Math.max(0, track.last_pos || 0);
+  if ($('pl-seek')) $('pl-seek').value = '0';
+  if ($('pl-cur')) $('pl-cur').textContent = '00:00';
   audio.onloadedmetadata = () => {
-    // 记住的位置比总长短 2 秒以上才跳，避免一进来就播完
+    player.switching = false;
+    // 只有点回当前这首才沿用位置；位置上比总长短 2 秒以上才跳
     if (resume > 1 && resume < (audio.duration || 0) - 2) audio.currentTime = resume;
   };
   audio.volume = Number($('pl-vol').value || 100) / 100;
@@ -3603,7 +3610,7 @@ function cycleSpeed() {
 
 /* 播放位置节流存盘：拖动、切歌、关页面都不该丢进度 */
 function savePosition(force) {
-  if (!player.id) return;
+  if (!player.id || player.switching) return;
   const audio = $('audio');
   const now = Date.now();
   if (!force && now - player.savedAt < 5000) return;
@@ -3620,6 +3627,7 @@ function bindAudio() {
   if (!audio || !seek) return;
 
   audio.addEventListener('timeupdate', () => {
+    if (player.switching) return;      // 还在切换：拿到的 currentTime 是上一首的
     const dur = audio.duration || 0;
     if (!player.seeking) {
       seek.value = dur ? String(Math.round(audio.currentTime / dur * 1000)) : '0';
@@ -3628,6 +3636,9 @@ function bindAudio() {
     if (dur) $('pl-dur').textContent = fmtClock(dur);
     savePosition(false);
   });
+  // 媒体加载失败或提前可播时也要解除「切换中」，否则进度永远不会被保存
+  audio.addEventListener('canplay', () => { player.switching = false; });
+  audio.addEventListener('error', () => { player.switching = false; });
   audio.addEventListener('ended', () => nextTrack(true));
   audio.addEventListener('play', () => setPlayIcon(true));
   audio.addEventListener('pause', () => { setPlayIcon(false); savePosition(true); });

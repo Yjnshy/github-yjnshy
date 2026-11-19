@@ -825,12 +825,16 @@ class Handler(BaseHTTPRequestHandler):
         with path.open("rb") as fh:
             fh.seek(start)
             left = length
-            while left > 0:
-                chunk = fh.read(min(65536, left))
-                if not chunk:
-                    break
-                self.wfile.write(chunk)
-                left -= len(chunk)
+            try:
+                while left > 0:
+                    chunk = fh.read(min(65536, left))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    left -= len(chunk)
+            except (BrokenPipeError, ConnectionResetError):
+                # 用户拖进度条/切歌时浏览器会直接断开，属于正常现象，别刷异常
+                logger.debug("音频连接被中断：%s", path.name)
 
     def _read_json(self) -> Dict[str, Any]:
         length = int(self.headers.get("Content-Length") or 0)
