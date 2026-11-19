@@ -593,7 +593,7 @@
 
   /* 歌单：封面网格 + 底部播放条 */
   /* 歌单：工具条搬到页头，卡片只负责内容，隧道撑满剩余高度 */
-  #panel-music { min-height: 0; }
+  #panel-music { min-height: 0; position: relative; }
   #panel-music .music-card {
     flex: 1; min-height: 0; margin-bottom: 0; padding: 14px 16px; gap: 0;
     display: flex; flex-direction: column;
@@ -681,6 +681,39 @@
     background: var(--card); box-shadow: 0 6px 20px var(--box-shadow);
   }
   .player[hidden] { display: none !important; }
+
+  /* 隧道视图里的播放条：液态玻璃，浮在三维画面上 */
+  .player.floating {
+    position: absolute; left: 22px; right: 22px; bottom: 16px; z-index: 6;
+    margin: 0; border-radius: 16px;
+    background: linear-gradient(180deg, rgba(46, 41, 70, .42), rgba(20, 18, 33, .55));
+    border: 1px solid rgba(255, 255, 255, .22);
+    box-shadow: 0 16px 46px rgba(0, 0, 0, .5), 0 2px 6px rgba(0, 0, 0, .3),
+                inset 0 1px 0 rgba(255, 255, 255, .22),
+                inset 0 -1px 0 rgba(255, 255, 255, .06);
+    -webkit-backdrop-filter: blur(22px) saturate(170%);
+    backdrop-filter: blur(22px) saturate(170%);
+    color: #f4f2ff;
+  }
+  /* 顶部一道细高光，玻璃感主要靠它 */
+  .player.floating::before {
+    content: ""; position: absolute; left: 14px; right: 14px; top: 1px; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .55), transparent);
+    pointer-events: none;
+  }
+  .player.floating .player-meta strong { color: #fff; }
+  .player.floating .player-meta span,
+  .player.floating .player-time { color: rgba(240, 238, 255, .68); }
+  .player.floating .player-cover { box-shadow: 0 4px 14px rgba(0, 0, 0, .5); }
+  .player.floating .icon-btn { color: rgba(244, 242, 255, .85); }
+  .player.floating .icon-btn:hover { background: rgba(255, 255, 255, .12); color: #fff; }
+  .player.floating .play-btn { box-shadow: 0 6px 18px rgba(120, 96, 235, .55); }
+  .player.floating select.player-mode,
+  .player.floating .mode-btn {
+    background: rgba(255, 255, 255, .10); border-color: rgba(255, 255, 255, .18);
+    color: #f4f2ff;
+  }
+  .player.floating input[type="range"] { accent-color: #a89bff; }
   .player-cover { width: 52px; height: 52px; border-radius: 10px; object-fit: cover; background: var(--pill-bg); }
   .player-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .player-meta strong { font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3410,7 +3443,9 @@ function syncMusicBrowser() {
 function syncTunnelTip() {
   const body = $('music-help-body');
   if (!body) return;
+  const sub = ($('page-sub') && $('page-sub').textContent || '').trim();
   const lines = [
+    '<span style="color:var(--text)">' + (sub || '下载或提取的音频都在这里，点封面就能听') + '</span>',
     '滚轮 / 上下拖动：穿过封面隧道',
     '悬停：把封面轻轻吸起来',
     tunnelPlays ? '点封面：开始播放这首歌' : '点封面：只换主封面，不切歌',
@@ -3419,7 +3454,7 @@ function syncTunnelTip() {
     '方向键：在同层里换一张封面',
   ];
   body.innerHTML = lines.map(t => '<div>' + t + '</div>').join('')
-    + '<div style="margin-top:6px;color:var(--muted)">歌单页的「⋯」里还有 Cookie 来源、测试缓存。</div>';
+    + '<div style="margin-top:8px;color:var(--muted)">歌单页的「⋯」里还有 Cookie 来源、测试缓存。</div>';
 }
 
 function setTunnelPlays(value) {
@@ -3522,6 +3557,9 @@ function setMusicView(view) {
   if (wrap) wrap.hidden = musicView !== 'tunnel' || !hasTracks;
   if (btn) btn.textContent = musicView === 'tunnel' ? '网格视图' : '隧道视图';
   if ($('music-empty')) $('music-empty').hidden = hasTracks;
+  // 隧道视图：播放条浮在画面底部，做成液态玻璃；网格视图回到普通卡片
+  const player = $('player');
+  if (player) player.classList.toggle('floating', musicView === 'tunnel' && hasTracks);
   if (musicView === 'tunnel') mountTunnel();
   else destroyTunnel();
 }

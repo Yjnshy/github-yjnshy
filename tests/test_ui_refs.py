@@ -199,3 +199,12 @@ def test_music_toolbar_moved_to_header(html):
     assert 'music-tunnel-tip' not in html
     # 弹层要显式 absolute，否则 top:100% 会算成整屏高度跑到屏幕外
     assert "position: absolute;\n    left: 0; right: auto;" in html
+
+
+def test_player_floats_as_glass_in_tunnel(html):
+    """隧道视图里播放条浮在画面底部，做成液态玻璃；切回网格恢复普通卡片。"""
+    assert ".player.floating {" in html
+    assert "backdrop-filter: blur(22px) saturate(170%);" in html
+    assert "classList.toggle('floating', musicView === 'tunnel' && hasTracks)" in html
+    # 问号弹层里要带上页面副标题那句
+    assert "下载或提取的音频都在这里，点封面就能听" in html
