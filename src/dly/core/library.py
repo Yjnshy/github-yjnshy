@@ -43,6 +43,20 @@ def is_video(path: str | Path) -> bool:
     return Path(path).suffix.lower() in VIDEO_EXT
 
 
+def sibling_video(audio: str | Path) -> Optional[Path]:
+    """同一目录、同名、扩展名不同的视频。
+
+    老版本入库的曲目没记原视频路径，但「从视频提取」出来的 mp3 就放在视频旁边、
+    文件名也一样，靠这个约定把视频找回来，旧条目照样能换封面。
+    """
+    path = Path(audio)
+    for ext in (".mp4", ".mkv", ".flv", ".mov", ".webm", ".ts", ".m4v"):
+        candidate = path.with_suffix(ext)
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def _run(cmd: List[str], timeout: float = 180) -> bool:
     try:
         done = subprocess.run(cmd, stdout=subprocess.DEVNULL,
@@ -151,6 +165,14 @@ def extract_audio(src: str | Path, out: Path | None = None) -> Optional[Path]:
     return None
 
 
+def _video_for(track: Dict[str, Any]) -> Optional[Path]:
+    """曲目对应的原视频：优先用入库时记下的，其次找同名兄弟文件。"""
+    recorded = Path(track.get("video") or "")
+    if recorded.is_file():
+        return recorded
+    return sibling_video(track.get("path") or "")
+
+
 class Library:
     """曲目表的读写。所有改动都落盘，进程重启后还在。"""
 
@@ -220,7 +242,7 @@ class Library:
                     # 换封面后文件变了但 URL 还是 ?id=N，加个版本号让浏览器重新取图
                     "cover_ver": (int(Path(t["cover"]).stat().st_mtime * 1000)
                                   if t["cover"] and Path(t["cover"]).is_file() else 0),
-                    "has_video": bool(t.get("video")) and Path(t["video"]).is_file(),
+                    "has_video": bool(_video_for(t)),
                 })
             return rows
 
@@ -329,9 +351,9 @@ class Library:
         track = self.get(track_id)
         if not track:
             return []
-        video = Path(track.get("video") or "")
+        video = _video_for(track)
         ffmpeg = _ffmpeg_path()
-        if not ffmpeg or not video.is_file():
+        if not ffmpeg or video is None:
             return []
         duration = track.get("duration") or duration_of(video)
         if duration <= 1:
