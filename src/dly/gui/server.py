@@ -872,8 +872,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, png, "image/png")
             return
 
-        if path in ("/pixel-toggle.js", "/fluid-nav.js"):
-            # 主题开关 / 流体导航的独立脚本；assets 整体随包分发，按白名单开放
+        if path in ("/pixel-toggle.js", "/fluid-nav.js", "/music-tunnel.js",
+                    "/three/three.module.min.js", "/three/three.core.min.js"):
+            # 主题开关 / 流体导航 / 歌单隧道（含内置的 three.js）；
+            # assets 整体随包分发，按白名单开放，避免变成任意文件服务器
             try:
                 script = files("dly.gui").joinpath("assets" + path).read_bytes()
             except (FileNotFoundError, OSError) as exc:

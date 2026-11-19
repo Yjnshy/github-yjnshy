@@ -7,6 +7,7 @@ Range 是这一块最关键的地方：浏览器播音频时先发 ``bytes=0-``�
 from __future__ import annotations
 
 import json
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -122,5 +123,29 @@ def test_audio_endpoint_supports_range(tmp_path, monkeypatch, fake_mp3: Path):
         assert cover.status == 200
         assert cover.headers.get("Content-Type") == "image/jpeg"
         assert len(cover.read()) > 0
+    finally:
+        ctx.shutdown()
+
+
+def test_tunnel_assets_are_served(tmp_path, monkeypatch):
+    """三维视图用到三个脚本：隧道模块本身 + 内置的 three.js 两个包。"""
+    monkeypatch.setattr(paths, "data_dir", lambda: tmp_path)
+    monkeypatch.setattr(srv, "DEFAULT_PORT", PORT + 1)
+    ctx = srv.create_app(desktop=False)
+    ctx.start()
+    try:
+        for name in ("music-tunnel.js", "three/three.module.min.js",
+                     "three/three.core.min.js"):
+            with urllib.request.urlopen(ctx.url + name, timeout=8) as res:
+                assert res.status == 200, name
+                assert "javascript" in res.headers.get("Content-Type", "")
+                assert len(res.read()) > 1000, name
+        # 白名单之外的文件不能被读到
+        try:
+            urllib.request.urlopen(ctx.url + "config.example.yaml", timeout=5)
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 404
+        else:
+            raise AssertionError("静态白名单失效，任意文件被暴露")
     finally:
         ctx.shutdown()

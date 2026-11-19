@@ -579,6 +579,7 @@
     display: grid; gap: 16px 14px; align-items: start;
     grid-template-columns: repeat(auto-fill, minmax(146px, 1fr));
   }
+  .music-grid[hidden] { display: none !important; }
   .track {
     display: flex; flex-direction: column; gap: 7px; padding: 0; border: 0;
     background: transparent; text-align: left; cursor: pointer; min-width: 0;
@@ -598,6 +599,17 @@
   .track.playing .track-cover { outline: 2px solid var(--accent); outline-offset: 1px; }
   .track.playing .track-title { color: var(--accent-ink); font-weight: 600; }
   .track.missing { opacity: .42; }
+
+  .music-tunnel-wrap[hidden] { display: none !important; }
+  .music-tunnel {
+    width: 100%; height: 420px; display: flex; align-items: center;
+    justify-content: center; overflow: hidden; border-radius: 14px;
+    background: #05060f; cursor: grab;
+  }
+  .music-tunnel:active { cursor: grabbing; }
+  .music-tunnel-tip {
+    margin: 8px 0 0; font-size: 11.5px; color: var(--muted); text-align: center;
+  }
 
   .player {
     position: sticky; bottom: 0; margin-top: 12px; padding: 10px 14px;
@@ -1281,12 +1293,17 @@
             <p class="hint" id="music-hint">下载的音频会自动进来；也可以用下面的按钮导入本地文件、从视频抽一条。</p>
           </div>
           <div class="music-tools">
+            <button class="ghost" id="music-view-btn" onclick="toggleMusicView()">隧道视图</button>
             <button class="ghost" onclick="importAudioFile()">导入音频</button>
             <button class="ghost" onclick="extractAudioFromVideo()">从视频提取</button>
             <button class="ghost" onclick="refreshLibrary(true)">↻ 刷新</button>
           </div>
         </div>
         <div class="music-grid" id="music-grid"></div>
+        <div class="music-tunnel-wrap" id="music-tunnel-wrap" hidden>
+          <div class="music-tunnel" id="music-tunnel"></div>
+          <p class="music-tunnel-tip">滚轮 / 上下拖动穿过封面隧道 · 悬停吸起 · 点封面开始播放</p>
+        </div>
         <div class="task-empty" id="music-empty">还没有歌。导入一个音频，或在下载页下一条音频。</div>
       </div>
 
@@ -1796,6 +1813,7 @@ activateTab = function(name) {
     if (root && root.value && !$('file-tree').childElementCount) loadTreeRoot();
   }
   if (name === 'music') refreshLibrary(false);
+  if (tunnel) tunnel.setPaused(name !== 'music');
 };
 
 document.addEventListener('mousedown', e => {
@@ -3215,6 +3233,72 @@ function playableTracks() {
   return (musicLib.tracks || []).filter(t => !t.missing);
 }
 
+/* ---- 隧道视图：three.js 场景按需挂载，切回网格就销毁 ---- */
+let tunnel = null;
+let musicView = 'grid';
+let tunnelSig = '';
+
+function tunnelTracks() {
+  return playableTracks().map(t => ({
+    id: t.id,
+    coverUrl: t.has_cover ? '/api/media/cover?id=' + t.id : 'logo.png',
+  }));
+}
+
+function mountTunnel() {
+  const host = $('music-tunnel');
+  if (!host || !window.MusicTunnel) return;
+  destroyTunnel();
+  const tracks = tunnelTracks();
+  if (!tracks.length) return;
+  tunnelSig = tracks.map(t => t.id).join(',');
+  try {
+    tunnel = window.MusicTunnel.mount(host, {
+      tracks,
+      onSelect: id => playTrack(id),
+      reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    });
+    window.__dlyTunnel = tunnel;
+  } catch (err) {
+    // WebGL 起不来（老显卡、驱动被禁）时不能让整页白屏，退回网格
+    console.error('三维视图启动失败', err);
+    toast('这台机器的 WebGL 不可用，已切回网格视图', 'err');
+    tunnel = null;
+    musicView = 'grid';
+    const grid = $('music-grid');
+    if (grid) grid.hidden = false;
+    const wrap = $('music-tunnel-wrap');
+    if (wrap) wrap.hidden = true;
+    const btn = $('music-view-btn');
+    if (btn) btn.textContent = '隧道视图';
+  }
+}
+
+function destroyTunnel() {
+  if (!tunnel) return;
+  tunnel.destroy();
+  tunnel = null;
+}
+
+function setMusicView(view) {
+  musicView = view === 'tunnel' ? 'tunnel' : 'grid';
+  const hasTracks = playableTracks().length > 0;
+  const grid = $('music-grid');
+  const wrap = $('music-tunnel-wrap');
+  const btn = $('music-view-btn');
+  if (grid) grid.hidden = musicView === 'tunnel';
+  if (wrap) wrap.hidden = musicView !== 'tunnel' || !hasTracks;
+  if (btn) btn.textContent = musicView === 'tunnel' ? '网格视图' : '隧道视图';
+  if ($('music-empty')) $('music-empty').hidden = hasTracks;
+  if (musicView === 'tunnel') mountTunnel();
+  else destroyTunnel();
+}
+
+function toggleMusicView() {
+  if (!playableTracks().length) { toast('歌单还是空的，先导入一首', 'err'); return; }
+  setMusicView(musicView === 'tunnel' ? 'grid' : 'tunnel');
+}
+
 async function refreshLibrary(manual) {
   try {
     const res = await fetch('/api/library');
@@ -3262,6 +3346,10 @@ function renderMusic() {
     grid.append(item);
   });
   updatePlayerBar();
+  // 隧道视图下歌单变了要重建场景（曲目集合的签名不同才重建）
+  if (musicView === 'tunnel' && playableTracks().map(t => t.id).join(',') !== tunnelSig) {
+    mountTunnel();
+  }
 }
 
 function updatePlayerBar() {
@@ -3542,5 +3630,6 @@ fetch('/api/settings').then(r => r.json()).then(d => showConfigPath(d.path)).cat
 poll();
 </script>
 <script src="fluid-nav.js"></script>
+<script type="module" src="music-tunnel.js"></script>
 </body>
 </html>

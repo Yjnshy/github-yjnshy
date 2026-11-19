@@ -70,3 +70,35 @@ def test_keep_original_only_shown_when_file_will_change(html):
     assert "fpsOf('dl-fps') <= 0" in body and "quality === 'best'" in body
     # label 用了 inline-flex，hidden 属性需要 !important 才能压住
     assert ".check[hidden] { display: none !important; }" in html
+
+
+def test_tunnel_view_is_wired(html):
+    """歌单页要有隧道视图入口，模块与内置 three 都要在包里。"""
+    base = HTML_PATH.parent
+    module = (base / "music-tunnel.js").read_text(encoding="utf-8")
+    assert '<script type="module" src="music-tunnel.js"></script>' in html
+    assert "window.MusicTunnel = " in module
+    assert "from './three/three.module.min.js'" in module
+    for name in ("three/three.module.min.js", "three/three.core.min.js"):
+        assert (base / name).is_file(), name
+    # 指针捕获必须设在画布上，否则 pointerup 被 host 吃掉、点击永远不触发
+    assert "renderer.domElement.setPointerCapture" in module
+    assert "host.setPointerCapture" not in module
+    assert 'id="music-tunnel"' in html
+    assert "toggleMusicView()" in html
+
+
+def test_tunnel_view_is_wired(html):
+    """歌单页要有隧道视图入口，模块与内置 three 都要在包里。"""
+    base = HTML_PATH.parent
+    module = (base / "music-tunnel.js").read_text(encoding="utf-8")
+    assert '<script type="module" src="music-tunnel.js"></script>' in html
+    assert "window.MusicTunnel = " in module
+    assert "from './three/three.module.min.js'" in module
+    for name in ("three/three.module.min.js", "three/three.core.min.js"):
+        assert (base / name).is_file(), name
+    # 指针捕获必须设在画布上，否则 pointerup 被 host 吃掉、点击永远不触发
+    assert "renderer.domElement.setPointerCapture" in module
+    assert "host.setPointerCapture" not in module
+    assert 'id="music-tunnel"' in html
+    assert "toggleMusicView()" in html
