@@ -180,7 +180,6 @@ export function mountMusicTunnel(host, options = {}) {
     lastInput: performance.now(),
     hovered: null,
     heroSlot: null,
-    autoUsed: false,
     paused: false,
     destroyed: false,
     raf: 0,
@@ -352,12 +351,10 @@ export function mountMusicTunnel(host, options = {}) {
 
   // ---- 尺寸：16:9 舞台在容器里等比居中 ----
   function layout() {
-    const width = host.clientWidth || 640;
-    const height = host.clientHeight || 360;
-    const targetAspect = 16 / 9;
-    let w = width;
-    let h = width / targetAspect;
-    if (h > height) { h = height; w = height * targetAspect; }
+    // 铺满容器：界面里的舞台是宽扁的，硬套 16:9 会在左右留出两条大黑边。
+    // 视野按垂直 32° 固定，宽度方向自然多看到一些，比例不会变形。
+    const w = Math.max(240, host.clientWidth || 640);
+    const h = Math.max(160, host.clientHeight || 360);
     renderer.setSize(Math.round(w), Math.round(h), true);
     composer.setSize(Math.round(w), Math.round(h));
     if (gradePass.uniforms.uResolution) {
@@ -490,7 +487,6 @@ export function mountMusicTunnel(host, options = {}) {
     state.travelTarget = null;
     state.vel += event.deltaY * 0.004;
     state.lastInput = performance.now();
-    state.autoUsed = false;
   }
 
   let dragging = false, dragStart = 0, dragMoved = 0, lastY = 0;
@@ -613,12 +609,7 @@ export function mountMusicTunnel(host, options = {}) {
           const layerStep = Math.round(state.travel / D);
           state.snapTarget = layerStep * D;
         }
-        if (!state.autoUsed && now - state.lastInput > 5000
-            && Math.abs(state.vel) < 0.2) {
-          state.vel += 5.6;
-          state.autoUsed = true;
-          state.lastInput = now;
-        }
+
       }
     }
     stepFlyers(now);
