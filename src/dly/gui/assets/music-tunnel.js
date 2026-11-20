@@ -691,7 +691,8 @@ export function mountMusicTunnel(host, options = {}) {
 
     if (!state.reduced) {
       if (state.travelTarget !== null) {
-        state.travel = damp(state.travel, state.travelTarget, 2.4, dt);
+        // 4.5 比原来的 2.4 快一档：滚一格约 0.4 秒到位，不会拖着一条慢悠悠的尾巴
+        state.travel = damp(state.travel, state.travelTarget, 4.5, dt);
         if (Math.abs(state.travel - state.travelTarget) < 0.05) {
           state.travel = state.travelTarget;
           state.travelTarget = null;
@@ -707,22 +708,42 @@ export function mountMusicTunnel(host, options = {}) {
         state.vel *= Math.pow(0.06, dt);
         if (Math.abs(state.vel) < 0.001) state.vel = 0;
         state.travel += state.vel * dt * 6;
-        // 停手就吸附：吸到「某层正好停在相机前 HERO_DIST」的位置，也就是那张
-        // 封面完整正对镜头的那一帧。原来吸到 D 的整数倍，差 1 个单位，画面略近、
-        // 看着总像没对准；门槛也放宽（320ms / vel<1.1），轻轻一滚松手就能吸住。
-        // snapTarget 一旦定下就别每帧重算，否则会被「当前最近层」覆盖，
-        // 翻出去的页又被拉回来（之前就是这个 bug，滚几格都停在同一条）。
+        // 滚轮 = 翻页：滚 N 格就把后面第 N 层的中央封面顶到正中当主封面，
+        // 相机停到它前方 HERO_DIST（跟点封面完全同一套取景），松手正好「卡」
+        // 在那张完整居中放大的画面上。之前只挪相机、不设主封面，中间那张不会
+        // 放大，所以怎么看都不像「卡住了」——这才是用户真正要的效果。
         if (state.snapTarget === null
-            && now - state.lastInput > 300 && Math.abs(state.vel) < 1.2
-            && !state.heroSlot) {   // 选了主封面就停在那层，别再吸走
-          // 翻页：每 120 的 deltaY 算一格，往前滚 N 格就翻到后面第 N 张，向后同理。
-          // 目标是「那一层正好停在相机前 HERO_DIST」，也就是封面完整正对镜头的构图，
-          // 跟点封面时的取景一致；一格就能换一张，不用再靠惯性滑过半层。
+            && now - state.lastInput > 280 && Math.abs(state.vel) < 1.2) {
           const steps = Math.round(state.wheelAccum / 120);
           state.wheelAccum = 0;
-          const base = Math.round((state.travel + HERO_DIST - CAM_Z0) / D);
-          const k = base + steps;
-          state.snapTarget = CAM_Z0 + k * D - HERO_DIST;
+          const camZ = camera.position.z;
+          const centers = slots
+            .filter(s => s.i === 0 && s.j === 0)
+            .sort((a, b) => b.z - a.z);          // z 降序，越往前的层越靠后
+          if (centers.length) {
+            // 「当前层」按「距离相机最近 HERO_DIST 的那一层」判定。不能用
+            // s.z <= camZ —— 相机一靠近，旧的那层还会一直满足，第二次滚就不动了。
+            const wantZ = camZ - HERO_DIST;
+            let cur = centers[0];
+            for (const s of centers) {
+              if (Math.abs(s.z - wantZ) < Math.abs(cur.z - wantZ)) cur = s;
+            }
+            const idx = centers.indexOf(cur);
+            const target = centers[Math.max(0, Math.min(centers.length - 1, idx + steps))];
+            if (target && target !== state.heroSlot) {
+              state.heroSlot = target;
+              target.baseX = 0;                  // 中央格本来就在 0,0，不用飞
+              target.baseY = 0;
+              state.vel = 0;
+              state.travelTarget = CAM_Z0 - (target.z + HERO_DIST);
+              if (window.__DLY_SNAP_DEBUG) {
+                console.log('[snap]', JSON.stringify({
+                  steps, camZ: +camZ.toFixed(2), curZ: cur.z, targetZ: target.z,
+                  tt: +state.travelTarget.toFixed(2), centers: centers.map(c => c.z),
+                }));
+              }
+            }
+          }
         }
 
       }
