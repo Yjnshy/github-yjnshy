@@ -136,6 +136,13 @@ class CDP:
                 return msg.get("result", {})
             self.events.append(msg)
 
+    def notify(self, method: str, params: Optional[dict] = None) -> None:
+        """只发命令不等响应（Browser.close 之后浏览器不会再回消息）。"""
+        self._seq += 1
+        self._ws.send(json.dumps({
+            "id": self._seq, "method": method, "params": params or {}
+        }))
+
     def drain(self, seconds: float) -> None:
         """在 seconds 内持续接收事件（CDP 的响应通知是异步事件）。"""
         end = time.time() + seconds
@@ -261,6 +268,17 @@ class ChromeSession:
 
     def close(self, kill: bool = True) -> None:
         if self.cdp:
+            try:
+                # 必须让 Chrome 自己走正常退出流程，否则 Cookie 还在内存里
+                # 就被 terminate 掉，登录当下显示成功、下次启动却提示未登录。
+                self.cdp.notify("Browser.close")
+                if self.proc and self.proc.poll() is None:
+                    try:
+                        self.proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        pass
+            except Exception:  # noqa: BLE001
+                logger.debug("Browser.close 未完成，走强制收尾", exc_info=True)
             self.cdp.close()
             self.cdp = None
         if kill and self.proc and self.proc.poll() is None:

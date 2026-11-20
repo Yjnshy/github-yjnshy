@@ -62,3 +62,33 @@ def test_login_cookies_defined():
     # 抖音 Web 登录态的关键项，用来判定专用 profile 是否已登录
     assert "sessionid" in di._LOGIN_COOKIES
     assert "sid_tt" in di._LOGIN_COOKIES
+
+
+def test_close_gracefully_flushes_cookies():
+    """扫码成功后若强杀 Chrome，Cookie 来不及落盘，下次扫描会误判未登录。"""
+    from pathlib import Path
+    from unittest.mock import Mock
+
+    s = di.ChromeSession(Path("/tmp/profile"), Path("/chrome"))
+    cdp, proc = Mock(), Mock()
+    proc.poll.return_value = None
+    proc.wait.side_effect = lambda timeout=None: setattr(proc, "poll", lambda: 0)
+    s.cdp, s.proc = cdp, proc
+    s.close()
+    cdp.notify.assert_called_once_with("Browser.close")
+    assert proc.wait.call_count == 1
+    proc.terminate.assert_not_called()
+    cdp.close.assert_called_once_with()
+    assert s.proc is None
+
+
+def test_cdp_notify_sends_command_without_waiting():
+    import json
+    from unittest.mock import Mock
+
+    cdp = object.__new__(di.CDP)
+    cdp._ws, cdp._seq = Mock(), 4
+    cdp.notify("Browser.close", {"x": 1})
+    payload = json.loads(cdp._ws.send.call_args.args[0])
+    assert payload == {"id": 5, "method": "Browser.close", "params": {"x": 1}}
+    assert cdp._seq == 5
