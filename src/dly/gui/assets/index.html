@@ -180,7 +180,7 @@
   .main {
     flex: 1; min-width: 0; min-height: 0;
     display: flex; flex-direction: column;
-    padding: 26px 30px 16px;
+    padding: 26px 30px 0;
     overflow-y: auto;
     scrollbar-width: thin;
     scrollbar-color: rgba(128, 126, 150, .48) transparent;
@@ -636,21 +636,17 @@
   body:not(.music-tunnel-view) #panel-music .music-grid {
     flex: 0 0 auto; min-height: auto; overflow: visible;
   }
-  /* 隧道视图：画面铺满整个主内容区，不留白边。
-     卡片去掉内边距和圆角，负外边距抵消 .main 的左右/下留白；页头的下边距
-     也收掉，画面紧贴页头。main 改成不滚动，避免负边距撑出横向滚动条。 */
+  /* 隧道视图：画面在卡片内铺满（padding 归零），卡片本身跟网格视图保持
+     一样的页边距和宽度，四个角沿用卡片圆角。不再用负边距突破 .main 留白。 */
   body.music-tunnel-view .main { overflow: hidden; }
-  body.music-tunnel-view .page-head { margin-bottom: 0; }
   body.music-tunnel-view #panel-music .music-card {
-    padding: 0; border: 0; margin: 0 -30px -16px;
-    /* 铺满但仍保留卡片圆角：靠 overflow 把画面裁成圆角，四角露出一点页面底色 */
-    border-radius: 14px; overflow: hidden;
+    padding: 0; border: 0; border-radius: 14px; overflow: hidden;
   }
   body.music-tunnel-view #panel-music .music-tunnel { border-radius: 0; }
-  /* 窄窗口下 .main 的 padding 变成 18px 16px 12px，负边距要跟着改，否则铺不满 */
-  @media (max-width: 900px) {
-    body.music-tunnel-view #panel-music .music-card { margin: 0 -16px -12px; }
-  }
+  /* 歌单页底部 30px 留白（跟左右一致）。不能用 .main 的 padding-bottom，也不能用
+     最后子元素的 margin —— flex 滚动容器在 Chrome 下不把它们计入可滚动范围，滚到
+     底会贴边。末尾放一个真实占位块，网格视图滚动和隧道视图撑满都能吃到。 */
+  #panel-music::after { content: ""; display: block; flex: none; height: 30px; }
   .track {
     display: flex; flex-direction: column; gap: 7px; padding: 0; border: 0;
     background: transparent; text-align: left; cursor: pointer; min-width: 0;
