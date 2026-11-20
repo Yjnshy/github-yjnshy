@@ -651,6 +651,9 @@
   }
   body.music-tunnel-view #panel-music .music-tunnel { border-radius: 0; }
   body.music-tunnel-view #panel-music .player { position: static; margin-top: 0; }
+  /* 隧道视图且没勾「显示播放条」→ 样式层直接藏掉。JS 的显隐是异步的、还可能被
+     播放流程重新盖回来，加这条兜底，保证「不勾选就绝对不出现播放条」。 */
+  body.music-tunnel-view.no-tunnel-player #panel-music .player { display: none !important; }
   /* 播放条收起时：画面用 flex 撑满「页头到留白之间」，一屏正好放下、不出现滚动 */
   body.music-tunnel-view #panel-music:has(.player[hidden]) { flex: 1; }
   body.music-tunnel-view #panel-music:has(.player[hidden]) .music-card {
@@ -4036,6 +4039,7 @@ function setTunnelPlays(value) {
 function setTunnelShowsPlayer(value) {
   tunnelShowsPlayer = !!value;
   try { localStorage.setItem('dly.tunnelShowsPlayer', tunnelShowsPlayer ? '1' : '0'); } catch (e) { /* 隐私模式 */ }
+  document.body.classList.toggle('no-tunnel-player', !tunnelShowsPlayer);
   applyPlayerHidden();
   toast(tunnelShowsPlayer ? '隧道视图会显示播放条' : '隧道视图只显示整屏隧道', 'ok');
 }
@@ -4154,9 +4158,8 @@ function setMusicView(view) {
 function syncTunnelScroll() {
   if (musicView !== 'tunnel') return;
   const mainEl = document.querySelector('.main');
-  const player = $('player');
   if (!mainEl) return;
-  const withBar = !!(player && !player.hidden);
+  const withBar = tunnelShowsPlayer;
   // 双 rAF：等 flex 和高度都算完再对齐
   requestAnimationFrame(() => requestAnimationFrame(() => {
     if (musicView !== 'tunnel') return;
@@ -4880,6 +4883,10 @@ try {
   if (savedBar !== null) tunnelShowsPlayer = savedBar === '1';
 } catch (e) { /* 隐私模式读不到就用默认值（显示） */ }
 if ($('opt-tunnel-player')) $('opt-tunnel-player').checked = tunnelShowsPlayer;
+document.body.classList.toggle('no-tunnel-player', !tunnelShowsPlayer);
+// 启动时可能已经自动恢复了上次的播放：那时还没读到勾选状态，播放条被显示出来，
+// 这里补一次，保证「没勾选就不显示播放条」在刷新后也成立。
+applyPlayerHidden();
 try {
   // Spotify 风格默认开启；只有用户明确关过（存了 '0'）才恢复淡紫
   const savedSkin = localStorage.getItem('dly.spotifySkin');
