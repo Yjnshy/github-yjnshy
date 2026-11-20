@@ -82,11 +82,13 @@ def test_close_gracefully_flushes_cookies():
     assert s.proc is None
 
 
-def test_is_logged_in_checks_page_not_only_cookies():
+def test_is_logged_in_checks_page_not_only_cookies(monkeypatch):
     """残留 Cookie 会让页面仍显示未登录，必须看页面文案。"""
     import tempfile
     from pathlib import Path
     from unittest.mock import Mock
+
+    monkeypatch.setattr(di.time, "sleep", lambda _: None)
 
     with tempfile.TemporaryDirectory() as d:
         s = object.__new__(di.ChromeSession)
@@ -96,6 +98,8 @@ def test_is_logged_in_checks_page_not_only_cookies():
         assert s.is_logged_in() is False
         s.cdp.evaluate.return_value = "作品\n喜欢\n收藏\n我的主页"
         assert s.is_logged_in() is True
+        s.cdp.evaluate.return_value = ""   # 页面还没渲染完不能算登录
+        assert s.is_logged_in() is False
         s._cookies_have_login = lambda: False
         assert s.is_logged_in() is False
 

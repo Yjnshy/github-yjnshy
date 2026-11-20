@@ -209,19 +209,20 @@ class ChromeSession:
             return False
         if not self.cdp:
             return False
-        for _ in range(3):
+        # 刚启动时页面可能还没渲染完；等到有内容再判断，空页面一律算未登录。
+        for _ in range(12):
             try:
                 text = self.cdp.evaluate(
                     "document.body ? document.body.innerText.slice(0, 3000) : ''"
                 )
-                if text:
+                if text and len(str(text).strip()) > 10:
                     return not any(mark in str(text) for mark in (
-                        "登录后即可观看", "扫码登录", "验证码登录",
+                        "登录后即可观看", "扫码登录", "验证码登录", "未登录",
                     ))
             except Exception:
                 logger.debug("读取页面登录状态失败", exc_info=True)
             time.sleep(0.5)
-        return True   # 页面还没就绪时退回 cookie 判断
+        return False
 
     def _cookies_have_login(self) -> bool:
         # 需要进程在跑才有 CDP；这里由调用方确保 start() 已执行
