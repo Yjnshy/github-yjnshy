@@ -355,7 +355,9 @@ def test_tunnel_fills_whole_main_area(html):
     收掉，main 在隧道视图不滚动（负边距会撑出横向滚动条）。"""
     assert "body.music-tunnel-view .main { overflow: hidden; }" in html
     assert "body.music-tunnel-view .page-head { margin-bottom: 0; }" in html
-    assert "padding: 0; border: 0; border-radius: 0; margin: 0 -30px -16px;" in html
+    assert "padding: 0; border: 0; margin: 0 -30px -16px;" in html
+    # 铺满同时保留卡片圆角，靠 overflow 裁剪画面
+    assert "border-radius: 14px; overflow: hidden;" in html
     assert "body.music-tunnel-view #panel-music .music-tunnel { border-radius: 0; }" in html
     # 窄窗口 .main 的 padding 是 18px 16px 12px，负边距要跟着改
     assert "body.music-tunnel-view #panel-music .music-card { margin: 0 -16px -12px; }" in html

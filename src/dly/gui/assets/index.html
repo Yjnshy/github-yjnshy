@@ -642,7 +642,9 @@
   body.music-tunnel-view .main { overflow: hidden; }
   body.music-tunnel-view .page-head { margin-bottom: 0; }
   body.music-tunnel-view #panel-music .music-card {
-    padding: 0; border: 0; border-radius: 0; margin: 0 -30px -16px;
+    padding: 0; border: 0; margin: 0 -30px -16px;
+    /* 铺满但仍保留卡片圆角：靠 overflow 把画面裁成圆角，四角露出一点页面底色 */
+    border-radius: 14px; overflow: hidden;
   }
   body.music-tunnel-view #panel-music .music-tunnel { border-radius: 0; }
   /* 窄窗口下 .main 的 padding 变成 18px 16px 12px，负边距要跟着改，否则铺不满 */
