@@ -442,12 +442,44 @@ export function mountMusicTunnel(host, options = {}) {
 
   function updateSlots(dt) {
     const camZ = camera.position.z;
+    const span = LAYERS * D;
+
+    // 1) 往前穿行：越过相机的盒子搬到最远端。一次滚很远时只挪一档会追不上
+    //    相机、留下空洞，所以按需要的档数一次挪到位。同一层的 slot.z 恒相等，
+    //    spans 也相同，整层会一起回收，层距不会被打乱。
     for (const slot of slots) {
-      if (slot.z > camZ + 1 && !slot.flying) {
-        // 一次滚很远时，只挪一档（77 单位）追不上相机，会在前方留下空洞、
-        // 已经掠过的封面反而挡在镜头后面 —— 按需要的档数一次挪到位
-        const spans = Math.ceil((slot.z - camZ - 1) / (LAYERS * D));
-        slot.z -= spans * LAYERS * D;
+      if (slot.flying) continue;
+      if (slot.z > camZ + 1) {
+        const spans = Math.ceil((slot.z - camZ - 1) / span);
+        slot.z -= spans * span;
+        slot.baseX = slot.i * G;
+        slot.baseY = slot.j * G;
+        if (slot === state.heroSlot) state.heroSlot = null;
+        slot.hero = 0;
+        slot.lift = 0;
+      }
+    }
+
+    // 2) 往回缩：相机后退会让整条隧道越退越远，所有封面越过雾深被染成
+    //    深色、盒体本身也是深色，于是满屏黑块（就是「缩到一定程度没有新
+    //    封面补进来」）。这里按「层」把最远的一层循环搬到最近层前方一层：
+    //    每次搬一整层（同层 slot.z 恒相等），层距保持 D、层序不乱，最近一层
+    //    始终停在相机前 CAM_Z0 左右，前方一直有清晰封面持续补进来。
+    //    不能用「每个盒子各自 floor 取整档」——那样不同盒子档数不同，层序会
+    //    错乱，还会把个别盒子搬到贴脸位置，变成一张糊满屏的巨幅封面。
+    let guard = LAYERS * 8;
+    while (guard-- > 0) {
+      let minZ = Infinity, maxZ = -Infinity;
+      for (const slot of slots) {
+        if (slot.z < minZ) minZ = slot.z;
+        if (slot.z > maxZ) maxZ = slot.z;
+      }
+      if (camZ - maxZ <= CAM_Z0 + D) break;   // 最近层还够近，无需补
+      const target = maxZ + D;
+      for (const slot of slots) {
+        if (Math.abs(slot.z - minZ) > 0.001) continue;
+        slot.z = target;
+        if (slot.flying) continue;            // 正在飞入的只跟着搬位置，别打断动画
         slot.baseX = slot.i * G;
         slot.baseY = slot.j * G;
         if (slot === state.heroSlot) state.heroSlot = null;
@@ -752,6 +784,12 @@ export function mountMusicTunnel(host, options = {}) {
         loaded: textures.filter(t => !!t.image).length,
         ahead: slots.filter(s => s.z < camera.position.z - 2).length,
         behind: slots.filter(s => s.z > camera.position.z + 1).length,
+        // 相机前方、雾深之内（能看清封面）的盒子数。回缩修复靠它做回归断言：
+        // 无论怎么缩，这个值都应保持和初始视角同一量级，不能掉到 0 附近。
+        near: slots.filter(s => {
+          const d = camera.position.z - s.z;
+          return d > 2 && d < D * 10.5;
+        }).length,
       };
     },
   };

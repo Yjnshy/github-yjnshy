@@ -249,13 +249,75 @@ def test_tunnel_recycles_slots_across_spans_on_fast_scroll(html):
     否则前方出现空洞、没有新封面补出来；主封面让路的判定也要有上限，
     不能把整条隧道都淡出。"""
     module = (HTML_PATH.parent / "music-tunnel.js").read_text(encoding="utf-8")
-    # 回收按 (slot.z - camZ - 1) / (LAYERS * D) 的跨度倍数搬，而不是只挪一档
-    assert "const spans = Math.ceil((slot.z - camZ - 1) / (LAYERS * D));" in module
-    assert "slot.z -= spans * LAYERS * D;" in module
+    # 回收按 (slot.z - camZ - 1) / span 的跨度倍数搬，而不是只挪一档
+    assert "const span = LAYERS * D;" in module
+    assert "const spans = Math.ceil((slot.z - camZ - 1) / span);" in module
+    assert "slot.z -= spans * span;" in module
     # 主封面让路只作用到紧邻几层（heroFrontZ + 3 * D），避免远处的层全被藏掉
     assert "slotZ < heroFrontZ + 3 * D" in module
     # 滚轮 delta 夹幅，防止一帧跳几十单位
     assert "Math.max(-120, Math.min(120, event.deltaY))" in module
+
+
+def test_tunnel_keeps_covers_when_zooming_back(html):
+    """往回缩（相机后退）时相机不能退到整条隧道后面，否则所有封面越过雾深
+    被染成深色、满屏黑块。修复是按「层」把最远的一层循环搬到最近层前方，
+    层距恒为 D，最近封面始终停在相机前 CAM_Z0 左右；stats 里要有 near
+    （雾深内可见盒子数）供回归断言。"""
+    module = (HTML_PATH.parent / "music-tunnel.js").read_text(encoding="utf-8")
+    # 前进按层回收、回缩按层循环补齐，两者都保持同层 slot.z 相等
+    assert "while (guard-- > 0)" in module
+    assert "if (camZ - maxZ <= CAM_Z0 + D) break;" in module
+    assert "const target = maxZ + D;" in module
+    assert "if (Math.abs(slot.z - minZ) > 0.001) continue;" in module
+    assert "if (slot.flying) continue;            // 正在飞入的只跟着搬位置" in module
+    # 不能用「每个盒子各自 floor 取整档」——会层序错乱并出现贴脸巨幅封面
+    assert "Math.floor((camZ - slot.z) / span)" not in module
+    # 诊断指标：相机前方、雾深之内的盒子数，回缩时不应掉到 0
+    assert "near: slots.filter" in module
+    assert "d > 2 && d < D * 10.5" in module
+
+
+def test_version_only_shown_in_titlebar(html):
+    """左下角版本号去掉（右上角标题栏已有一份）：元素和 JS 引用要一起删，
+    否则 render() 第一次轮询就抛异常、界面永久停更。"""
+    assert 'id="version"' not in html
+    assert "$('version')" not in html
+    assert "class=\"side-meta\"" not in html
+    # 右上角标题栏版本号与「关于」弹层仍在
+    assert 'id="title-version"' in html
+    assert "titleVer.textContent = 'v' + snapshot.version" in html
+    assert "const ver = (snapshot && snapshot.version) || '';" in html
+
+
+def test_recent_block_collapsed_by_default(html):
+    """最近添加默认收起，点快捷入口里的「最近添加」才展开、在里面看，再点收起。
+    展开后铺成自适应网格，不再是一条带细横向滚动条的窄条。"""
+    assert 'id="music-recent-block" hidden' in html
+    assert "function toggleRecentBlock()" in html
+    assert "act: () => toggleRecentBlock()" in html
+    assert 'onclick="toggleRecentBlock()"' in html
+    assert "card.dataset.key = d.key;" in html
+    assert "card.classList.toggle('on', show)" in html
+    # 展开状态在 renderDiscover 重建快捷卡后仍要同步
+    assert "d.key === 'recent' && recentBlock && !recentBlock.hidden" in html
+    # 横向滚动条换成自适应网格
+    assert "grid-template-columns: repeat(auto-fill, minmax(104px, 1fr))" in html
+    assert "grid-auto-flow: column" not in html
+    assert "overflow-x: auto" not in html
+
+
+def test_music_grid_uses_whole_page_scrollbar(html):
+    """歌单网格视图由 .main 整页滚动（滚动条贴页面右缘贯穿全高），
+    隧道视图仍撑满固定高度给 canvas；滚动条要明显、带圆角滑块。"""
+    assert ".main::-webkit-scrollbar { width: 12px; }" in html
+    assert "border: 3px solid transparent; border-radius: 999px;" in html
+    assert "body:not(.music-tunnel-view) #panel-music" in html
+    assert "body:not(.music-tunnel-view) #panel-music .music-grid" in html
+    assert "flex: 0 0 auto; min-height: auto; overflow: visible;" in html
+    # 视图切换要挂/摘 class；WebGL 起不来兜底回网格时也要摘掉
+    assert "document.body.classList.toggle('music-tunnel-view', musicView === 'tunnel')" in html
+    assert "document.body.classList.remove('music-tunnel-view')" in html
 
 
 def test_spotify_skin_is_scoped_and_reversible(html):
