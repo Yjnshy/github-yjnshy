@@ -637,25 +637,16 @@
   body:not(.music-tunnel-view) #panel-music .music-grid {
     flex: 0 0 auto; min-height: auto; overflow: visible;
   }
-  /* 隧道视图：画面高度不变（视口 - 卡片 - 留白），整体往下放一个间隔的距离，
-     让画面底部直接贴住播放卡片、中间那条缝消失。 */
-  body.music-tunnel-view .main { overflow-y: auto; }
-  body.music-tunnel-view #panel-music { flex: 0 0 auto; }
+  /* 隧道视图：一屏放下、不滚动 —— 滚轮只负责隧道穿行，不会再把整页带着往下滑。
+     勾「显示播放条」时画面让出一截给播放条；不勾时播放条收起、画面撑满整屏。 */
+  body.music-tunnel-view .main { overflow: hidden; }
+  body.music-tunnel-view #panel-music { flex: 1; }
   body.music-tunnel-view #panel-music .music-card {
-    flex: none;
-    height: calc(100vh - 116px);
-    margin-top: 12px;
+    flex: 1; height: auto;
     padding: 0; border: 0; border-radius: 14px; overflow: hidden;
   }
   body.music-tunnel-view #panel-music .music-tunnel { border-radius: 0; }
-  /* 播放卡片跟隧道之间不要那条缝：margin-top 归零，卡片直接贴住画面下沿。 */
   body.music-tunnel-view #panel-music .player { position: static; margin-top: 0; }
-  /* 没在播放（播放条隐藏）时，画面撑满整屏：隧道完整显示、不出现滚动；
-     播放之后播放条出现，才按下面那套「减去 116px」的高度走、允许滚到底。 */
-  body.music-tunnel-view #panel-music:has(.player[hidden]) { flex: 1; }
-  body.music-tunnel-view #panel-music:has(.player[hidden]) .music-card {
-    flex: 1; height: auto;
-  }
   /* 歌单页底部 30px 留白（跟左右一致）。不能用 .main 的 padding-bottom，也不能用
      最后子元素的 margin —— flex 滚动容器在 Chrome 下不把它们计入可滚动范围，滚到
      底会贴边。末尾放一个真实占位块，网格视图滚动和隧道视图撑满都能吃到。 */
@@ -1457,6 +1448,10 @@
       <label class="check music-opt" title="关闭后，点隧道里的封面只换主封面，不切换正在播放的歌">
         <input type="checkbox" id="opt-tunnel-play" checked
                onchange="setTunnelPlays(this.checked)"> 点封面切歌
+      </label>
+      <label class="check music-opt" title="勾选：进隧道视图时底部播放条一起显示（画面和播放条都完整）；不勾选：只显示整屏隧道">
+        <input type="checkbox" id="opt-tunnel-player" checked
+               onchange="setTunnelShowsPlayer(this.checked)"> 显示播放条
       </label>
       <button class="ghost" id="music-skin-btn" onclick="toggleMusicSkin()"
               title="套用 Spotify 风格：近黑底色 + 绿色功能键（只影响歌单网格，隧道不变）">Spotify 风</button>
@@ -3995,6 +3990,7 @@ let musicView = 'grid';
 let tunnelSig = '';
 let tunnelSelecting = false;   // 隧道里点选时已经在动画，别再让页面反向同步一次
 let tunnelPlays = true;        // 点隧道封面是否切换播放（false = 只换主封面）
+let tunnelShowsPlayer = true;  // 隧道视图是否连播放条一起显示（false = 只显示整屏隧道）
 
 function syncMusicBrowser() {
   if ($('music-browser') && $('browser')) $('music-browser').value = $('browser').value;
@@ -4022,6 +4018,13 @@ function setTunnelPlays(value) {
   try { localStorage.setItem('dly.tunnelPlays', tunnelPlays ? '1' : '0'); } catch (e) { /* 隐私模式 */ }
   syncTunnelTip();
   toast(tunnelPlays ? '点封面会切歌' : '点封面只换主封面，不换歌', 'ok');
+}
+
+function setTunnelShowsPlayer(value) {
+  tunnelShowsPlayer = !!value;
+  try { localStorage.setItem('dly.tunnelShowsPlayer', tunnelShowsPlayer ? '1' : '0'); } catch (e) { /* 隐私模式 */ }
+  applyPlayerHidden();
+  toast(tunnelShowsPlayer ? '隧道视图会显示播放条' : '隧道视图只显示整屏隧道', 'ok');
 }
 
 function tunnelTracks() {
@@ -4430,12 +4433,6 @@ function playTrack(id) {
   });
   $('player').hidden = false;
   applyPlayerHidden();
-  // 隧道视图里点封面播放：自动滚到底，正好露出播放条、画面顶部对齐，
-  // 不用再手动滚轮（等一帧让播放条占位算进去再滚）。
-  if (musicView === 'tunnel') {
-    const scroller = document.querySelector('.main');
-    if (scroller) requestAnimationFrame(() => scroller.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' }));
-  }
   // 页面里切歌（点网格、上一首/下一首）时，隧道里的主封面也跟着换
   if (tunnel && !tunnelSelecting) tunnel.selectTrack(id);
   renderMusic();
@@ -4612,9 +4609,10 @@ function applyPlayerHidden() {
   const player = $('player');
   if (!player) return;
   const audio = $('audio');
-  // 没有曲目、或者已经暂停/播完，都不显示播放条：隧道视图要靠它撑满整屏。
-  // 以前只在这里处理「浮窗收起」，播放过一次后播放条永远挂着，画面就一直短一截。
-  if (!audio || !audio.src || audio.paused) {
+  // 隧道视图没勾「显示播放条」时，只显示整屏隧道
+  const tunnelHide = musicView === 'tunnel' && !tunnelShowsPlayer;
+  // 没有曲目、或者隧道里不显示条 → 收起。播放条要不要在隧道里露出来，交给页头那个开关。
+  if (!audio || !audio.src || tunnelHide) {
     player.hidden = true;
     if ($('pl-restore')) $('pl-restore').hidden = true;
     return;
@@ -4841,6 +4839,11 @@ try {
   if (saved !== null) tunnelPlays = saved === '1';
 } catch (e) { /* 隐私模式读不到就用默认值 */ }
 if ($('opt-tunnel-play')) $('opt-tunnel-play').checked = tunnelPlays;
+try {
+  const savedBar = localStorage.getItem('dly.tunnelShowsPlayer');
+  if (savedBar !== null) tunnelShowsPlayer = savedBar === '1';
+} catch (e) { /* 隐私模式读不到就用默认值（显示） */ }
+if ($('opt-tunnel-player')) $('opt-tunnel-player').checked = tunnelShowsPlayer;
 try {
   // Spotify 风格默认开启；只有用户明确关过（存了 '0'）才恢复淡紫
   const savedSkin = localStorage.getItem('dly.spotifySkin');

@@ -572,11 +572,8 @@ export function mountMusicTunnel(host, options = {}) {
   // ---- 输入 ----
   function onWheel(event) {
     event.preventDefault();
-    // 外部页面也跟着滚，但降速到 1/5：滚一格只挪二十来像素，能慢慢停在想要的
-    // 位置。原生滚动一格就跨大半段，根本停不准（这就是「滚不到正确位置」）。
-    const scroller = document.querySelector('.main');
-    if (scroller) scroller.scrollTop += event.deltaY * 0.2;
-    // 隧道内部：保持原来的连续穿行，灵敏度 0.0024（慢慢滚，不会一下冲过头）
+    // 只负责隧道穿行。隧道视图是一屏放下的，页面不该跟着滚——
+    // 之前这里还顺手改过页面滚动位置，结果滚轮一动整页也往下滑。
     state.travelTarget = null;
     state.vel += Math.max(-120, Math.min(120, event.deltaY)) * 0.0024;
     state.lastInput = performance.now();

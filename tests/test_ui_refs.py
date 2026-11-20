@@ -262,7 +262,8 @@ def test_tunnel_recycles_slots_across_spans_on_fast_scroll(html):
     # 滚轮：隧道里保持连续穿行（灵敏度 0.0024），同时带动页面以 1/5 步长慢滚，
     # 这样外部页面能停在任意位置、内部交互也不丢
     assert "state.vel += Math.max(-120, Math.min(120, event.deltaY)) * 0.0024;" in module
-    assert "scroller.scrollTop += event.deltaY * 0.2;" in module
+    # 滚轮只穿行，不能顺手把页面也滚了（隧道视图是一屏放下的）
+    assert "scroller.scrollTop" not in module
     assert "addEventListener('wheel', onWheel, { passive: false });" in module
 
 
@@ -362,10 +363,12 @@ def test_tunnel_outer_shell_is_dense(html):
 def test_tunnel_matches_grid_margins(html):
     """隧道视图跟网格视图保持同样的页边距和宽度：画面在卡片内铺满（padding 归零），
     卡片圆角裁剪画面，且不再用负边距突破 .main 留白。"""
-    assert "body.music-tunnel-view .main { overflow-y: auto; }" in html
+    assert "body.music-tunnel-view .main { overflow: hidden; }" in html
     # 画面高度不变，整体下放一个间隔，底部直接贴住播放卡片（中间无缝）
-    assert "height: calc(100vh - 116px);" in html
-    assert "margin-top: 12px;" in html
+    assert "body.music-tunnel-view .main { overflow: hidden; }" in html
+    # 「显示播放条」开关：有它才在隧道里露出播放条，否则只显示整屏隧道
+    assert 'id="opt-tunnel-player"' in html
+    assert "tunnelHide = musicView === 'tunnel' && !tunnelShowsPlayer" in html
     assert "body.music-tunnel-view #panel-music .player { position: static; margin-top: 0; }" in html
     assert "padding: 0; border: 0; border-radius: 14px; overflow: hidden;" in html
     assert "body.music-tunnel-view #panel-music .music-tunnel { border-radius: 0; }" in html
