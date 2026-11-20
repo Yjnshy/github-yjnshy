@@ -4430,6 +4430,12 @@ function playTrack(id) {
   });
   $('player').hidden = false;
   applyPlayerHidden();
+  // 隧道视图里点封面播放：自动滚到底，正好露出播放条、画面顶部对齐，
+  // 不用再手动滚轮（等一帧让播放条占位算进去再滚）。
+  if (musicView === 'tunnel') {
+    const scroller = document.querySelector('.main');
+    if (scroller) requestAnimationFrame(() => scroller.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' }));
+  }
   // 页面里切歌（点网格、上一首/下一首）时，隧道里的主封面也跟着换
   if (tunnel && !tunnelSelecting) tunnel.selectTrack(id);
   renderMusic();
@@ -4443,8 +4449,8 @@ function togglePlay() {
     playTrack(first.id);
     return;
   }
-  if (audio.paused) audio.play().catch(() => {});
-  else audio.pause();
+  if (audio.paused) { audio.play().catch(() => {}); applyPlayerHidden(); }
+  else { audio.pause(); applyPlayerHidden(); }
 }
 
 function nextTrack(auto) {
@@ -4605,11 +4611,30 @@ try { playerHidden = localStorage.getItem('dly.playerHidden') === '1'; } catch (
 function applyPlayerHidden() {
   const player = $('player');
   if (!player) return;
+  const audio = $('audio');
+  // 没有曲目、或者已经暂停/播完，都不显示播放条：隧道视图要靠它撑满整屏。
+  // 以前只在这里处理「浮窗收起」，播放过一次后播放条永远挂着，画面就一直短一截。
+  if (!audio || !audio.src || audio.paused) {
+    player.hidden = true;
+    if ($('pl-restore')) $('pl-restore').hidden = true;
+    return;
+  }
+  player.hidden = false;
   const floating = player.classList.contains('floating');
   const collapsed = floating && playerHidden;
   player.classList.toggle('collapsed', collapsed);
   if ($('pl-restore')) $('pl-restore').hidden = !collapsed;
 }
+
+// 暂停 / 播完都收起播放条，隧道回到整屏。延迟 180ms 再看一眼，
+// 避免切歌时「先 pause 再 play」闪一下。
+(function () {
+  const audio = $('audio');
+  if (!audio) return;
+  const sync = () => setTimeout(() => { if (audio.paused) applyPlayerHidden(); }, 180);
+  audio.addEventListener('pause', sync);
+  audio.addEventListener('ended', sync);
+})();
 
 function togglePlayerHidden() {
   playerHidden = !playerHidden;
