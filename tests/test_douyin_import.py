@@ -82,6 +82,24 @@ def test_close_gracefully_flushes_cookies():
     assert s.proc is None
 
 
+def test_is_logged_in_checks_page_not_only_cookies():
+    """残留 Cookie 会让页面仍显示未登录，必须看页面文案。"""
+    import tempfile
+    from pathlib import Path
+    from unittest.mock import Mock
+
+    with tempfile.TemporaryDirectory() as d:
+        s = object.__new__(di.ChromeSession)
+        s.profile_dir, s.cdp = Path(d), Mock()
+        s._cookies_have_login = lambda: True
+        s.cdp.evaluate.return_value = "未登录\n登录后即可观看喜欢、收藏的视频\n扫码登录"
+        assert s.is_logged_in() is False
+        s.cdp.evaluate.return_value = "作品\n喜欢\n收藏\n我的主页"
+        assert s.is_logged_in() is True
+        s._cookies_have_login = lambda: False
+        assert s.is_logged_in() is False
+
+
 def test_cdp_notify_sends_command_without_waiting():
     import json
     from unittest.mock import Mock

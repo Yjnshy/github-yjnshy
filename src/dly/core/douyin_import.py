@@ -200,10 +200,28 @@ class ChromeSession:
         ]
 
     def is_logged_in(self) -> bool:
-        """用一个无头连接读取 cookie，判断专用 profile 是否已登录抖音。"""
-        if not self.profile_dir.exists():
+        """判断专用 profile 是否真的登录了抖音。
+
+        只看 cookie 名字会误判：过期/残留的 sessionid 仍在，但页面其实是
+        「未登录」，列表接口一条也拿不到。这里再看一眼当前页面的登录文案。
+        """
+        if not self.profile_dir.exists() or not self._cookies_have_login():
             return False
-        return self._cookies_have_login()
+        if not self.cdp:
+            return False
+        for _ in range(3):
+            try:
+                text = self.cdp.evaluate(
+                    "document.body ? document.body.innerText.slice(0, 3000) : ''"
+                )
+                if text:
+                    return not any(mark in str(text) for mark in (
+                        "登录后即可观看", "扫码登录", "验证码登录",
+                    ))
+            except Exception:
+                logger.debug("读取页面登录状态失败", exc_info=True)
+            time.sleep(0.5)
+        return True   # 页面还没就绪时退回 cookie 判断
 
     def _cookies_have_login(self) -> bool:
         # 需要进程在跑才有 CDP；这里由调用方确保 start() 已执行
@@ -450,9 +468,9 @@ def wait_login(session: ChromeSession, timeout: float = 300.0,
     while time.time() < deadline:
         tick()
         try:
-            # 每次新建 CDP 连接读一次 cookie（页面可能是登录中转页）
+            # 页面可能在登录中转页之间跳转，用页面真实状态判断
             session.ensure_page()
-            if session._cookies_have_login():
+            if session.is_logged_in():
                 return True
         except Exception:
             pass
