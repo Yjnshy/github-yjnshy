@@ -4110,9 +4110,10 @@ function setMusicView(view) {
   if (discover) discover.hidden = musicView === 'tunnel' || !hasTracks;
   if (btn) btn.textContent = musicView === 'tunnel' ? '网格视图' : '隧道视图';
   if ($('music-empty')) $('music-empty').hidden = hasTracks;
-  // 隧道视图：播放条浮在画面底部，做成液态玻璃；网格视图回到普通卡片
+  // 两种视图共用网格视图那张普通播放卡片：跟着内容排在底部（sticky），
+  // 不再浮成画面上的一条液态玻璃条。floating 相关样式保留但不再启用。
   const player = $('player');
-  if (player) player.classList.toggle('floating', musicView === 'tunnel' && hasTracks);
+  if (player) player.classList.remove('floating');
   applyPlayerHidden();
   if (musicView === 'tunnel') mountTunnel();
   else destroyTunnel();

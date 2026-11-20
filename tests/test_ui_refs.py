@@ -209,11 +209,13 @@ def test_music_toolbar_moved_to_header(html):
     assert "position: absolute;\n    left: 0; right: auto;" in html
 
 
-def test_player_floats_as_glass_in_tunnel(html):
-    """隧道视图里播放条浮在画面底部，做成液态玻璃；切回网格恢复普通卡片。"""
-    assert ".player.floating {" in html
-    assert "backdrop-filter: blur(22px) saturate(170%);" in html
-    assert "classList.toggle('floating', musicView === 'tunnel' && hasTracks)" in html
+def test_tunnel_uses_grid_player_card(html):
+    """隧道视图也用网格视图那张普通播放卡片（跟着内容排在底部、随滚动吸附），
+    不再浮成画面上的液态玻璃条。floating 样式保留但不再启用。"""
+    assert "if (player) player.classList.remove('floating');" in html
+    assert "classList.toggle('floating', musicView === 'tunnel'" not in html
+    # 播放卡片本体仍是 Spotify 深灰卡 + 绿播放键（只作用于非浮动）
+    assert "body.spotify-skin #panel-music .player:not(.floating) {" in html
     # 这句挪进 ? 说明里：页面标题下不再显示，问号弹层的 fallback 里要有
     assert "music:    ['歌单', '']," in html
     assert "sub || '下载或提取的音频都在这里，点封面就能听'" in html
