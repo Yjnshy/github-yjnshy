@@ -182,13 +182,14 @@
     display: flex; flex-direction: column;
     padding: 26px 30px 0;
     overflow-y: auto;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(128, 126, 150, .48) transparent;
+    /* 注意：这里不能写 scrollbar-width / scrollbar-color —— Chromium 会优先用
+       标准属性，把下面那套 ::-webkit-scrollbar 完全忽略掉，结果滚动条一直是
+       系统那条又细又灰的（用户看到的「改了没效果」就是这个）。 */
   }
   /* 整页滚动条：原来只有歌单网格内部那条又短又细的滚动条，缩在卡片里，
      看着像「一小截」。现在滚动作用于整个主区，给一条贯穿全高、更清楚、
      带圆角滑块的滚动条；透明边框让滑块比轨道窄一圈，不压内容。 */
-  .main::-webkit-scrollbar { width: 12px; }
+  .main::-webkit-scrollbar { width: 14px; }
   .main::-webkit-scrollbar-track { background: transparent; }
   .main::-webkit-scrollbar-thumb {
     background: rgba(128, 126, 150, .48);

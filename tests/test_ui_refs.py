@@ -317,7 +317,10 @@ def test_recent_block_collapsed_by_default(html):
 def test_music_grid_uses_whole_page_scrollbar(html):
     """歌单网格视图由 .main 整页滚动（滚动条贴页面右缘贯穿全高），
     隧道视图仍撑满固定高度给 canvas；滚动条要明显、带圆角滑块。"""
-    assert ".main::-webkit-scrollbar { width: 12px; }" in html
+    assert ".main::-webkit-scrollbar { width: 14px; }" in html
+    # 不能同时写 scrollbar-width —— Chromium 会优先标准属性、忽略 ::-webkit-scrollbar，
+    # 滚动条就变成系统那条细灰的（用户看到的「改了没效果」）
+    assert "scrollbar-width: thin;" not in html
     assert "border: 3px solid transparent; border-radius: 999px;" in html
     assert "body:not(.music-tunnel-view) #panel-music" in html
     assert "body:not(.music-tunnel-view) #panel-music .music-grid" in html
