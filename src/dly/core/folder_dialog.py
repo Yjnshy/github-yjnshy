@@ -18,11 +18,14 @@
 from __future__ import annotations
 
 import ctypes
+import logging
 import os
 import subprocess
 import sys
 from ctypes import wintypes
 from typing import List
+
+logger = logging.getLogger(__name__)
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -283,9 +286,11 @@ def _windows_pick_media_files(initial: str, title: str) -> List[str]:
             _COMDLG_FILTERSPEC("视频", "*.mp4;*.mkv;*.mov;*.avi;*.flv;*.webm;*.m4v"),
             _COMDLG_FILTERSPEC("音频", "*.mp3;*.m4a;*.aac;*.flac;*.wav;*.ogg"),
             _COMDLG_FILTERSPEC("所有文件", "*.*"))
-        _method(ptr, 8, ctypes.c_uint32,
+        # IFileOpenDialog 虚表：4=SetFileTypes，5=SetFileTypeIndex。
+        # 注意别写成 6（那是 GetFileTypeIndex，参数是指针，传整数会访问违规）。
+        _method(ptr, 4, ctypes.c_uint32,
                 ctypes.POINTER(_COMDLG_FILTERSPEC))(ptr, 4, specs)
-        _method(ptr, 6, ctypes.c_uint32)(ptr, 1)   # 默认第一个过滤（视频/音频）
+        _method(ptr, 5, ctypes.c_uint32)(ptr, 0)   # 默认第一个过滤（视频/音频）
 
         if initial and os.path.isfile(initial):
             folder = os.path.dirname(os.path.abspath(initial))
@@ -338,7 +343,8 @@ def _windows_pick_media_files(initial: str, title: str) -> List[str]:
             return paths
         finally:
             _release(results.value)
-    except (AttributeError, OSError):
+    except (AttributeError, OSError) as exc:
+        logger.exception("多媒体选择对话框调用失败：%s", exc)
         return []
     finally:
         _release(dialog.value)
