@@ -688,7 +688,11 @@
     transition: opacity .14s, color .14s;
   }
   .track:hover .fav-btn, .fav-btn:focus-visible, .fav-btn.on { opacity: 1; }
-  .fav-btn svg { width: 14px; height: 14px; }
+  /* 压过通用 button:hover:not(:disabled) 的浅色背景，否则悬停变成白圆、白心看不见 */
+  button.fav-btn:hover:not(:disabled) {
+    background: rgba(18,16,26,.82); border-color: transparent;
+  }
+  .fav-btn svg { width: 14px; height: 14px; pointer-events: none; }
   .fav-btn.on { color: #ff5b8a; }
 
   /* 挑封面弹层 */

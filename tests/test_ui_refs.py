@@ -285,6 +285,14 @@ def test_spotify_skin_is_scoped_and_reversible(html):
 
 
 
+def test_fav_button_hover_not_turned_white(html):
+    """收藏红心悬停不能被通用 button:hover 的浅色背景盖成白圆、白心看不见。"""
+    assert "button.fav-btn:hover:not(:disabled) {" in html
+    assert "background: rgba(18,16,26,.82); border-color: transparent;" in html
+    # 图标不拦截指针，hover/click 落在按钮本身
+    assert ".fav-btn svg { width: 14px; height: 14px; pointer-events: none; }" in html
+
+
 def test_music_discover_wiring(html):
     """网格视图的发现区：来源筛选 / 快捷入口 / 最近添加 / 本地红心收藏。
 
