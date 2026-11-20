@@ -664,6 +664,47 @@
     border-radius: 6px; background: rgba(20,18,32,.7); color: #fff; font-size: 11px;
   }
 
+  /* 抖音喜欢/收藏导入弹层 */
+  .dy-modal-card { width: min(760px, 100%); }
+  .dy-status {
+    margin-top: 12px; padding: 10px 12px; border-radius: 10px;
+    background: var(--pill-bg); color: var(--muted); font-size: 13px;
+  }
+  .dy-status.ok { color: var(--accent); }
+  .dy-status.err { color: var(--danger, #e05252); }
+  .dy-actions, .dy-scan { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+  .dy-progress { margin-top: 12px; font-size: 13px; color: var(--muted); }
+  .dy-list-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);
+    font-size: 13px; color: var(--muted);
+  }
+  .dy-list {
+    margin-top: 8px; max-height: 46vh; overflow: auto;
+    display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+  .dy-item {
+    display: flex; gap: 8px; align-items: flex-start; padding: 8px;
+    border: 1px solid var(--border); border-radius: 10px; cursor: pointer;
+    background: var(--card);
+  }
+  .dy-item:hover { border-color: var(--accent); }
+  .dy-item input { margin-top: 2px; flex: none; }
+  .dy-item img {
+    width: 42px; height: 42px; flex: none; object-fit: cover;
+    border-radius: 6px; background: var(--pill-bg);
+  }
+  .dy-item .dy-txt { min-width: 0; }
+  .dy-item .dy-desc {
+    font-size: 12px; line-height: 1.35; color: var(--text);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .dy-item .dy-author { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .dy-footer {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); flex-wrap: wrap;
+  }
+
   .music-tunnel-wrap { flex: 1; min-height: 0; display: flex; position: relative; }
   .music-tunnel-wrap[hidden] { display: none !important; }
   .music-tunnel {
@@ -1281,6 +1322,7 @@
         </div>
         <div class="row">
           <button class="primary" id="dl-btn" onclick="startDownload()">开始下载</button>
+          <button class="ghost" id="dy-import-btn" onclick="openDyImport()" title="从已登录的抖音账号批量导入喜欢/收藏">从抖音喜欢/收藏导入</button>
           <button class="ghost" id="dl-open" onclick="openLast('download')" hidden>打开文件位置</button>
           <label class="check" id="dl-keep-wrap" hidden>
             <input type="checkbox" id="dl-keep"> 保留原素材
@@ -1556,6 +1598,39 @@
         </div>
         <p class="hint" id="cover-hint">正在从视频里取画面…</p>
         <div class="cover-grid" id="cover-grid"></div>
+      </div>
+    </div>
+
+    <!-- 从抖音喜欢/收藏批量导入 -->
+    <div class="modal" id="dy-modal" hidden>
+      <div class="modal-card dy-modal-card">
+        <div class="modal-head">
+          <h3>从抖音喜欢/收藏导入</h3>
+          <button class="icon-btn" type="button" onclick="closeDyImport()" aria-label="关闭">×</button>
+        </div>
+        <div class="dy-status" id="dy-status">正在检查登录状态…</div>
+        <div class="dy-actions" id="dy-actions">
+          <button class="ghost" id="dy-login-btn" onclick="dyLogin()" hidden>扫码登录抖音</button>
+          <button class="ghost" id="dy-check-btn" onclick="dyCheck()">重新检查</button>
+        </div>
+        <div class="dy-scan" id="dy-scan" hidden>
+          <label class="check"><input type="checkbox" id="dy-tab-like" checked> 我的喜欢</label>
+          <label class="check"><input type="checkbox" id="dy-tab-fav" checked> 我的收藏</label>
+          <button class="primary" id="dy-scan-btn" onclick="dyScan()">开始扫描</button>
+          <button class="ghost" id="dy-stop-btn" onclick="dyStop()" hidden>停止</button>
+        </div>
+        <div class="dy-progress" id="dy-progress" hidden>
+          <span id="dy-progress-text">准备中…</span>
+        </div>
+        <div class="dy-list-head" id="dy-list-head" hidden>
+          <label class="check"><input type="checkbox" id="dy-select-all" checked onchange="dyToggleAll()"> 全选</label>
+          <span id="dy-count"></span>
+        </div>
+        <div class="dy-list" id="dy-list" hidden></div>
+        <div class="dy-footer" id="dy-footer" hidden>
+          <span class="hint">下载设置沿用「下载视频」页的画质与目录</span>
+          <button class="primary" id="dy-download-btn" onclick="dyDownload()">导入下载</button>
+        </div>
       </div>
     </div>
 
@@ -2368,6 +2443,172 @@ async function startDownload() {
       output_dir: $('dl-outdir').value.trim()
     });
   } catch (e) { $('dl-hint').textContent = e.message; }
+}
+
+/* ---------------- 从抖音喜欢/收藏批量导入 ----------------
+   后端在独立 Chrome profile 里滚动列表、拦截接口响应收集作品；
+   前端只负责展示进度、勾选和把选中的 id 交给现有下载管线。 */
+let dyPoll = null;
+let dyItems = [];
+
+function dySetStatus(text, kind) {
+  const el = $('dy-status');
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'dy-status' + (kind ? ' ' + kind : '');
+}
+
+async function openDyImport() {
+  const modal = $('dy-modal');
+  if (!modal) return;
+  modal.hidden = false;
+  dyItems = [];
+  renderDyList();
+  dySetStatus('正在检查抖音登录状态…');
+  try { await api('/api/dyimport/check', {}); } catch (e) { /* 轮询会带出错误 */ }
+  startDyPoll();
+}
+
+function closeDyImport() {
+  const modal = $('dy-modal');
+  if (modal) modal.hidden = true;
+  stopDyPoll();
+}
+
+function startDyPoll() {
+  stopDyPoll();
+  dyPoll = setInterval(pollDyStatus, 1200);
+  pollDyStatus();
+}
+function stopDyPoll() {
+  if (dyPoll) { clearInterval(dyPoll); dyPoll = null; }
+}
+
+async function pollDyStatus() {
+  let s;
+  try {
+    const r = await fetch('/api/dyimport/status');
+    s = await r.json();
+  } catch (e) { return; }
+  if (!s) return;
+
+  if (!s.chrome) {
+    dySetStatus('没找到 Chrome 或 Edge，请先安装一个再使用此功能', 'err');
+    $('dy-login-btn').hidden = true;
+    $('dy-scan').hidden = true;
+    return;
+  }
+  if (s.checking) {
+    dySetStatus('正在检查登录状态…');
+  } else if (!s.logged_in) {
+    dySetStatus('尚未登录抖音。点「扫码登录抖音」，用手机抖音扫码一次即可，之后会记住。');
+    $('dy-login-btn').hidden = false;
+    $('dy-scan').hidden = true;
+  } else {
+    dySetStatus('已登录抖音 ✓ 选择要扫描的列表（400+ 条可能需要一会儿，可随时停止）', 'ok');
+    $('dy-login-btn').hidden = true;
+    $('dy-scan').hidden = false;
+  }
+  if (s.error) dySetStatus(s.error, 'err');
+
+  $('dy-scan-btn').hidden = !!s.scanning;
+  $('dy-stop-btn').hidden = !s.scanning;
+
+  if (s.scanning) {
+    $('dy-progress').hidden = false;
+    $('dy-progress-text').textContent =
+      (s.tab ? '正在扫描「' + s.tab + '」… ' : '准备中…') + '已找到 ' + (s.found || 0) + ' 条';
+  } else {
+    $('dy-progress').hidden = true;
+  }
+
+  if (Array.isArray(s.items) && s.items.length !== dyItems.length) {
+    dyItems = s.items;
+    renderDyList();
+  }
+  const hasItems = dyItems.length > 0;
+  $('dy-list-head').hidden = !hasItems;
+  $('dy-list').hidden = !hasItems;
+  $('dy-footer').hidden = !hasItems;
+  if (hasItems) $('dy-count').textContent = '共 ' + dyItems.length + ' 条';
+}
+
+function dyEscape(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+    {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
+  ));
+}
+
+function renderDyList() {
+  const box = $('dy-list');
+  if (!box) return;
+  const allChecked = $('dy-select-all') ? $('dy-select-all').checked : true;
+  box.innerHTML = dyItems.map(it => (
+    '<label class="dy-item" title="' + dyEscape(it.desc) + '">' +
+      '<input type="checkbox" class="dy-cb" value="' + dyEscape(it.id) + '"' + (allChecked ? ' checked' : '') + '>' +
+      (it.cover ? '<img src="' + dyEscape(it.cover) + '" referrerpolicy="no-referrer" alt="">' : '<img alt="">') +
+      '<span class="dy-txt"><span class="dy-desc">' + dyEscape(it.desc || '（无标题）') + '</span>' +
+      '<span class="dy-author">' + dyEscape(it.author || '') + '</span></span>' +
+    '</label>'
+  )).join('');
+  const has = dyItems.length > 0;
+  $('dy-list-head').hidden = !has;
+  $('dy-list').hidden = !has;
+  $('dy-footer').hidden = !has;
+  if (has) $('dy-count').textContent = '共 ' + dyItems.length + ' 条';
+}
+
+function dyToggleAll() {
+  const checked = $('dy-select-all').checked;
+  document.querySelectorAll('.dy-cb').forEach(cb => { cb.checked = checked; });
+}
+
+async function dyLogin() {
+  try {
+    await api('/api/dyimport/login', {});
+    dySetStatus('已打开抖音登录窗口，请用手机抖音扫码登录…');
+    $('dy-login-btn').hidden = true;
+  } catch (e) { dySetStatus(e.message, 'err'); }
+}
+
+async function dyCheck() {
+  dySetStatus('正在检查登录状态…');
+  try { await api('/api/dyimport/check', {}); } catch (e) { dySetStatus(e.message, 'err'); }
+}
+
+async function dyScan() {
+  const tabs = [];
+  if ($('dy-tab-like').checked) tabs.push('like');
+  if ($('dy-tab-fav').checked) tabs.push('favorite');
+  if (!tabs.length) { dySetStatus('至少选一个列表', 'err'); return; }
+  dyItems = [];
+  renderDyList();
+  try {
+    await api('/api/dyimport/scan', { tabs });
+  } catch (e) { dySetStatus(e.message, 'err'); }
+}
+
+async function dyStop() {
+  try { await api('/api/dyimport/stop', {}); } catch (e) { /* ignore */ }
+}
+
+async function dyDownload() {
+  const ids = [...document.querySelectorAll('.dy-cb:checked')].map(cb => cb.value);
+  if (!ids.length) { toast('请先勾选要下载的视频', 'err'); return; }
+  try {
+    const r = await api('/api/dyimport/download', {
+      ids,
+      quality: $('dl-quality').value,
+      fps: fpsOf('dl-fps'),
+      keep_original: $('dl-keep').checked,
+      add_to_library: $('dl-lib').checked && !$('dl-lib-wrap').hidden,
+      extract_mp3: $('dl-mp3').checked && !$('dl-mp3-wrap').hidden,
+      output_dir: $('dl-outdir').value.trim()
+    });
+    toast('已提交 ' + (r.count || ids.length) + ' 条到下载队列', 'ok');
+    closeDyImport();
+    activateTab('download');
+  } catch (e) { toast(e.message, 'err'); }
 }
 
 /* ---------------- 直播间标题自动识别 ----------------

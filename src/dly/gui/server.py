@@ -126,6 +126,9 @@ class AppState:
                                  for r in self.history), default=0)
         # 本地歌单：下载/提取出来的音频在这里排队，界面上的「歌单」页读它
         self.library = Library()
+        # 抖音「喜欢/收藏」批量导入（独立状态机，耗时操作在后台线程）
+        from dly.gui.dyimport_state import DyImportState
+        self.dyimport = DyImportState(lambda tab, msg, lvl="info": self.log(tab, msg, lvl))
 
     # ---- 事件流 ----
 
@@ -954,6 +957,10 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"sites": sessions.status()})
             return
 
+        if path == "/api/dyimport/status":
+            self._json(self.state.dyimport.status())
+            return
+
         if path == "/api/library":
             library = self.state.library
             self._json({
@@ -1016,6 +1023,57 @@ class Handler(BaseHTTPRequestHandler):
                                    bool(data.get("extract_mp3"))),
                              daemon=True).start()
             self._json({"ok": True})
+            return
+
+        # 抖音「喜欢 / 收藏」批量导入 -------------------------------------
+        if path == "/api/dyimport/login":
+            try:
+                self.state.dyimport.start_login()
+                self._json({"ok": True})
+            except Exception as exc:  # noqa: BLE001
+                self._json({"error": str(exc)}, 409)
+            return
+
+        if path == "/api/dyimport/check":
+            self.state.dyimport.check_login()
+            self._json({"ok": True})
+            return
+
+        if path == "/api/dyimport/scan":
+            tabs = data.get("tabs") or []
+            try:
+                self.state.dyimport.start_scan(tabs if isinstance(tabs, list) else [tabs])
+                self._json({"ok": True})
+            except Exception as exc:  # noqa: BLE001
+                self._json({"error": str(exc)}, 409)
+            return
+
+        if path == "/api/dyimport/stop":
+            self.state.dyimport.stop_scan()
+            self._json({"ok": True})
+            return
+
+        if path == "/api/dyimport/download":
+            ids = data.get("ids") or []
+            if not isinstance(ids, list) or not ids:
+                self._json({"error": "请先勾选要下载的视频"}, 400)
+                return
+            if self.state.download.get("active"):
+                self._json({"error": "已有下载任务在进行"}, 409)
+                return
+            from dly.core.douyin_import import video_url
+            # 走现有下载管线：拼成多行链接，复用画质 / 目录 / 转码等全部设置
+            text = "\n".join(video_url(str(i)) for i in ids)
+            quality = data.get("quality") or "best"
+            outdir = (data.get("output_dir") or "").strip()
+            fps = normalize_fps(data.get("fps"))
+            threading.Thread(target=_run_download,
+                             args=(self.state, text, quality, outdir, fps,
+                                   bool(data.get("keep_original")),
+                                   bool(data.get("add_to_library")),
+                                   bool(data.get("extract_mp3"))),
+                             daemon=True).start()
+            self._json({"ok": True, "count": len(ids)})
             return
 
         if path == "/api/library/add":

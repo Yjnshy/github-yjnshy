@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dly"
-version = "0.1.66"
+version = "0.1.67"
 description = "多平台无水印视频下载与直播自动录制工具（抖音 / B站 / 小红书等）"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -31,9 +31,11 @@ desktop = ["pywebview>=5.0"]
 images = ["pillow>=10.0"]
 # 浏览器 Cookie 提取的额外兜底（yt-dlp 已内置主力实现，可不装）
 cookies = ["browser-cookie3>=0.19"]
+# 抖音「喜欢/收藏」批量导入的 CDP 通信（不装只影响该功能）
+douyin-import = ["websocket-client>=1.6"]
 dev = ["pytest>=8.0"]
-# 打包成 exe 需要：pyinstaller + 窗口组件 + 图片转换
-build = ["pyinstaller>=6.0", "pywebview>=5.0", "pillow>=10.0"]
+# 打包成 exe 需要：pyinstaller + 窗口组件 + 图片转换 + CDP 通信
+build = ["pyinstaller>=6.0", "pywebview>=5.0", "pillow>=10.0", "websocket-client>=1.6"]
 
 [project.scripts]
 dly = "dly.cli:main"

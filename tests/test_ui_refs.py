@@ -248,3 +248,34 @@ def test_tunnel_recycles_slots_across_spans_on_fast_scroll(html):
     assert "slotZ < heroFrontZ + 3 * D" in module
     # 滚轮 delta 夹幅，防止一帧跳几十单位
     assert "Math.max(-120, Math.min(120, event.deltaY))" in module
+
+
+def test_douyin_import_wiring(html):
+    """抖音喜欢/收藏批量导入：下载页入口 + 弹层 + 后端 API 必须都在。"""
+    # 下载页入口按钮
+    assert 'id="dy-import-btn"' in html
+    assert 'onclick="openDyImport()"' in html
+    # 弹层与关键交互元素
+    for eid in ("dy-modal", "dy-status", "dy-login-btn", "dy-scan",
+                "dy-scan-btn", "dy-stop-btn", "dy-list", "dy-footer",
+                "dy-download-btn", "dy-select-all"):
+        assert f'id="{eid}"' in html, eid
+    # 前端必须经过的后端接口
+    for api in ("/api/dyimport/check", "/api/dyimport/login",
+                "/api/dyimport/scan", "/api/dyimport/stop",
+                "/api/dyimport/download"):
+        assert api in html, api
+    # 导入下载复用下载页的画质/目录设置
+    assert "quality: $('dl-quality').value" in html
+    assert "output_dir: $('dl-outdir').value.trim()" in html
+
+
+def test_douyin_import_server_routes():
+    server = (HTML_PATH.parents[1] / "server.py").read_text(encoding="utf-8")
+    for route in ("/api/dyimport/status", "/api/dyimport/login",
+                  "/api/dyimport/check", "/api/dyimport/scan",
+                  "/api/dyimport/stop", "/api/dyimport/download"):
+        assert f'path == "{route}"' in server, route
+    # 导入最终走现有下载线程，而不是另起一套
+    assert "video_url(str(i))" in server
+    assert "args=(self.state, text, quality, outdir, fps" in server
