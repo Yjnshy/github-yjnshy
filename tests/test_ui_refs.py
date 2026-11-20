@@ -250,6 +250,25 @@ def test_tunnel_recycles_slots_across_spans_on_fast_scroll(html):
     assert "Math.max(-120, Math.min(120, event.deltaY))" in module
 
 
+def test_spotify_skin_is_scoped_and_reversible(html):
+    """Spotify 皮肤是可选、可逆的：一个开关，样式只作用于歌单网格，隧道不受影响。"""
+    # 开关接线与状态记忆
+    assert 'id="music-skin-btn"' in html
+    assert "onclick=\"toggleMusicSkin()\"" in html
+    assert "function toggleMusicSkin(" in html
+    assert "document.body.classList.toggle('spotify-skin', spotifySkin)" in html
+    assert "localStorage.getItem('dly.spotifySkin')" in html
+    assert "localStorage.setItem('dly.spotifySkin'" in html
+    # 作用域：所有皮肤规则都带 spotify-skin + #panel-music，且播放条排除浮动态
+    assert "body.spotify-skin #panel-music .music-card" in html
+    assert "body.spotify-skin #panel-music .player:not(.floating)" in html
+    # 绿只做功能色（播放键 / 进度 / 正在播放描边）
+    assert "background: #1ed760; color: #000;" in html
+    assert "outline-color: #1ed760" in html
+    # 隧道视图的液态玻璃定义仍在，没被皮肤覆盖
+    assert ".player.floating {" in html and "backdrop-filter: blur(22px) saturate(170%);" in html
+
+
 def test_douyin_import_wiring(html):
     """抖音喜欢/收藏批量导入：下载页入口 + 弹层 + 后端 API 必须都在。"""
     # 下载页入口按钮

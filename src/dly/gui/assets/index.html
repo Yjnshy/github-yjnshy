@@ -818,6 +818,56 @@
   .player { user-select: none; }
   #audio { display: none; }
 
+  /* ---------------- Spotify 皮肤（只作用于歌单网格视图） ----------------
+     设计依据：design-md/Spotify。近黑沉浸 + 绿只做功能色 + 胶囊/圆形几何 +
+     重阴影 + 紧凑字。所有规则都带 body.spotify-skin 且落在 #panel-music 内，
+     隧道视图（.floating）和其余页面一概不受影响；关掉开关即恢复原样。 */
+  body.spotify-skin #panel-music .music-card {
+    background: #121212; border-color: #121212;
+  }
+  body.spotify-skin #panel-music .track-cover {
+    border-radius: 6px; box-shadow: rgba(0,0,0,.3) 0 8px 8px;
+  }
+  body.spotify-skin #panel-music .track:hover .track-cover {
+    box-shadow: rgba(0,0,0,.5) 0 8px 24px;
+  }
+  body.spotify-skin #panel-music .track-title { color: #fff; font-weight: 700; }
+  body.spotify-skin #panel-music .track-sub { color: #b3b3b3; }
+  body.spotify-skin #panel-music .track.playing .track-cover {
+    outline-color: #1ed760;
+  }
+  body.spotify-skin #panel-music .track.playing .track-title { color: #1ed760; }
+  body.spotify-skin #panel-music .track.missing { opacity: .5; }
+  body.spotify-skin #panel-music .track-edit {
+    border-radius: 9999px; background: rgba(0,0,0,.72);
+  }
+  /* 网格视图的播放条：Spotify 深灰卡 + 绿功能色，浮动态 .floating 不重新定义 */
+  body.spotify-skin #panel-music .player:not(.floating) {
+    background: #181818; border-color: #181818; border-radius: 8px;
+    box-shadow: rgba(0,0,0,.5) 0 8px 24px;
+  }
+  body.spotify-skin #panel-music .player:not(.floating) .player-cover {
+    border-radius: 6px;
+  }
+  body.spotify-skin #panel-music .player:not(.floating) .play-btn {
+    background: #1ed760; color: #000;
+  }
+  body.spotify-skin #panel-music .player:not(.floating) .play-btn:hover {
+    background: #1fdf64;
+  }
+  body.spotify-skin #panel-music .player:not(.floating) .player-progress input,
+  body.spotify-skin #panel-music .player:not(.floating) .player-extra .vol {
+    accent-color: #1ed760;
+  }
+  body.spotify-skin #panel-music .player:not(.floating) .player-time { color: #b3b3b3; }
+  body.spotify-skin #panel-music .player:not(.floating) .icon-btn:hover {
+    background: rgba(255,255,255,.1); color: #fff;
+  }
+  /* 皮肤开关按钮自己：开着时显绿胶囊 */
+  button#music-skin-btn.on {
+    color: #1ed760; border-color: #1ed760; border-radius: 9999px;
+  }
+
   /* 侧栏底部：只有两个圆形图标按钮，收起侧栏也照样能点 */
   .side-bottom-row { display: flex; gap: 6px; }
   .side-bottom-row .side-bell {
@@ -1243,6 +1293,8 @@
         <input type="checkbox" id="opt-tunnel-play" checked
                onchange="setTunnelPlays(this.checked)"> 点封面切歌
       </label>
+      <button class="ghost" id="music-skin-btn" onclick="toggleMusicSkin()"
+              title="套用 Spotify 风格：近黑底色 + 绿色功能键（只影响歌单网格，隧道不变）">Spotify 风</button>
       <button class="ghost" id="music-view-btn" onclick="toggleMusicView()">隧道视图</button>
       <button class="ghost" onclick="importAudioFile()">导入音频</button>
       <button class="ghost" onclick="extractAudioFromVideo()">从视频提取</button>
@@ -3862,6 +3914,21 @@ function toggleMusicView() {
   setMusicView(musicView === 'tunnel' ? 'grid' : 'tunnel');
 }
 
+/* Spotify 皮肤：只给 <body> 挂一个 class，样式全部限定在 #panel-music 内，
+   隧道视图的 .floating 播放条没被重新定义，所以切到隧道仍是原来的液态玻璃。 */
+let spotifySkin = false;
+function toggleMusicSkin() {
+  spotifySkin = !spotifySkin;
+  document.body.classList.toggle('spotify-skin', spotifySkin);
+  const btn = $('music-skin-btn');
+  if (btn) {
+    btn.classList.toggle('on', spotifySkin);
+    btn.textContent = spotifySkin ? 'Spotify 风 ✓' : 'Spotify 风';
+  }
+  try { localStorage.setItem('dly.spotifySkin', spotifySkin ? '1' : '0'); } catch (e) { /* 隐私模式 */ }
+  toast(spotifySkin ? '已套用 Spotify 风格（仅歌单网格）' : '已恢复默认风格', 'ok');
+}
+
 async function refreshLibrary(manual) {
   try {
     const res = await fetch('/api/library');
@@ -4343,6 +4410,12 @@ try {
   if (saved !== null) tunnelPlays = saved === '1';
 } catch (e) { /* 隐私模式读不到就用默认值 */ }
 if ($('opt-tunnel-play')) $('opt-tunnel-play').checked = tunnelPlays;
+try { spotifySkin = localStorage.getItem('dly.spotifySkin') === '1'; } catch (e) { /* 隐私模式 */ }
+if (spotifySkin) document.body.classList.add('spotify-skin');
+if (spotifySkin && $('music-skin-btn')) {
+  $('music-skin-btn').classList.add('on');
+  $('music-skin-btn').textContent = 'Spotify 风 ✓';
+}
 syncTunnelTip();
 try {
   const savedMode = localStorage.getItem('dly.playMode');
