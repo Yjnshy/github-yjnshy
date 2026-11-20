@@ -922,6 +922,32 @@
   button#music-skin-btn.on {
     color: #1ed760; border-color: #1ed760; border-radius: 9999px;
   }
+  /* 发现区也走 Spotify 深色：标题、筛选 chips、快捷入口、最近添加、红心、空状态 */
+  body.spotify-skin #panel-music .disc-title { color: #b3b3b3; }
+  body.spotify-skin #panel-music .filter-chip {
+    background: #232323; border-color: #333; color: #b3b3b3;
+  }
+  body.spotify-skin #panel-music .filter-chip:hover {
+    border-color: #1ed760; color: #fff;
+  }
+  body.spotify-skin #panel-music .filter-chip.active {
+    background: #1ed760; border-color: #1ed760; color: #000;
+  }
+  body.spotify-skin #panel-music .quick-card { color: #fff; }
+  body.spotify-skin #panel-music .q-art,
+  body.spotify-skin #panel-music .r-art { background: #232323; }
+  body.spotify-skin #panel-music .q-name { color: #fff; }
+  body.spotify-skin #panel-music .q-ico,
+  body.spotify-skin #panel-music .r-ph { filter: grayscale(.2); }
+  body.spotify-skin #panel-music .q-play { background: #1ed760; color: #000; }
+  body.spotify-skin #panel-music .r-name { color: #fff; }
+  body.spotify-skin #panel-music .r-sub { color: #b3b3b3; }
+  body.spotify-skin #panel-music .fav-btn {
+    background: rgba(0,0,0,.55); color: #fff;
+  }
+  body.spotify-skin #panel-music .fav-btn.on { color: #1ed760; }
+  body.spotify-skin #panel-music #music-no-match { color: #b3b3b3; }
+  body.spotify-skin #panel-music #music-empty { color: #b3b3b3; }
 
   /* 侧栏底部：只有两个圆形图标按钮，收起侧栏也照样能点 */
   .side-bottom-row { display: flex; gap: 6px; }
@@ -4021,8 +4047,9 @@ function toggleMusicView() {
 }
 
 /* Spotify 皮肤：只给 <body> 挂一个 class，样式全部限定在 #panel-music 内，
-   隧道视图的 .floating 播放条没被重新定义，所以切到隧道仍是原来的液态玻璃。 */
-let spotifySkin = false;
+   隧道视图的 .floating 播放条没被重新定义，所以切到隧道仍是原来的液态玻璃。
+   默认开启（歌单整页走 Spotify 深色风格），可点开关切回默认淡紫。 */
+let spotifySkin = true;
 function toggleMusicSkin() {
   spotifySkin = !spotifySkin;
   document.body.classList.toggle('spotify-skin', spotifySkin);
@@ -4032,7 +4059,7 @@ function toggleMusicSkin() {
     btn.textContent = spotifySkin ? 'Spotify 风 ✓' : 'Spotify 风';
   }
   try { localStorage.setItem('dly.spotifySkin', spotifySkin ? '1' : '0'); } catch (e) { /* 隐私模式 */ }
-  toast(spotifySkin ? '已套用 Spotify 风格（仅歌单网格）' : '已恢复默认风格', 'ok');
+  toast(spotifySkin ? '已套用 Spotify 风格（歌单整页）' : '已恢复默认风格', 'ok');
 }
 
 async function refreshLibrary(manual) {
@@ -4665,7 +4692,11 @@ try {
   if (saved !== null) tunnelPlays = saved === '1';
 } catch (e) { /* 隐私模式读不到就用默认值 */ }
 if ($('opt-tunnel-play')) $('opt-tunnel-play').checked = tunnelPlays;
-try { spotifySkin = localStorage.getItem('dly.spotifySkin') === '1'; } catch (e) { /* 隐私模式 */ }
+try {
+  // Spotify 风格默认开启；只有用户明确关过（存了 '0'）才恢复淡紫
+  const savedSkin = localStorage.getItem('dly.spotifySkin');
+  spotifySkin = savedSkin !== '0';
+} catch (e) { /* 隐私模式读不到就用默认值（开） */ }
 if (spotifySkin) document.body.classList.add('spotify-skin');
 if (spotifySkin && $('music-skin-btn')) {
   $('music-skin-btn').classList.add('on');

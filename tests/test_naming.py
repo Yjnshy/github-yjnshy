@@ -37,6 +37,22 @@ def test_build_filename_skips_empty_author():
     assert name.startswith("other_标题_")
 
 
+def test_dedupe_stem_avoids_overwrite(tmp_path):
+    """批量下载撞名（秒级时间戳 + 相同标题）时，stem 要追加序号保证唯一，
+    否则「选了 5 个只下回来 1 个」——后面的会覆盖前面的。"""
+    from dly.downloader.engine import DownloadEngine
+
+    stem = "douyin_抖音作品_20261120_150253"
+    assert DownloadEngine._dedupe_stem(tmp_path, stem) == stem  # 目录还空
+
+    (tmp_path / (stem + ".mp4")).write_bytes(b"x")   # 已存在一个同名文件
+    got = DownloadEngine._dedupe_stem(tmp_path, stem)
+    assert got == f"{stem}_2"
+
+    (tmp_path / (stem + "_2.mp4")).write_bytes(b"x")
+    assert DownloadEngine._dedupe_stem(tmp_path, stem) == f"{stem}_3"
+
+
 def test_live_folder_name_formats_platform_anchor_id():
     from dly.core.naming import live_folder_name
 

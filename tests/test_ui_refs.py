@@ -259,6 +259,9 @@ def test_spotify_skin_is_scoped_and_reversible(html):
     assert "document.body.classList.toggle('spotify-skin', spotifySkin)" in html
     assert "localStorage.getItem('dly.spotifySkin')" in html
     assert "localStorage.setItem('dly.spotifySkin'" in html
+    # 默认开启（歌单整页走 Spotify 深色）：初始 true，且只有明确存 '0' 才关
+    assert "let spotifySkin = true;" in html
+    assert "spotifySkin = savedSkin !== '0';" in html
     # 作用域：所有皮肤规则都带 spotify-skin + #panel-music，且播放条排除浮动态
     assert "body.spotify-skin #panel-music .music-card" in html
     assert "body.spotify-skin #panel-music .player:not(.floating)" in html
@@ -267,6 +270,11 @@ def test_spotify_skin_is_scoped_and_reversible(html):
     assert "outline-color: #1ed760" in html
     # 隧道视图的液态玻璃定义仍在，没被皮肤覆盖
     assert ".player.floating {" in html and "backdrop-filter: blur(22px) saturate(170%);" in html
+    # 发现区也纳入皮肤深色（chips / 快捷入口 / 红心 / 空状态）
+    assert "body.spotify-skin #panel-music .filter-chip" in html
+    assert "body.spotify-skin #panel-music .fav-btn.on" in html
+    assert "body.spotify-skin #panel-music #music-no-match" in html
+
 
 
 def test_music_discover_wiring(html):

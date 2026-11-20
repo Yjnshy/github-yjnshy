@@ -94,6 +94,12 @@ class DownloadEngine:
         else:
             # 元数据探测失败：让 yt-dlp 用自己的字段命名
             stem = f"{platform}_%(uploader)s_%(title).60s_%(epoch)s"
+        # 批量下载（如抖音「喜欢/收藏」一键导入）时，多条作品可能在同一秒内
+        # 解析完成，标题又相同（如都是「抖音作品」兜底名），秒级时间戳会让
+        # 文件名完全撞车、后下载的覆盖前一个。这里给撞名的 stem 追加 _2/_3
+        # 序号保证唯一，避免「选了 5 个只下回来 1 个」。
+        if "%(" not in stem:
+            stem = self._dedupe_stem(outdir, stem)
         outtmpl = str(outdir / (stem + ".%(ext)s"))
 
         opts = {
@@ -168,6 +174,20 @@ class DownloadEngine:
             self._notify(f"✗ 帧率转换失败：{exc}")
             for line in (exc.detail or "").splitlines()[-3:]:
                 self._notify(f"  {line}")
+
+    @staticmethod
+    def _dedupe_stem(outdir: Path, stem: str) -> str:
+        """给撞名的 stem 追加序号，保证批量下载时不会互相覆盖。
+
+        秒级时间戳 + 相同标题（如抖音无标题兜底「抖音作品」）会让文件名重复，
+        这里检查 outdir 是否已存在 stem.*，存在则依次尝试 stem_2、stem_3…
+        """
+        if not any(outdir.glob(stem + ".*")):
+            return stem
+        n = 2
+        while any(outdir.glob(f"{stem}_{n}.*")):
+            n += 1
+        return f"{stem}_{n}"
 
     @staticmethod
     def _locate_output(outdir: Path, stem: str) -> Optional[Path]:
