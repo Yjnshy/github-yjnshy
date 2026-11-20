@@ -4479,6 +4479,16 @@ async function pickMediaFile(title) {
   }
 }
 
+async function pickMediaFiles(title) {
+  try {
+    const data = await api('/api/pick-media', { title, multiple: 1 });
+    return (data && data.paths) || [];
+  } catch (e) {
+    toast(e.message, 'err');
+    return [];
+  }
+}
+
 /* ---- 播放条：隧道视图里可以收起，收起后右下角留一个小圆钮再放出来 ---- */
 let playerHidden = false;
 try { playerHidden = localStorage.getItem('dly.playerHidden') === '1'; } catch (e) { /* 隐私模式 */ }
@@ -4526,7 +4536,7 @@ async function openCoverPicker(id, afterExtract) {
   const heading = modal.querySelector('.modal-head h3');
   if (heading) heading.textContent = track ? '挑一张封面 · ' + track.title : '挑一张封面';
   $('cover-hint').textContent = afterExtract
-    ? '提取完成。默认用的是视频第一秒，往下挑一张更清楚的：'
+    ? '提取完成。默认用的是视频第二秒，往下挑一张更清楚的：'
     : '正在从视频里取画面…';
   modal.hidden = false;
   try {
@@ -4537,7 +4547,7 @@ async function openCoverPicker(id, afterExtract) {
       return;
     }
     $('cover-hint').textContent =
-      (afterExtract ? '提取完成，默认用的是视频第一秒。' : '')
+      (afterExtract ? '提取完成，默认用的是视频第二秒。' : '')
       + '按视频时间抽了 ' + frames.length + ' 帧，点一张就用它。';
     frames.forEach(frame => {
       const btn = document.createElement('button');
@@ -4583,16 +4593,21 @@ async function importAudioFile() {
 }
 
 async function extractAudioFromVideo() {
-  const path = await pickMediaFile('选择视频文件');
-  if (!path) return;
-  toast('正在提取音频，视频越大越慢…', 'ok');
+  const paths = await pickMediaFiles('选择视频文件（可多选）');
+  if (!paths.length) return;
+  toast('正在提取 ' + paths.length + ' 个视频的音频，视频越大越慢…', 'ok');
   try {
-    const data = await api('/api/library/extract', { path });
-    musicLib.tracks = data.tracks;
+    const data = await api('/api/library/extract', { paths });
+    musicLib.tracks = data.tracks_all || musicLib.tracks;
     renderMusic();
-    toast('已提取并加入歌单：' + (data.track && data.track.title || ''), 'ok');
-    // 刚抽出来的封面是第一秒画面，未必好看，直接把挑封面弹出来
-    if (data.track && data.track.id) openCoverPicker(data.track.id, true);
+    const ok = (data.tracks || []).length;
+    const bad = (data.failed || []).length;
+    if (bad) {
+      toast('提取完成：成功 ' + ok + ' 个，失败 ' + bad + ' 个（详见日志）', ok ? 'warn' : 'err');
+    } else {
+      toast('已提取并加入歌单 ' + ok + ' 个，封面统一用第二秒', 'ok');
+    }
+    // 封面默认第二秒，不再强制弹挑封面；需要换再点封面上的「换封面」
   } catch (e) { toast(e.message, 'err'); }
 }
 

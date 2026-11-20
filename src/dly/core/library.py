@@ -131,8 +131,8 @@ def make_cover(src: str | Path, out: Path, title: str = "") -> bool:
     if ffmpeg:
         scale = ("scale=512:512:force_original_aspect_ratio=increase,"
                  "crop=512:512")
-        # 视频：取第 1 秒（开头常是黑场或台标）
-        if is_video(src) and _run([ffmpeg, "-y", "-ss", "1", "-i", src,
+        # 视频：取第 2 秒（开头常是黑场或台标，第 2 秒画面更稳定）
+        if is_video(src) and _run([ffmpeg, "-y", "-ss", "2", "-i", src,
                                    "-frames:v", "1", "-vf", scale,
                                    "-q:v", "3", str(out)], 90):
             return True

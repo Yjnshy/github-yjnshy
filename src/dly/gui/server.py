@@ -1091,23 +1091,31 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/library/extract":
-            target = (data.get("path") or "").strip()
-            if not target:
+            # 支持单个 path 或批量 paths 数组（「从视频提取」多选）
+            raw = data.get("paths") if isinstance(data.get("paths"), list) \
+                else ([data.get("path") or ""] if data.get("path") else [])
+            targets = [(str(p) or "").strip() for p in raw]
+            targets = [p for p in targets if p]
+            if not targets:
                 self._json({"error": "先选一个视频文件"}, 400)
                 return
-            if not is_video(target) and not is_audio(target):
-                self._json({"error": "只支持视频或音频文件"}, 400)
-                return
-            try:
-                if is_audio(target):
-                    track = self.state.library.add(target, source="import")
-                else:
-                    track = self.state.library.add_extracted(target)
-            except Exception as exc:  # noqa: BLE001
-                logger.exception("提取音频失败")
-                self._json({"error": f"提取失败：{exc}"}, 500)
-                return
-            self._json({"ok": True, "track": track, "tracks": self.state.library.public()})
+            added: List[dict] = []
+            failed: List[dict] = []
+            for target in targets:
+                if not is_video(target) and not is_audio(target):
+                    failed.append({"path": target, "error": "只支持视频或音频文件"})
+                    continue
+                try:
+                    if is_audio(target):
+                        track = self.state.library.add(target, source="import")
+                    else:
+                        track = self.state.library.add_extracted(target)
+                    added.append(track)
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("提取音频失败")
+                    failed.append({"path": target, "error": str(exc)})
+            self._json({"ok": True, "tracks": added, "failed": failed,
+                        "tracks_all": self.state.library.public()})
             return
 
         if path == "/api/library/frames":
@@ -1162,22 +1170,31 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/pick-media":
-            # 选音频/视频文件：歌单导入和「从视频提取」都用它
-            from dly.core.folder_dialog import pick_file
+            # 选音频/视频文件：歌单导入和「从视频提取」都用它。
+            # multiple=1 时走多选对话框，返回 paths 数组（「从视频提取」批量）。
+            from dly.core.folder_dialog import pick_file, pick_media_files
 
             if not _PICK_LOCK.acquire(blocking=False):
                 self._json({"error": "已经有一个选择窗口开着"}, 409)
                 return
+            multiple = bool(data.get("multiple"))
             try:
-                picked = pick_file((data.get("path") or "").strip(),
-                                   data.get("title") or "选择音频或视频")
+                if multiple:
+                    picked = pick_media_files(
+                        (data.get("path") or "").strip(),
+                        data.get("title") or "选择视频或音频（可多选）")
+                    self._json({"paths": picked,
+                                "cancelled": not picked})
+                else:
+                    picked = pick_file(
+                        (data.get("path") or "").strip(),
+                        data.get("title") or "选择音频或视频")
+                    self._json({"path": picked, "cancelled": not picked})
             except Exception as exc:  # noqa: BLE001
                 logger.exception("选择媒体文件失败")
                 self._json({"error": str(exc)}, 500)
-                return
             finally:
                 _PICK_LOCK.release()
-            self._json({"path": picked, "cancelled": not picked})
             return
 
         if path == "/api/record/probe":

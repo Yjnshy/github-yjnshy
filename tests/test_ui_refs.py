@@ -150,10 +150,18 @@ def test_playback_modes_are_explicit(html):
 
 
 def test_extract_audio_offers_cover_pick(html):
-    """「从视频提取」完成后要直接把挑封面弹出来，而不是让用户再去找换封面。"""
-    assert "openCoverPicker(data.track.id, true)" in html
-    assert "提取完成，默认用的是视频第一秒。" in html
+    """「从视频提取」支持批量多选；封面默认第二秒，不再强制弹挑封面。"""
+    # 多选文件对话框 + 批量提取接口
+    assert "function pickMediaFiles(" in html
+    assert "multiple: 1" in html
+    assert "await api('/api/library/extract', { paths })" in html
+    # 封面默认第二秒，文案同步
+    assert "封面统一用第二秒" in html
+    assert "提取完成，默认用的是视频第二秒。" in html
+    # 挑封面仍是手动入口（换封面按钮），函数保留
     assert "function openCoverPicker(id, afterExtract)" in html
+    # 不再强制弹挑封面
+    assert "openCoverPicker(data.track.id, true)" not in html
 
 
 def test_switching_track_starts_from_zero(html):

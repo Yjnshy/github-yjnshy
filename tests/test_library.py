@@ -187,3 +187,33 @@ def test_frames_need_original_video(tmp_path, monkeypatch, fake_mp3: Path):
             raise AssertionError("不存在的帧不该被接受")
     finally:
         ctx.shutdown()
+
+
+def test_cover_uses_second_two():
+    """封面默认取视频第二秒（开头常是黑场/台标，第 2 秒更稳定）。"""
+    import dly.core.library as libmod
+    src = __import__("inspect").getsource(libmod.make_cover)
+    assert '"-ss", "2"' in src or '"-ss",\'2\'' in src.replace(" ", "")
+    assert "第 2 秒" in src or "第二秒" in src
+
+
+def test_extract_supports_batch_paths(tmp_path, monkeypatch, fake_mp3: Path):
+    """「从视频提取」批量：paths 数组一次提交，逐个返回成功/失败。"""
+    monkeypatch.setattr(paths, "data_dir", lambda: tmp_path)
+    monkeypatch.setattr(srv, "DEFAULT_PORT", PORT + 3)
+    ctx = srv.create_app(desktop=False)
+    ctx.start()
+    try:
+        body = json.dumps({"paths": [str(fake_mp3)]}).encode()
+        req = urllib.request.Request(
+            ctx.url + "api/library/extract", data=body, method="POST",
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=15) as res:
+            data = json.loads(res.read())
+        assert data["ok"] is True
+        assert len(data["tracks"]) == 1
+        assert data["failed"] == []
+        assert "tracks_all" in data
+    finally:
+        ctx.shutdown()
+
