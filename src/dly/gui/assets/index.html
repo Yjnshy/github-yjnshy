@@ -636,10 +636,12 @@
   body:not(.music-tunnel-view) #panel-music .music-grid {
     flex: 0 0 auto; min-height: auto; overflow: visible;
   }
-  /* 隧道视图：画面在卡片内铺满（padding 归零），卡片本身跟网格视图保持
-     一样的页边距和宽度，四个角沿用卡片圆角。不再用负边距突破 .main 留白。 */
-  body.music-tunnel-view .main { overflow: hidden; }
+  /* 隧道视图：画面加长到接近整屏（86vh），页面因此可以滚动、右侧出现滚动条，
+     播放卡片 sticky 在底部跟随。宽度和页边距仍跟网格视图一致，四角沿用卡片圆角。 */
+  body.music-tunnel-view .main { overflow-y: auto; }
+  body.music-tunnel-view #panel-music { flex: 0 0 auto; }
   body.music-tunnel-view #panel-music .music-card {
+    flex: none; height: 86vh;
     padding: 0; border: 0; border-radius: 14px; overflow: hidden;
   }
   body.music-tunnel-view #panel-music .music-tunnel { border-radius: 0; }

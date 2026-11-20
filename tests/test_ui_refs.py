@@ -354,7 +354,9 @@ def test_tunnel_outer_shell_is_dense(html):
 def test_tunnel_matches_grid_margins(html):
     """隧道视图跟网格视图保持同样的页边距和宽度：画面在卡片内铺满（padding 归零），
     卡片圆角裁剪画面，且不再用负边距突破 .main 留白。"""
-    assert "body.music-tunnel-view .main { overflow: hidden; }" in html
+    assert "body.music-tunnel-view .main { overflow-y: auto; }" in html
+    # 画面加长到 86vh，页面因此可滚动（右侧滚动条），播放卡片 sticky 跟随
+    assert "flex: none; height: 86vh;" in html
     assert "padding: 0; border: 0; border-radius: 14px; overflow: hidden;" in html
     assert "body.music-tunnel-view #panel-music .music-tunnel { border-radius: 0; }" in html
     # 不能再靠负边距把卡片撑到窗口边缘
