@@ -556,8 +556,10 @@ export function mountMusicTunnel(host, options = {}) {
   function onWheel(event) {
     event.preventDefault();
     state.travelTarget = null;
-    // 触控板/鼠标的 deltaY 有时候一次就上千，夹一下，免得一帧跳几十个单位
-    state.vel += Math.max(-120, Math.min(120, event.deltaY)) * 0.004;
+    // 触控板/鼠标的 deltaY 有时候一次就上千，夹一下，免得一帧跳几十个单位。
+    // 灵敏度调低（0.004 → 0.0024）：滚一格大概只推进十分之一层，慢滚能精确
+    // 停到想要的角度，不会一下冲过好几层。
+    state.vel += Math.max(-120, Math.min(120, event.deltaY)) * 0.0024;
     state.lastInput = performance.now();
   }
 

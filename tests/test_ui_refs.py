@@ -259,6 +259,8 @@ def test_tunnel_recycles_slots_across_spans_on_fast_scroll(html):
     assert "slotZ < heroFrontZ + 3 * D" in module
     # 滚轮 delta 夹幅，防止一帧跳几十单位
     assert "Math.max(-120, Math.min(120, event.deltaY))" in module
+    # 灵敏度：滚一格约推进 0.1 层（D=5.5），慢滚能精确停到想要的角度
+    assert "* 0.0024;" in module
 
 
 def test_tunnel_keeps_covers_when_zooming_back(html):
