@@ -524,15 +524,22 @@ export function mountMusicTunnel(host, options = {}) {
       slot.hero = state.reduced ? (isHero ? 1 : 0)
         : damp(slot.hero, isHero ? 1 : 0, 2.8, dt);
 
-      const scale = (1 + 0.06 * slot.lift + 0.7 * slot.hero) * (1 - slot.hide);
-      const z = slot.z + 0.5 * slot.lift + 1.3 * slot.hero;
+      const heroT = slot.hero;
+      const scale = (1 + 0.06 * slot.lift + 0.7 * heroT) * (1 - slot.hide);
+      const z = slot.z + 0.5 * slot.lift + 1.3 * heroT;
 
       // 倾斜整个盒子：封面是盒子的一面，所以怎么斜都不会和盒体错位
       const tiltX = isHovered && !state.reduced ? pointer.y * 0.18 : 0;
       const tiltY = isHovered && !state.reduced ? -pointer.x * 0.18 : 0;
 
-      dummy.position.set(slot.baseX, slot.baseY, z + slot.jz);
-      dummy.rotation.set(tiltX, tiltY, slot.rz);
+      // 主封面要「正对镜头」：整组有 0.2 弧度的倾斜、每张还有 ±0.07 的 rz 抖动，
+      // 不抵消的话滚到中间那张也是歪的（用户看到的就是这个）。heroT 插值到 1 时
+      // 旋转归零、jz（前后抖动）也归零，正好方方正正怼在镜头前。
+      const jz = slot.jz * (1 - heroT);
+      const rz = slot.rz * (1 - heroT) - 0.2 * heroT;
+
+      dummy.position.set(slot.baseX, slot.baseY, z + jz);
+      dummy.rotation.set(tiltX * (1 - heroT), tiltY * (1 - heroT), rz);
       dummy.scale.setScalar(scale);
       dummy.updateMatrix();
       slot.mesh.setMatrixAt(slot.meshIdx, dummy.matrix);
@@ -666,7 +673,8 @@ export function mountMusicTunnel(host, options = {}) {
     if (next) selectSlot(next, true);
   }
 
-  renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
+  // 不再拦截滚轮：滚轮交给页面滚动（隧道视图比一屏高，滚到底正好露出播放卡片）。
+  // 想穿行隧道用拖动或点封面即可。
   renderer.domElement.addEventListener('pointerdown', onPointerDown);
   renderer.domElement.addEventListener('pointermove', onPointerMove);
   renderer.domElement.addEventListener('pointerup', onPointerUp);
