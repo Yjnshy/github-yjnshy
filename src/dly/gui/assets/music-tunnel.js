@@ -21,6 +21,9 @@ const D = 5.5;              // 层间距
 const TH = 0.12 * S;        // 盒子厚度
 const LAYERS = 14;          // 同屏层数
 const CAM_Z0 = 14;          // 相机初始 z：离最近一层 14 个单位
+// 相机停在一层前方多远时，那张封面「完整正对镜头」——点封面、以及松手吸附
+// 都用这个距离，两处构图一致。吸附如果按 D 的整数倍算会差 1 个单位（画面略近）。
+const HERO_DIST = 15;
 const COVER_LIMIT = 32;     // 同时上 GPU 的封面数上限
 const FLY_MS = 1150;        // 飞入动画时长
 
@@ -185,6 +188,9 @@ export function mountMusicTunnel(host, options = {}) {
     travel: 0,
     travelTarget: null,
     snapTarget: null,
+    // 滚轮改成「翻页」：累积 deltaY 折算成滚动格数，松手后按格数翻到第 N 张
+    // 完整正对镜头的封面，而不是靠惯性滑到哪算哪（那样总是差一点、不好对准）。
+    wheelAccum: 0,
     vel: 0,
     lastInput: performance.now(),
     hovered: null,
@@ -414,7 +420,7 @@ export function mountMusicTunnel(host, options = {}) {
 
     state.heroSlot = slot;
     state.vel = 0;
-    state.travelTarget = CAM_Z0 - (slot.z + 15);    // 相机停在这层前方，主封面占六成左右
+    state.travelTarget = CAM_Z0 - (slot.z + HERO_DIST);    // 相机停在这层前方，主封面占六成左右
     state.lastInput = performance.now();
 
     if (notify) {
@@ -556,10 +562,21 @@ export function mountMusicTunnel(host, options = {}) {
   function onWheel(event) {
     event.preventDefault();
     state.travelTarget = null;
-    // 触控板/鼠标的 deltaY 有时候一次就上千，夹一下，免得一帧跳几十个单位。
-    // 灵敏度调低（0.004 → 0.0024）：滚一格大概只推进十分之一层，慢滚能精确
-    // 停到想要的角度，不会一下冲过好几层。
-    state.vel += Math.max(-120, Math.min(120, event.deltaY)) * 0.0024;
+    // 新的滚轮要重新决定目标：不清掉旧 snapTarget，吸附进行中的那次滚轮会被
+    // 「snapTarget 非空」挡住，结果又拉回上一条（滚几格都原地不动）。
+    state.snapTarget = null;
+    // 滚轮说明用户想看别的封面：释放主封面，让它平滑缩回网格位置
+    // （hero 是 damp 插值，会自己缩回去；baseX/baseY 要手动归位）。
+    if (state.heroSlot) {
+      const h = state.heroSlot;
+      state.heroSlot = null;
+      h.baseX = h.i * G;
+      h.baseY = h.j * G;
+    }
+    // 只累积「滚了几格」，翻页交给松手后的吸附来做；vel 给一点点跟手感就行，
+    // 系数压得很低，免得滚一下就先冲出去半层。
+    state.wheelAccum += event.deltaY;
+    state.vel += Math.max(-120, Math.min(120, event.deltaY)) * 0.0012;
     state.lastInput = performance.now();
   }
 
@@ -680,8 +697,8 @@ export function mountMusicTunnel(host, options = {}) {
           state.travelTarget = null;
         }
       } else if (state.snapTarget !== null) {
-        // 停手后慢慢吸到最近的一层，画面不会停在两个层之间「卡半格」
-        state.travel = damp(state.travel, state.snapTarget, 3, dt);
+        // 吸附要软、但得让人感觉得到：4.5 比原来的 3 稍快，松手后约 0.6 秒到位
+        state.travel = damp(state.travel, state.snapTarget, 4.5, dt);
         if (Math.abs(state.travel - state.snapTarget) < 0.05) {
           state.travel = state.snapTarget;
           state.snapTarget = null;
@@ -690,11 +707,22 @@ export function mountMusicTunnel(host, options = {}) {
         state.vel *= Math.pow(0.06, dt);
         if (Math.abs(state.vel) < 0.001) state.vel = 0;
         state.travel += state.vel * dt * 6;
-        // 停手 0.45 秒且基本停稳：吸到最近的层
-        if (now - state.lastInput > 450 && Math.abs(state.vel) < 0.5
+        // 停手就吸附：吸到「某层正好停在相机前 HERO_DIST」的位置，也就是那张
+        // 封面完整正对镜头的那一帧。原来吸到 D 的整数倍，差 1 个单位，画面略近、
+        // 看着总像没对准；门槛也放宽（320ms / vel<1.1），轻轻一滚松手就能吸住。
+        // snapTarget 一旦定下就别每帧重算，否则会被「当前最近层」覆盖，
+        // 翻出去的页又被拉回来（之前就是这个 bug，滚几格都停在同一条）。
+        if (state.snapTarget === null
+            && now - state.lastInput > 300 && Math.abs(state.vel) < 1.2
             && !state.heroSlot) {   // 选了主封面就停在那层，别再吸走
-          const layerStep = Math.round(state.travel / D);
-          state.snapTarget = layerStep * D;
+          // 翻页：每 120 的 deltaY 算一格，往前滚 N 格就翻到后面第 N 张，向后同理。
+          // 目标是「那一层正好停在相机前 HERO_DIST」，也就是封面完整正对镜头的构图，
+          // 跟点封面时的取景一致；一格就能换一张，不用再靠惯性滑过半层。
+          const steps = Math.round(state.wheelAccum / 120);
+          state.wheelAccum = 0;
+          const base = Math.round((state.travel + HERO_DIST - CAM_Z0) / D);
+          const k = base + steps;
+          state.snapTarget = CAM_Z0 + k * D - HERO_DIST;
         }
 
       }
