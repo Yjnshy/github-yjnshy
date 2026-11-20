@@ -650,6 +650,12 @@
   body.music-tunnel-view #panel-music .music-tunnel { border-radius: 0; }
   /* 播放卡片跟隧道之间不要那条缝：margin-top 归零，卡片直接贴住画面下沿。 */
   body.music-tunnel-view #panel-music .player { position: static; margin-top: 0; }
+  /* 没在播放（播放条隐藏）时，画面撑满整屏：隧道完整显示、不出现滚动；
+     播放之后播放条出现，才按下面那套「减去 116px」的高度走、允许滚到底。 */
+  body.music-tunnel-view #panel-music:has(.player[hidden]) { flex: 1; }
+  body.music-tunnel-view #panel-music:has(.player[hidden]) .music-card {
+    flex: 1; height: auto;
+  }
   /* 歌单页底部 30px 留白（跟左右一致）。不能用 .main 的 padding-bottom，也不能用
      最后子元素的 margin —— flex 滚动容器在 Chrome 下不把它们计入可滚动范围，滚到
      底会贴边。末尾放一个真实占位块，网格视图滚动和隧道视图撑满都能吃到。 */
