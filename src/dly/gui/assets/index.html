@@ -636,6 +636,19 @@
   body:not(.music-tunnel-view) #panel-music .music-grid {
     flex: 0 0 auto; min-height: auto; overflow: visible;
   }
+  /* 隧道视图：画面铺满整个主内容区，不留白边。
+     卡片去掉内边距和圆角，负外边距抵消 .main 的左右/下留白；页头的下边距
+     也收掉，画面紧贴页头。main 改成不滚动，避免负边距撑出横向滚动条。 */
+  body.music-tunnel-view .main { overflow: hidden; }
+  body.music-tunnel-view .page-head { margin-bottom: 0; }
+  body.music-tunnel-view #panel-music .music-card {
+    padding: 0; border: 0; border-radius: 0; margin: 0 -30px -16px;
+  }
+  body.music-tunnel-view #panel-music .music-tunnel { border-radius: 0; }
+  /* 窄窗口下 .main 的 padding 变成 18px 16px 12px，负边距要跟着改，否则铺不满 */
+  @media (max-width: 900px) {
+    body.music-tunnel-view #panel-music .music-card { margin: 0 -16px -12px; }
+  }
   .track {
     display: flex; flex-direction: column; gap: 7px; padding: 0; border: 0;
     background: transparent; text-align: left; cursor: pointer; min-width: 0;

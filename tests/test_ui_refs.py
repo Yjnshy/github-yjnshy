@@ -349,6 +349,18 @@ def test_tunnel_outer_shell_is_dense(html):
     assert "// 外围（中心 3×3 之外）原来还会再随机删掉 62%" in module
 
 
+def test_tunnel_fills_whole_main_area(html):
+    """隧道画面要铺满主内容区，不能留一圈白边：
+    卡片去掉 padding/border/圆角，用负外边距抵消 .main 的留白，page-head 下边距
+    收掉，main 在隧道视图不滚动（负边距会撑出横向滚动条）。"""
+    assert "body.music-tunnel-view .main { overflow: hidden; }" in html
+    assert "body.music-tunnel-view .page-head { margin-bottom: 0; }" in html
+    assert "padding: 0; border: 0; border-radius: 0; margin: 0 -30px -16px;" in html
+    assert "body.music-tunnel-view #panel-music .music-tunnel { border-radius: 0; }" in html
+    # 窄窗口 .main 的 padding 是 18px 16px 12px，负边距要跟着改
+    assert "body.music-tunnel-view #panel-music .music-card { margin: 0 -16px -12px; }" in html
+
+
 def test_spotify_skin_is_scoped_and_reversible(html):
     """Spotify 皮肤是可选、可逆的：一个开关，样式只作用于歌单网格，隧道不受影响。"""
     # 开关接线与状态记忆
