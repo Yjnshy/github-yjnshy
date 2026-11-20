@@ -36,7 +36,10 @@ function hash2(i, j) {
    点某张封面时再把它飞到中央当主封面 */
 function slotVisible(i, j, k, h) {
   if ((i + j + k) % 2 !== 0) return false;
-  if (Math.max(Math.abs(i), Math.abs(j)) > 1 && h < 0.62) return false;
+  // 外围（中心 3×3 之外）原来还会再随机删掉 62%，于是隧道两侧和远端到处是
+  // 黑色空洞。降到 0.28（只删 28%），保留一点参差感，同时把外面一层盒子
+  // 基本铺满，画面不再漏出大片底色。
+  if (Math.max(Math.abs(i), Math.abs(j)) > 1 && h < 0.28) return false;
   return true;
 }
 

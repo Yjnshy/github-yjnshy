@@ -823,6 +823,11 @@
     background: var(--card); box-shadow: 0 6px 20px var(--box-shadow);
   }
   .player[hidden] { display: none !important; }
+  /* 播放条里的图标钮（上一首 / 下一首 / 播放模式 / 倍速）：.icon-btn 默认背景是
+     --surface-2，浅色主题下是纯白；放在 Spotify 深色播放条或隧道玻璃播放条上，
+     就变成一排刺眼的白圆钮。统一改透明底，交给各场景的边框和文字色区分。 */
+  .player .icon-btn { background: transparent; }
+  .player .icon-btn:hover { background: var(--hover); }
 
   /* 隧道视图里的播放条：液态玻璃，浮在三维画面上 */
   .player-hide {
@@ -882,8 +887,16 @@
   .player.floating .player-meta span,
   .player.floating .player-time { color: rgba(240, 238, 255, .68); }
   .player.floating .player-cover { box-shadow: 0 4px 14px rgba(0, 0, 0, .5); }
-  .player.floating .icon-btn { color: rgba(244, 242, 255, .85); }
-  .player.floating .icon-btn:hover { background: rgba(255, 255, 255, .12); color: #fff; }
+  .player.floating .icon-btn {
+    background: rgba(255, 255, 255, .06);
+    border-color: rgba(255, 255, 255, .16);
+    color: rgba(244, 242, 255, .85);
+  }
+  .player.floating .icon-btn:hover {
+    background: rgba(255, 255, 255, .16);
+    border-color: rgba(255, 255, 255, .30);
+    color: #fff;
+  }
   .player.floating .play-btn { box-shadow: 0 6px 18px rgba(120, 96, 235, .55); }
   .player.floating select.player-mode,
   .player.floating .mode-btn {
@@ -961,8 +974,11 @@
     accent-color: #1ed760;
   }
   body.spotify-skin #panel-music .player:not(.floating) .player-time { color: #b3b3b3; }
+  body.spotify-skin #panel-music .player:not(.floating) .icon-btn {
+    background: transparent; border-color: #3a3a3a; color: #b3b3b3;
+  }
   body.spotify-skin #panel-music .player:not(.floating) .icon-btn:hover {
-    background: rgba(255,255,255,.1); color: #fff;
+    background: rgba(255,255,255,.1); border-color: #4a4a4a; color: #fff;
   }
   /* 皮肤开关按钮自己：开着时显绿胶囊 */
   button#music-skin-btn.on {
@@ -3903,7 +3919,7 @@ let musicLib = { tracks: [], folder: '', ffmpeg: false };
 let dlActivePrev = false;          // 上一帧的下载状态，用来在结束时刷新歌单
 const player = { id: 0, mode: 'list', speed: 1, seeking: false, savedAt: 0 };
 const MODE_LABEL = { list: '顺序播放', single: '单曲循环', shuffle: '随机播放' };
-const SPEEDS = [1, 1.25, 1.5, 2, 0.75];
+const SPEEDS = [1, 1.25, 1.5, 2, 0.9, 0.75];
 const SOURCE_LABEL = { download: '下载', extract: '提取', import: '导入' };
 
 /* 歌单发现区状态：来源筛选 + 本地红心收藏（只存前端，不动后端数据结构） */
@@ -4467,7 +4483,13 @@ function cycleSpeed() {
   const audio = $('audio');
   audio.playbackRate = player.speed;
   const btn = $('pl-speed');
-  if (btn) btn.textContent = player.speed.toFixed(player.speed % 1 ? 2 : 1) + '×';
+  if (btn) {
+    // 0.9 要显示成「0.9×」而不是「0.90×」；整数档仍保留一位小数（1.0× / 2.0×）
+    const label = Number.isInteger(player.speed)
+      ? player.speed.toFixed(1)
+      : String(+player.speed.toFixed(2));
+    btn.textContent = label + '×';
+  }
 }
 
 /* 播放位置节流存盘：拖动、切歌、关页面都不该丢进度 */

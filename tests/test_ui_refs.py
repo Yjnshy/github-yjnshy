@@ -320,6 +320,35 @@ def test_music_grid_uses_whole_page_scrollbar(html):
     assert "document.body.classList.remove('music-tunnel-view')" in html
 
 
+def test_player_icon_buttons_not_white_on_dark_bar(html):
+    """播放条里的图标钮不能沿用 --surface-2（浅色主题下是纯白），
+    否则铺在 Spotify 深色播放条 / 隧道玻璃条上就是一排刺眼的白圆钮。"""
+    # 播放条内统一透明底，不再吃 .icon-btn 的 --surface-2
+    assert ".player .icon-btn { background: transparent; }" in html
+    # 网格视图的 Spotify 深色条：透明底 + 深灰边框 + 浅灰文字
+    assert "body.spotify-skin #panel-music .player:not(.floating) .icon-btn {" in html
+    assert "background: transparent; border-color: #3a3a3a; color: #b3b3b3;" in html
+    # 隧道浮动玻璃条：半透明白，不是纯白
+    assert "background: rgba(255, 255, 255, .06);" in html
+    assert "border-color: rgba(255, 255, 255, .16);" in html
+
+
+def test_speed_cycle_includes_09x(html):
+    """倍速循环要包含 0.9×，且显示成「0.9×」而不是「0.90×」。"""
+    assert "const SPEEDS = [1, 1.25, 1.5, 2, 0.9, 0.75];" in html
+    assert "Number.isInteger(player.speed)" in html
+    assert "String(+player.speed.toFixed(2))" in html
+
+
+def test_tunnel_outer_shell_is_dense(html):
+    """隧道外围原来还会再随机删掉 62% 的格子，导致两侧和远端到处是黑洞；
+    阈值降到 0.28，把外面一层盒子基本铺满。"""
+    module = (HTML_PATH.parent / "music-tunnel.js").read_text(encoding="utf-8")
+    assert "h < 0.28" in module
+    assert "h < 0.62" not in module
+    assert "// 外围（中心 3×3 之外）原来还会再随机删掉 62%" in module
+
+
 def test_spotify_skin_is_scoped_and_reversible(html):
     """Spotify 皮肤是可选、可逆的：一个开关，样式只作用于歌单网格，隧道不受影响。"""
     # 开关接线与状态记忆
