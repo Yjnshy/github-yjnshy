@@ -4139,8 +4139,24 @@ function setMusicView(view) {
   const player = $('player');
   if (player) player.classList.remove('floating');
   applyPlayerHidden();
-  if (musicView === 'tunnel') mountTunnel();
-  else destroyTunnel();
+  if (musicView === 'tunnel') { mountTunnel(); syncTunnelScroll(); }
+  else { destroyTunnel(); syncTunnelScroll(); }
+}
+
+// 隧道视图的滚动位归位：有播放条就滚到底（画面顶贴视口顶 + 播放条露出），
+// 没有播放条就回顶（画面撑满整屏）。每次切进/切回隧道、以及播放条显隐变化都要调，
+// 否则会留着上次的滚动位置，画面上下被切掉一截。
+function syncTunnelScroll() {
+  if (musicView !== 'tunnel') return;
+  const mainEl = document.querySelector('.main');
+  const player = $('player');
+  if (!mainEl) return;
+  const withBar = !!(player && !player.hidden);
+  // 双 rAF：等 flex 和高度都算完再对齐
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (musicView !== 'tunnel') return;
+    mainEl.scrollTop = withBar ? mainEl.scrollHeight : 0;
+  }));
 }
 
 function toggleMusicView() {
@@ -4628,6 +4644,7 @@ function applyPlayerHidden() {
   if (!audio || !audio.src || tunnelHide) {
     player.hidden = true;
     if ($('pl-restore')) $('pl-restore').hidden = true;
+    syncTunnelScroll();
     return;
   }
   player.hidden = false;
@@ -4635,6 +4652,7 @@ function applyPlayerHidden() {
   const collapsed = floating && playerHidden;
   player.classList.toggle('collapsed', collapsed);
   if ($('pl-restore')) $('pl-restore').hidden = !collapsed;
+  syncTunnelScroll();
 }
 
 // 暂停 / 播完都收起播放条，隧道回到整屏。延迟 180ms 再看一眼，

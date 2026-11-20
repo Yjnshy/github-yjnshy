@@ -370,6 +370,8 @@ def test_tunnel_matches_grid_margins(html):
     # 「显示播放条」开关：有它才在隧道里露出播放条，否则只显示整屏隧道
     assert 'id="opt-tunnel-player"' in html
     assert "tunnelHide = musicView === 'tunnel' && !tunnelShowsPlayer" in html
+    # 切进/切回隧道、播放条显隐变化时都要把滚动位归位，否则会留着上次位置把画面切掉
+    assert "function syncTunnelScroll()" in html
     assert "body.music-tunnel-view #panel-music .player { position: static; margin-top: 0; }" in html
     assert "padding: 0; border: 0; border-radius: 14px; overflow: hidden;" in html
     assert "body.music-tunnel-view #panel-music .music-tunnel { border-radius: 0; }" in html
