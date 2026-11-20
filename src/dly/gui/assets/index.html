@@ -4121,24 +4121,6 @@ function setMusicView(view) {
   else destroyTunnel();
 }
 
-/* 隧道视图的页面滚动：滚轮往下一格直接翻到底（正好露出底部播放卡片），
-   往上一格回顶。以前 canvas 吃掉滚轮、页面靠惯性只滑半截，所以「滚不到正确位置」。 */
-(function () {
-  const mainEl = document.querySelector('.main');
-  if (!mainEl) return;
-  mainEl.addEventListener('wheel', (e) => {
-    if (musicView !== 'tunnel') return;       // 网格视图照常惯性滚动
-    const max = mainEl.scrollHeight - mainEl.clientHeight;
-    if (max <= 8) return;                     // 内容没超出，交给默认行为
-    e.preventDefault();
-    const down = e.deltaY > 0;
-    const atBottom = mainEl.scrollTop >= max - 4;
-    const atTop = mainEl.scrollTop <= 4;
-    if ((down && atBottom) || (!down && atTop)) return;   // 已经到位，不用再动
-    mainEl.scrollTo({ top: down ? max : 0, behavior: 'smooth' });
-  }, { passive: false });
-})();
-
 function toggleMusicView() {
   if (!playableTracks().length) { toast('歌单还是空的，先导入一首', 'err'); return; }
   setMusicView(musicView === 'tunnel' ? 'grid' : 'tunnel');

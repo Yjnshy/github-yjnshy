@@ -572,22 +572,13 @@ export function mountMusicTunnel(host, options = {}) {
   // ---- 输入 ----
   function onWheel(event) {
     event.preventDefault();
+    // 外部页面也跟着滚，但降速到 1/5：滚一格只挪二十来像素，能慢慢停在想要的
+    // 位置。原生滚动一格就跨大半段，根本停不准（这就是「滚不到正确位置」）。
+    const scroller = document.querySelector('.main');
+    if (scroller) scroller.scrollTop += event.deltaY * 0.2;
+    // 隧道内部：保持原来的连续穿行，灵敏度 0.0024（慢慢滚，不会一下冲过头）
     state.travelTarget = null;
-    // 新的滚轮要重新决定目标：不清掉旧 snapTarget，吸附进行中的那次滚轮会被
-    // 「snapTarget 非空」挡住，结果又拉回上一条（滚几格都原地不动）。
-    state.snapTarget = null;
-    // 滚轮说明用户想看别的封面：释放主封面，让它平滑缩回网格位置
-    // （hero 是 damp 插值，会自己缩回去；baseX/baseY 要手动归位）。
-    if (state.heroSlot) {
-      const h = state.heroSlot;
-      state.heroSlot = null;
-      h.baseX = h.i * G;
-      h.baseY = h.j * G;
-    }
-    // 只累积「滚了几格」，翻页交给松手后的吸附来做；vel 给一点点跟手感就行，
-    // 系数压得很低，免得滚一下就先冲出去半层。
-    state.wheelAccum += event.deltaY;
-    state.vel += Math.max(-120, Math.min(120, event.deltaY)) * 0.0012;
+    state.vel += Math.max(-120, Math.min(120, event.deltaY)) * 0.0024;
     state.lastInput = performance.now();
   }
 
@@ -673,8 +664,8 @@ export function mountMusicTunnel(host, options = {}) {
     if (next) selectSlot(next, true);
   }
 
-  // 不再拦截滚轮：滚轮交给页面滚动（隧道视图比一屏高，滚到底正好露出播放卡片）。
-  // 想穿行隧道用拖动或点封面即可。
+  // 滚轮留在画面上做「穿行 + 带动页面慢滚」，见 onWheel
+  renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
   renderer.domElement.addEventListener('pointerdown', onPointerDown);
   renderer.domElement.addEventListener('pointermove', onPointerMove);
   renderer.domElement.addEventListener('pointerup', onPointerUp);
@@ -720,42 +711,12 @@ export function mountMusicTunnel(host, options = {}) {
         state.vel *= Math.pow(0.06, dt);
         if (Math.abs(state.vel) < 0.001) state.vel = 0;
         state.travel += state.vel * dt * 6;
-        // 滚轮 = 翻页：滚 N 格就把后面第 N 层的中央封面顶到正中当主封面，
-        // 相机停到它前方 HERO_DIST（跟点封面完全同一套取景），松手正好「卡」
-        // 在那张完整居中放大的画面上。之前只挪相机、不设主封面，中间那张不会
-        // 放大，所以怎么看都不像「卡住了」——这才是用户真正要的效果。
+        // 停手 0.45 秒且基本停稳：吸到最近的层，画面不会卡在两格之间
         if (state.snapTarget === null
-            && now - state.lastInput > 280 && Math.abs(state.vel) < 1.2) {
-          const steps = Math.round(state.wheelAccum / 120);
-          state.wheelAccum = 0;
-          const camZ = camera.position.z;
-          const centers = slots
-            .filter(s => s.i === 0 && s.j === 0)
-            .sort((a, b) => b.z - a.z);          // z 降序，越往前的层越靠后
-          if (centers.length) {
-            // 「当前层」按「距离相机最近 HERO_DIST 的那一层」判定。不能用
-            // s.z <= camZ —— 相机一靠近，旧的那层还会一直满足，第二次滚就不动了。
-            const wantZ = camZ - HERO_DIST;
-            let cur = centers[0];
-            for (const s of centers) {
-              if (Math.abs(s.z - wantZ) < Math.abs(cur.z - wantZ)) cur = s;
-            }
-            const idx = centers.indexOf(cur);
-            const target = centers[Math.max(0, Math.min(centers.length - 1, idx + steps))];
-            if (target && target !== state.heroSlot) {
-              state.heroSlot = target;
-              target.baseX = 0;                  // 中央格本来就在 0,0，不用飞
-              target.baseY = 0;
-              state.vel = 0;
-              state.travelTarget = CAM_Z0 - (target.z + HERO_DIST);
-              if (window.__DLY_SNAP_DEBUG) {
-                console.log('[snap]', JSON.stringify({
-                  steps, camZ: +camZ.toFixed(2), curZ: cur.z, targetZ: target.z,
-                  tt: +state.travelTarget.toFixed(2), centers: centers.map(c => c.z),
-                }));
-              }
-            }
-          }
+            && now - state.lastInput > 450 && Math.abs(state.vel) < 0.5
+            && !state.heroSlot) {   // 选了主封面就停在那层，别再吸走
+          const layerStep = Math.round(state.travel / D);
+          state.snapTarget = layerStep * D;
         }
 
       }

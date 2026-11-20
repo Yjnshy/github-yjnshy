@@ -259,13 +259,11 @@ def test_tunnel_recycles_slots_across_spans_on_fast_scroll(html):
     assert "slotZ < heroFrontZ + 3 * D" in module
     # 滚轮 delta 夹幅，防止一帧跳几十单位
     assert "Math.max(-120, Math.min(120, event.deltaY))" in module
-    # 滚轮改「翻页」：累积 deltaY 折算格数，松手后翻到第 N 张完整正对镜头的封面
-    assert "state.wheelAccum += event.deltaY;" in module
-    assert "const steps = Math.round(state.wheelAccum / 120);" in module
-    # 滚轮翻页要把目标层中央封面顶成主封面（hero 居中放大），相机才跟着停到位
-    assert "const HERO_DIST = 15;" in module
-    assert "state.heroSlot = target;" in module
-    assert "state.travelTarget = CAM_Z0 - (target.z + HERO_DIST);" in module
+    # 滚轮：隧道里保持连续穿行（灵敏度 0.0024），同时带动页面以 1/5 步长慢滚，
+    # 这样外部页面能停在任意位置、内部交互也不丢
+    assert "state.vel += Math.max(-120, Math.min(120, event.deltaY)) * 0.0024;" in module
+    assert "scroller.scrollTop += event.deltaY * 0.2;" in module
+    assert "addEventListener('wheel', onWheel, { passive: false });" in module
 
 
 def test_tunnel_keeps_covers_when_zooming_back(html):
