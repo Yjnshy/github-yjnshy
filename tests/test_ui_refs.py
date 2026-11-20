@@ -363,8 +363,10 @@ def test_tunnel_matches_grid_margins(html):
     """隧道视图跟网格视图保持同样的页边距和宽度：画面在卡片内铺满（padding 归零），
     卡片圆角裁剪画面，且不再用负边距突破 .main 留白。"""
     assert "body.music-tunnel-view .main { overflow-y: auto; }" in html
-    # 画面加长到 86vh，页面因此可滚动（右侧滚动条），播放卡片 sticky 跟随
-    assert "flex: none; height: 86vh;" in html
+    # 画面高度 = 视口 - 播放卡片 - 间隙 - 留白 → 滚到底时隧道正好完整、不多不少
+    assert "height: calc(100vh - 116px);" in html
+    # 播放卡片不 sticky，否则会盖住画面下沿
+    assert "body.music-tunnel-view #panel-music .player { position: static; }" in html
     assert "padding: 0; border: 0; border-radius: 14px; overflow: hidden;" in html
     assert "body.music-tunnel-view #panel-music .music-tunnel { border-radius: 0; }" in html
     # 不能再靠负边距把卡片撑到窗口边缘
