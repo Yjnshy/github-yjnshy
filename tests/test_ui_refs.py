@@ -365,7 +365,7 @@ def test_tunnel_matches_grid_margins(html):
     卡片圆角裁剪画面，且不再用负边距突破 .main 留白。"""
     assert "body.music-tunnel-view .main { overflow-y: auto; }" in html
     # 画面尺寸固定（不随播放条出现而缩小）；没有播放条时加高撑满整屏
-    assert "height: calc(100vh - 116px);" in html
+    assert "height: calc(100vh - 142px);" in html
     assert ":has(.player[hidden]) .music-card" in html
     # 「显示播放条」开关：有它才在隧道里露出播放条，否则只显示整屏隧道
     assert 'id="opt-tunnel-player"' in html

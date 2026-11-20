@@ -644,8 +644,9 @@
   body.music-tunnel-view #panel-music { flex: 0 0 auto; }
   body.music-tunnel-view #panel-music .music-card {
     flex: none;
-    height: calc(100vh - 116px);
-    margin-top: 12px;
+    /* 142 = 标题栏 38 + 播放卡片 74 + 底部留白 30：滚到底时画面顶部正好顶到
+       标题栏下沿、底部接上播放条，中间不留白 */
+    height: calc(100vh - 142px);
     padding: 0; border: 0; border-radius: 14px; overflow: hidden;
   }
   body.music-tunnel-view #panel-music .music-tunnel { border-radius: 0; }
@@ -2364,7 +2365,11 @@ activateTab = function(name) {
     if (root && !root.value) root.value = snapshot.default_output;
     if (root && root.value && !$('file-tree').childElementCount) loadTreeRoot();
   }
-  if (name === 'music') refreshLibrary(false);
+  if (name === 'music') {
+    refreshLibrary(false);
+    // 从下载/设置等别的页面切回来时也要归位，否则会留着上次的滚动位置把画面切掉
+    if (musicView === 'tunnel') syncTunnelScroll();
+  }
   if (tunnel) tunnel.setPaused(name !== 'music');
 };
 
