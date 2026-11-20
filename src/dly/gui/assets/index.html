@@ -637,18 +637,19 @@
   body:not(.music-tunnel-view) #panel-music .music-grid {
     flex: 0 0 auto; min-height: auto; overflow: visible;
   }
-  /* 隧道视图：画面高度 = 视口 - 播放卡片(74) - 间隙(12) - 底部留白(30)，比一屏多出
-     页头那一截，所以页面可滚；滚到底时画面顶部正好贴住可视区顶、底部正好接上播放
-     卡片，隧道完整显示、不多不少。播放卡片不能 sticky，否则会盖住画面下沿。 */
+  /* 隧道视图：画面高度不变（视口 - 卡片 - 留白），整体往下放一个间隔的距离，
+     让画面底部直接贴住播放卡片、中间那条缝消失。 */
   body.music-tunnel-view .main { overflow-y: auto; }
   body.music-tunnel-view #panel-music { flex: 0 0 auto; }
   body.music-tunnel-view #panel-music .music-card {
     flex: none;
     height: calc(100vh - 116px);
+    margin-top: 12px;
     padding: 0; border: 0; border-radius: 14px; overflow: hidden;
   }
   body.music-tunnel-view #panel-music .music-tunnel { border-radius: 0; }
-  body.music-tunnel-view #panel-music .player { position: static; }
+  /* 播放卡片跟隧道之间不要那条缝：margin-top 归零，卡片直接贴住画面下沿。 */
+  body.music-tunnel-view #panel-music .player { position: static; margin-top: 0; }
   /* 歌单页底部 30px 留白（跟左右一致）。不能用 .main 的 padding-bottom，也不能用
      最后子元素的 margin —— flex 滚动容器在 Chrome 下不把它们计入可滚动范围，滚到
      底会贴边。末尾放一个真实占位块，网格视图滚动和隧道视图撑满都能吃到。 */
