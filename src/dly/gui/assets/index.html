@@ -636,6 +636,61 @@
   }
   .track:hover .track-edit, .track-edit:focus-visible { opacity: 1; }
 
+  /* 歌单发现区：来源筛选 + 快捷入口 + 最近添加（始终显示，跟随明暗主题） */
+  .music-discover { display: flex; flex-direction: column; gap: 18px; margin: 0 0 20px; }
+  .music-discover[hidden] { display: none !important; }
+  .disc-title { margin: 0 0 9px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+  .filter-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .filter-chip {
+    padding: 5px 12px; border: 1px solid var(--border); border-radius: 999px;
+    background: var(--pill-bg); color: var(--muted-ink); font-size: 12px;
+    cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+    transition: background .14s, border-color .14s, color .14s;
+  }
+  .filter-chip:hover { border-color: var(--accent); color: var(--accent-ink); }
+  .filter-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .filter-chip .fc-n { font-size: 10.5px; opacity: .78; }
+  .quick-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
+  .quick-card {
+    position: relative; display: flex; flex-direction: column; gap: 7px; padding: 0;
+    border: 0; background: transparent; cursor: pointer; text-align: left; color: var(--text);
+  }
+  .q-art {
+    position: relative; aspect-ratio: 1/1; border-radius: 10px; overflow: hidden;
+    background: var(--pill-bg); display: grid; place-items: center; transition: transform .16s;
+  }
+  .quick-card:hover .q-art { transform: translateY(-2px); }
+  .q-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .q-art .q-ico { font-size: 30px; line-height: 1; }
+  .q-play {
+    position: absolute; right: 6px; bottom: 6px; width: 27px; height: 27px; border-radius: 50%;
+    display: grid; place-items: center; background: var(--accent); color: #fff;
+    opacity: 0; transform: translateY(4px); transition: opacity .14s, transform .14s;
+    box-shadow: 0 3px 10px rgba(0,0,0,.28); pointer-events: none;
+  }
+  .quick-card:hover .q-play { opacity: 1; transform: none; }
+  .q-play svg { width: 13px; height: 13px; fill: currentColor; }
+  .q-name { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .recent-row {
+    display: grid; grid-auto-flow: column; grid-auto-columns: minmax(104px, 1fr);
+    gap: 11px; overflow-x: auto; padding-bottom: 4px;
+  }
+  .recent-card { cursor: pointer; min-width: 0; }
+  .r-art { position: relative; aspect-ratio: 1/1; border-radius: 9px; overflow: hidden; background: var(--pill-bg); display: grid; place-items: center; }
+  .r-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .r-art .r-ph { font-size: 26px; }
+  .r-name { font-size: 12px; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+  .r-sub { font-size: 11px; color: var(--muted); }
+  .fav-btn {
+    position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; padding: 0;
+    border: 0; border-radius: 50%; cursor: pointer; display: grid; place-items: center;
+    background: rgba(18,16,26,.58); color: #fff; opacity: 0;
+    transition: opacity .14s, color .14s;
+  }
+  .track:hover .fav-btn, .fav-btn:focus-visible, .fav-btn.on { opacity: 1; }
+  .fav-btn svg { width: 14px; height: 14px; }
+  .fav-btn.on { color: #ff5b8a; }
+
   /* 挑封面弹层 */
   .modal {
     position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;
@@ -1572,6 +1627,21 @@
     <!-- 歌单 -->
     <section class="panel" id="panel-music">
       <div class="card music-card">
+        <div class="music-discover" id="music-discover" hidden>
+          <div>
+            <h3 class="disc-title">按来源筛选</h3>
+            <div class="filter-chips" id="music-filters"></div>
+          </div>
+          <div>
+            <h3 class="disc-title">快捷入口</h3>
+            <div class="quick-grid" id="music-quick"></div>
+          </div>
+          <div>
+            <h3 class="disc-title">最近添加</h3>
+            <div class="recent-row" id="music-recent"></div>
+          </div>
+        </div>
+        <div class="task-empty" id="music-no-match" hidden></div>
         <div class="music-grid" id="music-grid"></div>
         <div class="music-tunnel-wrap" id="music-tunnel-wrap" hidden>
           <div class="music-tunnel" id="music-tunnel"></div>
@@ -3763,6 +3833,39 @@ const MODE_LABEL = { list: '顺序播放', single: '单曲循环', shuffle: '随
 const SPEEDS = [1, 1.25, 1.5, 2, 0.75];
 const SOURCE_LABEL = { download: '下载', extract: '提取', import: '导入' };
 
+/* 歌单发现区状态：来源筛选 + 本地红心收藏（只存前端，不动后端数据结构） */
+let musicFilter = 'all';                       // all | download | extract | import | liked
+let likedIds = new Set();
+try {
+  const raw = localStorage.getItem('dly.likedTracks');
+  if (raw) { const arr = JSON.parse(raw); if (Array.isArray(arr)) likedIds = new Set(arr.map(Number)); }
+} catch (e) { /* 隐私模式 / 坏数据都当没有收藏 */ }
+
+function saveLiked() {
+  try { localStorage.setItem('dly.likedTracks', JSON.stringify([...likedIds])); } catch (e) { /* 隐私模式 */ }
+}
+function toggleLiked(id) {
+  if (likedIds.has(id)) likedIds.delete(id); else likedIds.add(id);
+  saveLiked();
+  renderMusic();
+  toast(likedIds.has(id) ? '已加入我喜欢的' : '已取消喜欢', 'ok');
+}
+function setMusicFilter(filter) {
+  musicFilter = filter;
+  renderMusic();
+}
+function filteredTracks() {
+  const all = musicLib.tracks || [];
+  if (musicFilter === 'liked') return all.filter(t => likedIds.has(t.id));
+  if (musicFilter !== 'all') return all.filter(t => t.source === musicFilter);
+  return all;
+}
+function coverUrl(t) {
+  return t && t.has_cover
+    ? '/api/media/cover?id=' + t.id + '&v=' + (t.cover_ver || 0)
+    : '';
+}
+
 function fmtClock(sec) {
   sec = Math.max(0, Math.floor(sec || 0));
   const m = Math.floor(sec / 60), s = sec % 60;
@@ -3899,6 +4002,9 @@ function setMusicView(view) {
   const btn = $('music-view-btn');
   if (grid) grid.hidden = musicView === 'tunnel';
   if (wrap) wrap.hidden = musicView !== 'tunnel' || !hasTracks;
+  // 发现区只在网格视图出现；隧道里让位给三维场景
+  const discover = $('music-discover');
+  if (discover) discover.hidden = musicView === 'tunnel' || !hasTracks;
   if (btn) btn.textContent = musicView === 'tunnel' ? '网格视图' : '隧道视图';
   if ($('music-empty')) $('music-empty').hidden = hasTracks;
   // 隧道视图：播放条浮在画面底部，做成液态玻璃；网格视图回到普通卡片
@@ -3941,12 +4047,151 @@ async function refreshLibrary(manual) {
   }
 }
 
+/* 发现区：来源筛选 + 快捷入口 + 最近添加。
+   全部用真实曲目数据：封面走 /api/media/cover，计数来自 musicLib，不造在线曲库。 */
+function renderDiscover(all) {
+  const box = $('music-discover');
+  if (!box) return;
+  const usable = all.filter(t => !t.missing);
+  box.hidden = all.length === 0 || musicView === 'tunnel';
+
+  // 来源筛选 chips（带计数）
+  const filters = $('music-filters');
+  if (filters) {
+    const counts = { all: all.length, liked: likedIds.size };
+    ['download', 'extract', 'import'].forEach(s => {
+      counts[s] = all.filter(t => t.source === s).length;
+    });
+    const items = [
+      ['all', '全部'], ['liked', '♥ 我喜欢的'],
+      ['download', '下载'], ['extract', '提取'], ['import', '导入'],
+    ];
+    filters.innerHTML = '';
+    items.forEach(([key, label]) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'filter-chip' + (musicFilter === key ? ' active' : '');
+      b.textContent = label + ' ';
+      const n = document.createElement('span');
+      n.className = 'fc-n';
+      n.textContent = String(counts[key] || 0);
+      b.append(n);
+      b.onclick = () => setMusicFilter(key);
+      filters.append(b);
+    });
+  }
+
+  // 快捷入口：随机漫游 / 我喜欢的 / 最近添加 / 各来源。封面取该集合里最近的一张真实封面。
+  const quick = $('music-quick');
+  if (quick) {
+    const newest = [...usable].sort((a, b) => (b.added_at || 0) - (a.added_at || 0));
+    const pickCover = list => {
+      const withCover = list.find(t => t.has_cover);
+      return withCover ? coverUrl(withCover) : '';
+    };
+    const defs = [
+      { key: 'shuffle', name: '随机漫游', ico: '🎲', cover: pickCover(usable), act: () => {
+          if (!usable.length) return;
+          playTrack(usable[Math.floor(Math.random() * usable.length)].id);
+        } },
+      { key: 'liked', name: '我喜欢的', ico: '♥', cover: pickCover(newest.filter(t => likedIds.has(t.id))),
+        act: () => setMusicFilter('liked') },
+      { key: 'recent', name: '最近添加', ico: '🕒', cover: pickCover(newest),
+        act: () => {
+          setMusicFilter('all');
+          const r = $('music-recent');
+          if (r) r.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        } },
+      { key: 'download', name: '下载的视频', ico: '⬇', cover: pickCover(newest.filter(t => t.source === 'download')),
+        act: () => setMusicFilter('download') },
+      { key: 'extract', name: '提取的音频', ico: '🎬', cover: pickCover(newest.filter(t => t.source === 'extract')),
+        act: () => setMusicFilter('extract') },
+    ];
+    quick.innerHTML = '';
+    defs.forEach(d => {
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'quick-card';
+      card.title = d.name;
+      const art = document.createElement('span');
+      art.className = 'q-art';
+      if (d.cover) {
+        const img = document.createElement('img');
+        img.loading = 'lazy'; img.alt = ''; img.src = d.cover;
+        art.append(img);
+      } else {
+        const ico = document.createElement('span');
+        ico.className = 'q-ico'; ico.textContent = d.ico;
+        art.append(ico);
+      }
+      const play = document.createElement('span');
+      play.className = 'q-play';
+      play.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8 5.4 19.2 12 9 18.6Z"/></svg>';
+      art.append(play);
+      const name = document.createElement('span');
+      name.className = 'q-name';
+      name.textContent = d.name;
+      card.append(art, name);
+      card.onclick = d.act;
+      quick.append(card);
+    });
+  }
+
+  // 最近添加：按 added_at 倒序取前 8 首，点封面播放
+  const recent = $('music-recent');
+  if (recent) {
+    const newest = [...usable].sort((a, b) => (b.added_at || 0) - (a.added_at || 0)).slice(0, 8);
+    recent.innerHTML = '';
+    newest.forEach(t => {
+      const card = document.createElement('div');
+      card.className = 'recent-card';
+      card.title = t.title;
+      card.setAttribute('role', 'button');
+      card.tabIndex = 0;
+      card.onclick = () => playTrack(t.id);
+      card.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') playTrack(t.id); };
+      const art = document.createElement('div');
+      art.className = 'r-art';
+      const cu = coverUrl(t);
+      if (cu) {
+        const img = document.createElement('img');
+        img.loading = 'lazy'; img.alt = ''; img.src = cu;
+        art.append(img);
+      } else {
+        const ph = document.createElement('span');
+        ph.className = 'r-ph'; ph.textContent = '♪';
+        art.append(ph);
+      }
+      const name = document.createElement('div');
+      name.className = 'r-name'; name.textContent = t.title;
+      const sub = document.createElement('div');
+      sub.className = 'r-sub';
+      sub.textContent = (t.duration ? fmtClock(t.duration) : '未知时长')
+        + ' · ' + (SOURCE_LABEL[t.source] || '音频');
+      card.append(art, name, sub);
+      recent.append(card);
+    });
+  }
+}
+
 function renderMusic() {
   const grid = $('music-grid');
   if (!grid) return;
-  const tracks = musicLib.tracks || [];
+  const all = musicLib.tracks || [];
+  const tracks = filteredTracks();
   const empty = $('music-empty');
-  if (empty) empty.hidden = tracks.length > 0;
+  // 空状态只在整座歌单真的空时出现；筛到 0 条时显示一个轻提示，不误报「还没有歌」
+  if (empty) {
+    empty.hidden = all.length > 0;
+    if (!all.length) empty.textContent = '还没有歌。导入一个音频，或在下载页下一条音频。';
+  }
+  const noMatch = $('music-no-match');
+  noMatch.hidden = !(all.length && !tracks.length);
+  if (!all.length) noMatch.textContent = '';
+  else noMatch.textContent = musicFilter === 'liked'
+    ? '还没有收藏。点封面右上角的 ♥ 就能收进来。'
+    : '这个来源下还没有歌。';
+  renderDiscover(all);
   grid.innerHTML = '';
   tracks.forEach(t => {
     const item = document.createElement('div');
@@ -3960,11 +4205,12 @@ function renderMusic() {
 
     const cover = document.createElement('span');
     cover.className = 'track-cover';
-    if (t.has_cover) {
+    const cu = coverUrl(t);
+    if (cu) {
       const img = document.createElement('img');
       img.loading = 'lazy';
       img.alt = '';
-      img.src = '/api/media/cover?id=' + t.id + '&v=' + (t.cover_ver || 0);
+      img.src = cu;
       cover.append(img);
     }
     if (t.has_video && !t.missing) {
@@ -3976,6 +4222,15 @@ function renderMusic() {
       edit.onclick = ev => { ev.stopPropagation(); openCoverPicker(t.id); };
       cover.append(edit);
     }
+    const fav = document.createElement('button');
+    fav.type = 'button';
+    fav.className = 'fav-btn' + (likedIds.has(t.id) ? ' on' : '');
+    fav.title = likedIds.has(t.id) ? '取消喜欢' : '加入我喜欢的';
+    fav.setAttribute('aria-label', fav.title);
+    fav.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7.6-4.6-9.6-9C1 8.5 3.1 5 6.5 5c2 0 3.5 1.1 4.4 2.5l1.1 1.6 1.1-1.6C14 6.1 15.5 5 17.5 5c3.4 0 5.5 3.5 4.1 7-2 4.4-9.6 9-9.6 9z"/></svg>';
+    fav.onclick = ev => { ev.stopPropagation(); toggleLiked(t.id); };
+    cover.append(fav);
+
     const title = document.createElement('span');
     title.className = 'track-title';
     title.textContent = t.title;

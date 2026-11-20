@@ -269,6 +269,39 @@ def test_spotify_skin_is_scoped_and_reversible(html):
     assert ".player.floating {" in html and "backdrop-filter: blur(22px) saturate(170%);" in html
 
 
+def test_music_discover_wiring(html):
+    """网格视图的发现区：来源筛选 / 快捷入口 / 最近添加 / 本地红心收藏。
+
+    全部用真实曲目数据（added_at/source/封面），不造在线曲库；只作用于网格，
+    隧道视图要隐藏；红心只存前端 localStorage，不动后端结构。
+    """
+    # 发现区容器与三块子区域都在静态 HTML 里（id 对账也能覆盖）
+    for eid in ("music-discover", "music-filters", "music-quick", "music-recent"):
+        assert f'id="{eid}"' in html, eid
+    assert 'id="music-discover" hidden' in html  # 无曲目时默认隐藏
+    # 渲染与交互函数
+    for fn in ("renderDiscover", "setMusicFilter", "filteredTracks",
+               "toggleLiked", "saveLiked", "coverUrl"):
+        assert f"function {fn}(" in html, fn
+    # 筛选按真实 source 字段与本地收藏集合
+    assert "all.filter(t => t.source === musicFilter)" in html
+    assert "all.filter(t => likedIds.has(t.id))" in html
+    # 最近添加按 added_at 倒序、取前 8 首，且排除缺失曲目
+    assert "sort((a, b) => (b.added_at || 0) - (a.added_at || 0))" in html
+    assert ".slice(0, 8)" in html
+    assert "all.filter(t => !t.missing)" in html
+    # 红心持久化用 localStorage，键固定；点击不能冒泡到播放整卡
+    assert "localStorage.getItem('dly.likedTracks')" in html
+    assert "localStorage.setItem('dly.likedTracks'" in html
+    assert "fav.onclick = ev => { ev.stopPropagation(); toggleLiked(t.id); };" in html
+    # 快捷入口封面走真实封面接口，随机漫游从可播放曲目里取
+    assert "pickCover" in html
+    assert "playTrack(usable[Math.floor(Math.random() * usable.length)].id)" in html
+    # 隧道视图发现区隐藏（两处：视图切换 + 每次 render 重算，防止切歌时漏出来）
+    assert "box.hidden = all.length === 0 || musicView === 'tunnel';" in html
+    assert "discover.hidden = musicView === 'tunnel' || !hasTracks;" in html
+
+
 def test_douyin_import_wiring(html):
     """抖音喜欢/收藏批量导入：下载页入口 + 弹层 + 后端 API 必须都在。"""
     # 下载页入口按钮
