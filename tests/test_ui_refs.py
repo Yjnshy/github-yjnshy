@@ -527,6 +527,10 @@ def test_batch_delete_ui(html):
     # 批量条只在网格视图显示，隧道视图不留空间
     assert "body.music-tunnel-view .batch-bar { display: none !important; }" in html
     assert "if (musicView === 'tunnel' && typeof batchMode !== 'undefined' && batchMode) toggleBatchMode();" in html
+    # 禁掉原生图片拖拽，否则左键拖封面会拖出半透明图、框选失效
+    assert "-webkit-user-drag: none" in html
+    assert "ev.preventDefault();" in html
+    assert "marqueeScrollDir" in html
     # 右键框选取消 + 完成按钮
     assert "start.remove" in html
     assert "marquee.className = 'batch-marquee' + (marqueeStart.remove ? ' removing' : '')" in html

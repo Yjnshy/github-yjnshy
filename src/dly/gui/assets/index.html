@@ -779,6 +779,14 @@
   body.music-tunnel-view .batch-bar { display: none !important; }
   /* 批量模式：卡片显示为可勾选，左上角的勾选框替代删除× */
   body.batch-mode .music-grid { cursor: crosshair; user-select: none; }
+  /* 关键：禁掉图片/链接的浏览器原生拖拽，否则左键按住封面会拖出一张半透明图片，
+     框选根本收不到 mousemove（用户看到的「只拖图标、选不了」就是这个）。 */
+  body.batch-mode .music-grid img,
+  body.batch-mode .music-grid a,
+  body.batch-mode .music-grid .track {
+    -webkit-user-drag: none; user-drag: none; user-select: none;
+  }
+  body.batch-mode .music-grid img { pointer-events: none; }
   body.batch-mode .track { position: relative; }
   .track-check {
     position: absolute; top: 6px; left: 6px; width: 24px; height: 24px;
@@ -790,7 +798,7 @@
   .track.selected .track-check { background: var(--accent); border-color: var(--accent); }
   /* 拖拽框选的橡皮筋框 */
   .batch-marquee {
-    position: fixed; z-index: 9999; pointer-events: none;
+    position: fixed; z-index: 20; pointer-events: none;
     border: 1px solid var(--accent); background: rgba(127, 90, 240, .18);
   }
   .batch-marquee.removing {
@@ -4868,18 +4876,73 @@ function batchDelete() {
 
 /* 鼠标左键拖拽框选：在 .music-grid 上按下 Left、拖出矩形，松开时选中相交卡片。
    滚轮照常滚动（只在 mousedown/move/up 期间画框，不拦截 wheel）。 */
+let marqueeRAF = 0;
+let marqueeLast = { x: 0, y: 0 };
+let marqueeScrollDir = 0;    // 拖到边缘时的自动滚动方向
+let marqueeScrollTimer = 0;
+
+function gridViewport() {
+  const grid = $('music-grid');
+  const main = document.querySelector('.main');
+  if (!grid || !main) return null;
+  const g = grid.getBoundingClientRect(), m = main.getBoundingClientRect();
+  // 框选只在歌单列表的可视区内：上不下于页头，下不压到 sticky 播放条。
+  // 播放条就贴在 .main 底部，把选框裁到 .main 可视区即可。
+  return { l: g.left, r: g.right,
+           t: Math.max(g.top, m.top),
+           b: Math.min(g.bottom, m.bottom) };
+}
+
+function drawMarquee() {
+  marqueeRAF = 0;
+  if (!marqueeStart || !marqueeStart.moved) return;
+  const vp = gridViewport();
+  if (!vp) return;
+  const x = Math.min(Math.max(marqueeLast.x, vp.l), vp.r);
+  const y = Math.min(Math.max(marqueeLast.y, vp.t), vp.b);
+  const left = Math.min(x, marqueeStart.x), top = Math.min(y, marqueeStart.y);
+  if (!marquee) {
+    marquee = document.createElement('div');
+    marquee.className = 'batch-marquee' + (marqueeStart.remove ? ' removing' : '');
+    document.body.append(marquee);
+  }
+  marquee.style.left = left + 'px';
+  marquee.style.top = top + 'px';
+  marquee.style.width = Math.abs(x - marqueeStart.x) + 'px';
+  marquee.style.height = Math.abs(y - marqueeStart.y) + 'px';
+
+  // 拖到列表上下边缘时自动滚动，才能框到屏幕外的卡片。
+  // 用独立定时器持续滚，鼠标停在边缘不动也会继续滚。
+  const edge = 46;
+  marqueeScrollDir = y < vp.t + edge ? -1 : (y > vp.b - edge ? 1 : 0);
+  if (marqueeScrollDir && !marqueeScrollTimer) {
+    marqueeScrollTimer = setInterval(() => {
+      const main = document.querySelector('.main');
+      if (!marqueeStart || !main) { clearInterval(marqueeScrollTimer); marqueeScrollTimer = 0; return; }
+      const before = main.scrollTop;
+      main.scrollTop += marqueeScrollDir * 14;
+      if (main.scrollTop !== before) drawMarquee();   // 滚动后选框跟着内容重算
+    }, 30);
+  } else if (!marqueeScrollDir && marqueeScrollTimer) {
+    clearInterval(marqueeScrollTimer); marqueeScrollTimer = 0;
+  }
+}
+
 (function initBatchMarquee() {
   document.addEventListener('mousedown', ev => {
     if (!batchMode || (ev.button !== 0 && ev.button !== 2)) return;
     const grid = $('music-grid');
     if (!grid || !grid.contains(ev.target)) return;
-    // 右键拖拽 = 取消选中框内的卡片；左键拖拽 = 选中
-    if (ev.button === 2) ev.preventDefault();
+    const vp = gridViewport();
+    if (!vp || ev.clientX < vp.l || ev.clientX > vp.r
+        || ev.clientY < vp.t || ev.clientY > vp.b) return;   // 点列表外（播放条等）不框选
+    // 关键：阻止默认行为，禁止浏览器原生拖拽图片/选中文字
+    ev.preventDefault();
     marqueeStart = { x: ev.clientX, y: ev.clientY, moved: false,
                      remove: ev.button === 2,
                      additive: ev.ctrlKey || ev.metaKey || ev.shiftKey };
+    marqueeLast = { x: ev.clientX, y: ev.clientY };
   });
-  // 阻止批量模式下的右键菜单，否则右键框选刚拉开就被菜单打断
   document.addEventListener('contextmenu', ev => {
     if (batchMode && $('music-grid') && $('music-grid').contains(ev.target)) ev.preventDefault();
   });
@@ -4888,30 +4951,26 @@ function batchDelete() {
     const dx = ev.clientX - marqueeStart.x, dy = ev.clientY - marqueeStart.y;
     if (!marqueeStart.moved && Math.hypot(dx, dy) < 6) return;
     marqueeStart.moved = true;
-    if (!marquee) {
-      marquee = document.createElement('div');
-      marquee.className = 'batch-marquee' + (marqueeStart.remove ? ' removing' : '');
-      document.body.append(marquee);
-    }
-    const left = Math.min(ev.clientX, marqueeStart.x);
-    const top = Math.min(ev.clientY, marqueeStart.y);
-    marquee.style.left = left + 'px';
-    marquee.style.top = top + 'px';
-    marquee.style.width = Math.abs(dx) + 'px';
-    marquee.style.height = Math.abs(dy) + 'px';
+    marqueeLast = { x: ev.clientX, y: ev.clientY };
+    if (!marqueeRAF) marqueeRAF = requestAnimationFrame(drawMarquee);
   });
   document.addEventListener('mouseup', ev => {
     if (!marqueeStart) return;
+    if (marqueeRAF) { cancelAnimationFrame(marqueeRAF); marqueeRAF = 0; }
+    if (marqueeScrollTimer) { clearInterval(marqueeScrollTimer); marqueeScrollTimer = 0; }
+    marqueeScrollDir = 0;
     const start = marqueeStart;
     marqueeStart = null;
     if (marquee) { marquee.remove(); marquee = null; }
     if (!start.moved) return;   // 单击由卡片的 onclick 处理
+    const vp = gridViewport() || { l: -1e9, r: 1e9, t: -1e9, b: 1e9 };
+    const x = Math.min(Math.max(ev.clientX, vp.l), vp.r);
+    const y = Math.min(Math.max(ev.clientY, vp.t), vp.b);
     const box = {
-      l: Math.min(ev.clientX, start.x), r: Math.max(ev.clientX, start.x),
-      t: Math.min(ev.clientY, start.y), b: Math.max(ev.clientY, start.y),
+      l: Math.min(x, start.x), r: Math.max(x, start.x),
+      t: Math.min(y, start.y), b: Math.max(y, start.y),
     };
     if (start.remove) {
-      // 右键框选：把框内的从选中里去掉
       for (const el of batchVisibleTracks()) {
         const r = el.getBoundingClientRect();
         if (r.right < box.l || r.left > box.r || r.bottom < box.t || r.top > box.b) continue;
