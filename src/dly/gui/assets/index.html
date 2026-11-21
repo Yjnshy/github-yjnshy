@@ -775,6 +775,8 @@
   }
   .danger-btn:hover:not(:disabled) { filter: brightness(1.08); }
   .danger-btn:disabled { opacity: .45; cursor: not-allowed; }
+  /* 批量管理只在网格视图出现；隧道视图把这一条的空间全部还给画面 */
+  body.music-tunnel-view .batch-bar { display: none !important; }
   /* 批量模式：卡片显示为可勾选，左上角的勾选框替代删除× */
   body.batch-mode .music-grid { cursor: crosshair; user-select: none; }
   body.batch-mode .track { position: relative; }
@@ -790,6 +792,9 @@
   .batch-marquee {
     position: fixed; z-index: 9999; pointer-events: none;
     border: 1px solid var(--accent); background: rgba(127, 90, 240, .18);
+  }
+  .batch-marquee.removing {
+    border-color: var(--danger, #e05252); background: rgba(224, 82, 82, .18);
   }
 
   /* 挑封面弹层 */
@@ -1830,13 +1835,13 @@
           <button class="ghost" type="button" id="batch-toggle" onclick="toggleBatchMode()"
                   title="批量选中并删除歌曲">批量管理</button>
           <span class="hint" id="batch-hint" hidden>
-            点选 / Shift 连选 / 按住左键拖拽框选 / 滚轮滚动多选
+            左键点选 / Shift 连选 / 左键拖拽框选选中 / 右键拖拽框选取消 / 滚轮滚动多选
           </span>
           <span class="batch-count" id="batch-count" hidden></span>
           <button class="ghost" type="button" id="batch-all" onclick="batchSelectAll()" hidden>全选</button>
           <button class="ghost" type="button" id="batch-none" onclick="batchSelectNone()" hidden>清空</button>
           <button class="danger-btn" type="button" id="batch-delete" onclick="batchDelete()" hidden>删除选中</button>
-          <button class="ghost" type="button" id="batch-cancel" onclick="toggleBatchMode()" hidden>退出</button>
+          <button class="primary" type="button" id="batch-done" onclick="toggleBatchMode()" hidden>完成</button>
         </div>
         <div class="music-grid" id="music-grid"></div>
         <div class="music-tunnel-wrap" id="music-tunnel-wrap" hidden>
@@ -4468,6 +4473,8 @@ function destroyTunnel() {
 
 function setMusicView(view) {
   musicView = view === 'tunnel' ? 'tunnel' : 'grid';
+  // 批量管理只在网格视图用得到：切进隧道先退出批量模式，别留选中态和勾选框
+  if (musicView === 'tunnel' && typeof batchMode !== 'undefined' && batchMode) toggleBatchMode();
   // 隧道要撑满固定高度给 canvas；网格视图才交给 .main 整页滚动
   document.body.classList.toggle('music-tunnel-view', musicView === 'tunnel');
   const hasTracks = playableTracks().length > 0;
@@ -4799,7 +4806,7 @@ function toggleBatchMode() {
   document.body.classList.toggle('batch-mode', batchMode);
   const hint = $('batch-hint');
   if (hint) hint.hidden = !batchMode;
-  for (const id of ('batch-all', 'batch-none', 'batch-cancel')) {
+  for (const id of ['batch-all', 'batch-none', 'batch-done']) {
     const el = $(id); if (el) el.hidden = !batchMode;
   }
   const toggle = $('batch-toggle');
@@ -4863,12 +4870,18 @@ function batchDelete() {
    滚轮照常滚动（只在 mousedown/move/up 期间画框，不拦截 wheel）。 */
 (function initBatchMarquee() {
   document.addEventListener('mousedown', ev => {
-    if (!batchMode || ev.button !== 0) return;
+    if (!batchMode || (ev.button !== 0 && ev.button !== 2)) return;
     const grid = $('music-grid');
     if (!grid || !grid.contains(ev.target)) return;
-    // 点在卡片上也开始框选，但保留单击切换：移动超过 6px 才算框选
+    // 右键拖拽 = 取消选中框内的卡片；左键拖拽 = 选中
+    if (ev.button === 2) ev.preventDefault();
     marqueeStart = { x: ev.clientX, y: ev.clientY, moved: false,
+                     remove: ev.button === 2,
                      additive: ev.ctrlKey || ev.metaKey || ev.shiftKey };
+  });
+  // 阻止批量模式下的右键菜单，否则右键框选刚拉开就被菜单打断
+  document.addEventListener('contextmenu', ev => {
+    if (batchMode && $('music-grid') && $('music-grid').contains(ev.target)) ev.preventDefault();
   });
   document.addEventListener('mousemove', ev => {
     if (!marqueeStart) return;
@@ -4877,7 +4890,7 @@ function batchDelete() {
     marqueeStart.moved = true;
     if (!marquee) {
       marquee = document.createElement('div');
-      marquee.className = 'batch-marquee';
+      marquee.className = 'batch-marquee' + (marqueeStart.remove ? ' removing' : '');
       document.body.append(marquee);
     }
     const left = Math.min(ev.clientX, marqueeStart.x);
@@ -4897,11 +4910,20 @@ function batchDelete() {
       l: Math.min(ev.clientX, start.x), r: Math.max(ev.clientX, start.x),
       t: Math.min(ev.clientY, start.y), b: Math.max(ev.clientY, start.y),
     };
-    if (!start.additive) batchSelected.clear();
-    for (const el of batchVisibleTracks()) {
-      const r = el.getBoundingClientRect();
-      if (r.right < box.l || r.left > box.r || r.bottom < box.t || r.top > box.b) continue;
-      batchSelected.add(Number(el.dataset.tid));
+    if (start.remove) {
+      // 右键框选：把框内的从选中里去掉
+      for (const el of batchVisibleTracks()) {
+        const r = el.getBoundingClientRect();
+        if (r.right < box.l || r.left > box.r || r.bottom < box.t || r.top > box.b) continue;
+        batchSelected.delete(Number(el.dataset.tid));
+      }
+    } else {
+      if (!start.additive) batchSelected.clear();
+      for (const el of batchVisibleTracks()) {
+        const r = el.getBoundingClientRect();
+        if (r.right < box.l || r.left > box.r || r.bottom < box.t || r.top > box.b) continue;
+        batchSelected.add(Number(el.dataset.tid));
+      }
     }
     batchRefresh();
   });

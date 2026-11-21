@@ -517,13 +517,19 @@ def test_douyin_import_server_routes():
 def test_batch_delete_ui(html):
     """歌单批量管理：勾选框、框选、批量删除接口都要在。"""
     for marker in ('id="batch-bar"', 'id="batch-toggle"', 'id="batch-delete"',
-                   'function toggleBatchMode()', 'function batchToggleOne(id, ev) {',
+                   'function toggleBatchMode()', 'function batchToggleOne(id, ev) {', 'id="batch-done"',
                    'function batchSelectAll()', 'function batchDelete()',
                    "marquee.className = 'batch-marquee'", 'batchSelected.has(Number(el.dataset.tid))'):
         assert marker in html, marker
     # 删除必须经过后端的 library/remove（支持 delete_file）
     assert "'/api/library/remove'" in html
     assert "delete_file: !!delFile" in html
+    # 批量条只在网格视图显示，隧道视图不留空间
+    assert "body.music-tunnel-view .batch-bar { display: none !important; }" in html
+    assert "if (musicView === 'tunnel' && typeof batchMode !== 'undefined' && batchMode) toggleBatchMode();" in html
+    # 右键框选取消 + 完成按钮
+    assert "start.remove" in html
+    assert "marquee.className = 'batch-marquee' + (marqueeStart.remove ? ' removing' : '')" in html
     # 切模式要重渲染，勾选框才会出现
     assert "if (typeof renderMusic === 'function') renderMusic();" in html
 
