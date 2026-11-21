@@ -1991,6 +1991,8 @@
               <button class="ghost" id="qs-logout-btn" onclick="qsLogout()" hidden>退出登录</button>
               <span class="hint" id="qs-login-hint">登录后可直接导入你自己的「我喜欢」歌单</span>
             </div>
+            <div class="hint" id="qs-full-hint" style="margin-top:6px"></div>
+            </div>
             <div id="qs-qr-wrap" hidden>
               <img id="qs-qr-img" alt="扫码登录二维码" style="width:220px;height:220px;image-rendering:auto">
               <div class="hint" id="qs-qr-hint">用手机抖音 APP 扫码并确认</div>
@@ -3028,6 +3030,20 @@ function qsRenderLogin(s) {
   logoutBtn.hidden = !s.logged_in;
   if (hint) hint.textContent = s.logged_in ? '已登录，选下面的歌单即可导入'
     : '扫码后可直接导入你自己的「我喜欢」';
+  // 完整版能力提示：让换电脑的用户一眼知道能不能下完整音频、缺什么
+  const full = $('qs-full-hint');
+  if (full) {
+    if (!s.full_signer_ready) {
+      full.textContent = '[提示] 完整版需本机安装汽水音乐电脑版（用于音频签名）；未装则只能采集合成片段。';
+      full.style.color = '';
+    } else if (!s.logged_in) {
+      full.textContent = '[就绪] 签名环境可用。登录后可下载完整音频。';
+      full.style.color = '';
+    } else {
+      full.textContent = '[完整版就绪] 已登录 + 签名环境可用，采集即为完整音频。';
+      full.style.color = 'var(--accent)';
+    }
+  }
   qrWrap.hidden = !s.qrcode;
   if (s.qrcode) {
     $('qs-qr-img').src = s.qrcode;

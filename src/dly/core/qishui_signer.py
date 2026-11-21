@@ -25,6 +25,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Dict, Optional, Tuple
@@ -67,35 +68,120 @@ process.stdin.on('end', () => {
 });
 """
 
-# 客户端常见安装目录（含这台机器的非标准路径 E 盘）
-_CLIENT_HINTS = [
-    r"E:\Program Files (x86)\qishuiyiinyue\Soda Music",
-    r"C:\Program Files (x86)\qishuiyiinyue\Soda Music",
-    r"C:\Program Files\qishuiyiinyue\Soda Music",
+# 常见的客户端安装位置（不含具体盘符，靠 _drive_roots() 展开所有盘）
+_CLIENT_SUBPATHS = [
+    r"Program Files (x86)\qishuiyiinyue\Soda Music",
+    r"Program Files\qishuiyiinyue\Soda Music",
+    r"Program Files (x86)\Soda Music",
+    r"Program Files\Soda Music",
+    r"qishuiyiinyue\Soda Music",
+    r"Soda Music",
 ]
 _VERSION_DIR_RE = re.compile(r"^\d+\.\d+\.\d+$")
+_BDMS_REL = Path("resources") / "app.asar.unpacked" / "bdms.node"
+
+
+def _drive_roots() -> list[Path]:
+    """所有可用盘符根（Windows 从 A-Z 探，非 Windows 只给 /）。"""
+    if not sys.platform.startswith("win"):
+        return [Path("/")]
+    import string
+    roots = []
+    for letter in string.ascii_uppercase:
+        p = Path(f"{letter}:\\")
+        try:
+            if p.is_dir():
+                roots.append(p)
+        except OSError:
+            pass
+    return roots
+
+
+def _uninstall_paths() -> list[Path]:
+    """从注册表卸载项读汽水安装目录（最通用，不猜盘符/路径）。"""
+    out: list[Path] = []
+    if not sys.platform.startswith("win"):
+        return out
+    try:
+        import winreg
+    except ImportError:
+        return out
+    hives = [(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+             (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
+             (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall")]
+    for hive, sub in hives:
+        try:
+            key = winreg.OpenKey(hive, sub)
+        except OSError:
+            continue
+        i = 0
+        while True:
+            try:
+                child = winreg.EnumKey(key, i)
+            except OSError:
+                break
+            i += 1
+            try:
+                ck = winreg.OpenKey(key, child)
+                name = winreg.QueryValueEx(ck, "DisplayName")[0]
+                if re.search(r"汽水|Soda|qishui", str(name), re.I):
+                    for field in ("InstallLocation", "DisplayIcon"):
+                        try:
+                            val = str(winreg.QueryValueEx(ck, field)[0]).strip('"')
+                        except OSError:
+                            continue
+                        if not val:
+                            continue
+                        p = Path(val)
+                        # DisplayIcon 常是 exe 路径，取所在目录
+                        if p.suffix.lower() in (".exe",):
+                            p = p.parent
+                        # 可能指到版本子目录，向上找到含 resources 的根
+                        if p.is_dir():
+                            out.append(p)
+                            for parent in list(p.parents)[:2]:
+                                out.append(parent)
+            except OSError:
+                continue
+    return out
+
+
+def _versioned_client(root: Path) -> Optional[Path]:
+    """给定安装根，返回含 bdms.node 的版本目录（版本号最大的优先）。"""
+    if not root.is_dir():
+        return None
+    versions = [d for d in root.iterdir()
+                if d.is_dir() and _VERSION_DIR_RE.match(d.name)]
+    candidates = sorted(versions, key=lambda d: [int(x) for x in d.name.split(".")]) or [root]
+    for d in reversed(candidates):
+        if (d / _BDMS_REL).is_file():
+            return d
+    return None
 
 
 def find_client_dir() -> Optional[Path]:
-    """探测汽水 PC 客户端版本目录（含 bdms.node 的那一层）。"""
+    """探测汽水 PC 客户端版本目录（含 bdms.node 的那一层）。
+
+    顺序：环境变量 > 注册表卸载项 > LOCALAPPDATA > 各盘常见路径。
+    全部按「含 bdms.node」校验，绝不写死某个盘符。
+    """
     env = os.environ.get("QISHUI_CLIENT_DIR", "").strip()
-    roots = [Path(env)] if env else []
+    roots: list[Path] = [Path(env)] if env else []
+    roots += _uninstall_paths()
     local = os.environ.get("LOCALAPPDATA", "").strip()
     if local:
         roots += [Path(local) / "Programs" / "Soda Music",
                   Path(local) / "Programs" / "汽水音乐"]
-    roots += [Path(p) for p in _CLIENT_HINTS]
+    # 各盘常见路径兜底
+    for drive in _drive_roots():
+        for sub in _CLIENT_SUBPATHS:
+            roots.append(drive / sub)
 
+    # 先直接命中带 bdms.node 的目录
     for root in roots:
-        if not root.is_dir():
-            continue
-        # 版本目录形如 3.7.0；优先取版本号最大的
-        versions = [d for d in root.iterdir()
-                    if d.is_dir() and _VERSION_DIR_RE.match(d.name)]
-        candidates = sorted(versions, key=lambda d: d.name) or [root]
-        for d in reversed(candidates):
-            if (d / "resources" / "app.asar.unpacked" / "bdms.node").is_file():
-                return d
+        found = _versioned_client(root)
+        if found:
+            return found
     return None
 
 
@@ -112,14 +198,30 @@ def find_bdms() -> Optional[Path]:
 
 
 def find_node() -> Optional[str]:
+    """找 JS 运行时：环境变量 > 程序自带 node > 系统 PATH 的 node。
+
+    打包版会随附一个 node.exe（bin/node.exe），这样用户电脑无需另装 Node.js。
+    注意：客户端自带的 Electron（SodaMusic.exe + ELECTRON_RUN_AS_NODE=1）实测
+    加载 bdms.node 会崩溃，不能当回退用，故不采用。
+    """
     env = os.environ.get("QISHUI_NODE", "").strip()
     if env and Path(env).is_file():
         return env
+    # 程序自带 node（打包版在资源目录 bin/ 下；源码运行在我方环境也可指定）
+    try:
+        from dly.core import paths
+        for directory in paths.resource_dirs():
+            for rel in ("node.exe", "bin/node.exe", "bin/node"):
+                p = Path(directory) / rel
+                if p.is_file():
+                    return str(p)
+    except Exception:
+        pass
     return shutil.which("node")
 
 
 def signer_available() -> bool:
-    """本机是否具备签名条件（node + bdms.node）。"""
+    """本机是否具备签名条件（JS 运行时 + bdms.node）。"""
     return bool(find_node() and find_bdms())
 
 
@@ -184,6 +286,9 @@ def sign_request(url: str, headers: Dict[str, str]) -> Dict[str, str]:
     ident = device_identity()
     payload = json.dumps({"url": url, "method": "POST", "headers": headers})
     env = dict(os.environ)
+    # 用户机器可能设了 NODE_OPTIONS（注入 --require 等），会让签名子进程加载失败；
+    # 签名桥接不依赖任何外部 node 配置，清掉它避免污染。
+    env.pop("NODE_OPTIONS", None)
     env["ELECTRON_RUN_AS_NODE"] = "1"
     env["QISHUI_BDMS_PATH"] = str(bdms)
     env["QISHUI_DEVICE_ID"] = ident["device_id"]

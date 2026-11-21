@@ -34,11 +34,18 @@ class QishuiState:
         self._sessionid = ""
         self._qr_cookie = ""
         self._qr_token = ""
+        # 完整版能力探测：签名器(node+汽水客户端)是否就绪，供界面提示
+        try:
+            from dly.core import qishui_signer as _qs
+            self._full_signer_ready = bool(_qs.signer_available())
+        except Exception:
+            self._full_signer_ready = False
         # 登录态只存本地数据目录，不上传、不进前端快照
         self._auth_file = data_dir() / "qishui_auth.json"
         self._load_auth()
         self.snapshot: Dict[str, Any] = {
             "logged_in": bool(self._sessionid),
+            "full_signer_ready": self._full_signer_ready,
             "qrcode": "",
             "qr_expire": 0,
             "qr_hint": "",

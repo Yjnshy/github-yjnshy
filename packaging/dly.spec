@@ -111,6 +111,20 @@ if os.environ.get("DLY_BUNDLE_FFMPEG", "1") != "0":
         else:
             print(f"[打包] 未找到 {tool}，打包后需用户自行安装")
 
+# node.exe：汽水完整版签名桥接要用。随包附带后，用户电脑无需另装 Node.js。
+if os.environ.get("DLY_BUNDLE_NODE", "1") != "0":
+    node_override = os.environ.get("DLY_NODE", "").strip()
+    node_path = Path(node_override) if node_override and Path(node_override).is_file() else None
+    if node_path is None:
+        node_found = shutil.which("node")
+        if node_found:
+            node_path = Path(node_found)
+    if node_path and node_path.is_file():
+        binaries.append((str(node_path), "bin"))
+        print(f"[打包] 随附 node: {node_path}")
+    else:
+        print("[打包] 未找到 node，汽水完整版将要求用户自行安装 Node.js")
+
 hiddenimports = [
     # 延迟导入的模块不会被静态分析发现
     "dly.gui.desktop",
@@ -189,4 +203,13 @@ if _out_bin.is_dir():
         _source_tool = find_tool(_tool)
         if _source_tool:
             _shutil.copy2(_source_tool, _out_bin / f"{_tool}.exe")
+    # node.exe 同样用原始文件覆盖，避免 PyInstaller 改写后无法加载 bdms.node
+    if os.environ.get("DLY_BUNDLE_NODE", "1") != "0":
+        _node_override = os.environ.get("DLY_NODE", "").strip()
+        _node_src = Path(_node_override) if _node_override and Path(_node_override).is_file() else None
+        if _node_src is None:
+            _nf = shutil.which("node")
+            _node_src = Path(_nf) if _nf else None
+        if _node_src and _node_src.is_file():
+            _shutil.copy2(_node_src, _out_bin / "node.exe")
             print(f"[打包修复] 覆盖 {_tool}: {_source_tool}")
