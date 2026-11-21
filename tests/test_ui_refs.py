@@ -389,13 +389,13 @@ def test_tunnel_plays_video_for_current_track(html):
 def test_tunnel_matches_grid_margins(html):
     """隧道视图跟网格视图保持同样的页边距和宽度：画面在卡片内铺满（padding 归零），
     卡片圆角裁剪画面，且不再用负边距突破 .main 留白。"""
-    assert "body.music-tunnel-view .main { overflow: hidden; }" in html
-    # 画面用 flex 自适应，播放条显隐自动让位，不再写死高度+强制滚动
-    # （旧写法 calc(100vh-142px) 会在显示播放条时把隧道顶部切掉）
-    assert "height: calc(100vh - 142px);" not in html
-    assert "body.music-tunnel-view #panel-music .music-card {" in html
-    assert "flex: 1; min-height: 0; height: auto;" in html
-    assert "body.music-tunnel-view #panel-music .music-tunnel-wrap { flex: 1; min-height: 0; }" in html
+    # 画面尺寸固定（不随播放条出现而缩小），页面可滚动；
+    # 显示播放条时靠「滚到底」把画面完整顶上来，而不是把画面调小
+    assert "body.music-tunnel-view .main { overflow-y: auto; }" in html
+    assert "height: calc(100vh - 154px);" in html
+    assert "body.music-tunnel-view #panel-music:has(.player[hidden]) .music-card" in html
+    # 默认不勾「显示播放条」，用户勾选后才在隧道里露出播放条
+    assert "let tunnelShowsPlayer = false;" in html
     # 「显示播放条」开关：有它才在隧道里露出播放条，否则只显示整屏隧道
     assert 'id="opt-tunnel-player"' in html
     assert "tunnelHide = musicView === 'tunnel' && !tunnelShowsPlayer" in html
@@ -403,7 +403,7 @@ def test_tunnel_matches_grid_margins(html):
     assert "function syncTunnelScroll()" in html
     # 未勾选时用 CSS 兜底强制藏播放条（JS 时序靠不住）
     assert "body.music-tunnel-view.no-tunnel-player #panel-music .player { display: none !important; }" in html
-    assert "body.music-tunnel-view #panel-music .player { position: static; margin-top: 0; flex: none; }" in html
+    assert "body.music-tunnel-view #panel-music .player { position: static; margin-top: 0; }" in html
     assert "padding: 0; border: 0; border-radius: 14px; overflow: hidden;" in html
     assert "body.music-tunnel-view #panel-music .music-tunnel { border-radius: 0; }" in html
     # 不能再靠负边距把卡片撑到窗口边缘
@@ -512,3 +512,22 @@ def test_douyin_import_server_routes():
     # 导入最终走现有下载线程，而不是另起一套
     assert "video_url(str(i))" in server
     assert "args=(self.state, text, quality, outdir, fps" in server
+
+
+def test_batch_delete_ui(html):
+    """歌单批量管理：勾选框、框选、批量删除接口都要在。"""
+    for marker in ('id="batch-bar"', 'id="batch-toggle"', 'id="batch-delete"',
+                   'function toggleBatchMode()', 'function batchToggleOne(id, ev) {',
+                   'function batchSelectAll()', 'function batchDelete()',
+                   "marquee.className = 'batch-marquee'", 'batchSelected.has(Number(el.dataset.tid))'):
+        assert marker in html, marker
+    # 删除必须经过后端的 library/remove（支持 delete_file）
+    assert "'/api/library/remove'" in html
+    assert "delete_file: !!delFile" in html
+    # 切模式要重渲染，勾选框才会出现
+    assert "if (typeof renderMusic === 'function') renderMusic();" in html
+
+
+def test_tunnel_hero_follows_player(html):
+    """新建隧道时中央封面要切到正在播放的曲目。"""
+    assert "requestAnimationFrame(() => { if (tunnel === inst) inst.selectTrack(tid); });" in html

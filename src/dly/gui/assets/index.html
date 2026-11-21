@@ -637,19 +637,25 @@
   body:not(.music-tunnel-view) #panel-music .music-grid {
     flex: 0 0 auto; min-height: auto; overflow: visible;
   }
-  /* 隧道视图：画面用 flex 吃掉「页头到播放条之间」的剩余高度，播放条出现/隐藏
-     都自动让位，画面顶部永远贴着标题栏下沿，不会被盖住、也不用靠滚动去挤。
-     以前写死 calc(100vh-142px) + 强制滚到底，播放条一出现顶部就被切掉。 */
-  body.music-tunnel-view .main { overflow: hidden; }
-  body.music-tunnel-view #panel-music { flex: 1; min-height: 0; }
+  /* 隧道视图：画面尺寸**固定**（不随播放条出现而缩小），页面可滚；播放条出现时
+     由「开始播放自动滚到底」把整块往上挤，滚到底正好画面完整 + 播放条完整。
+     没有播放条时画面撑满整屏，一屏放下、不出现滚动。 */
+  body.music-tunnel-view .main { overflow-y: auto; }
+  body.music-tunnel-view #panel-music { flex: 0 0 auto; }
   body.music-tunnel-view #panel-music .music-card {
-    flex: 1; min-height: 0; height: auto;
-    display: flex; flex-direction: column;
+    flex: none;
+    /* 154 = 标题栏 38 + 播放卡片 74 + 底部留白 30 + 12px 余量：滚到底时画面
+       顶部正好落在标题栏下沿、底部接上播放条，不会被标题栏吃掉最上面一行 */
+    height: calc(100vh - 154px);
     padding: 0; border: 0; border-radius: 14px; overflow: hidden;
   }
-  body.music-tunnel-view #panel-music .music-tunnel-wrap { flex: 1; min-height: 0; }
   body.music-tunnel-view #panel-music .music-tunnel { border-radius: 0; }
-  body.music-tunnel-view #panel-music .player { position: static; margin-top: 0; flex: none; }
+  body.music-tunnel-view #panel-music .player { position: static; margin-top: 0; }
+  /* 播放条收起时：画面用 flex 撑满「页头到留白之间」，一屏正好放下、不出现滚动 */
+  body.music-tunnel-view #panel-music:has(.player[hidden]) { flex: 1; }
+  body.music-tunnel-view #panel-music:has(.player[hidden]) .music-card {
+    flex: 1; height: auto;
+  }
   /* 隧道视图且没勾「显示播放条」→ 样式层直接藏掉。JS 的显隐是异步的、还可能被
      播放流程重新盖回来，加这条兜底，保证「不勾选就绝对不出现播放条」。 */
   body.music-tunnel-view.no-tunnel-player #panel-music .player { display: none !important; }
@@ -757,16 +763,33 @@
   }
   .fav-btn svg { width: 14px; height: 14px; pointer-events: none; }
   .fav-btn.on { color: #ff5b8a; }
-  /* 歌单删除：左上角，跟右上收藏分开 */
-  .track-del {
-    position: absolute; top: 6px; left: 6px; width: 24px; height: 24px; padding: 0;
-    border: 0; border-radius: 50%; cursor: pointer; display: grid; place-items: center;
-    background: rgba(18,16,26,.58); color: #fff; opacity: 0; font-size: 16px;
-    line-height: 1; transition: opacity .14s, background .14s;
+  /* 批量管理条 */
+  .batch-bar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 6px 12px; margin-bottom: 8px;
   }
-  .track:hover .track-del, .track-del:focus-visible { opacity: 1; }
-  button.track-del:hover:not(:disabled) {
-    background: rgba(180, 40, 40, .85); border-color: transparent;
+  .batch-count { font-size: 13px; color: var(--accent); }
+  .danger-btn {
+    padding: 6px 14px; border: 1px solid var(--danger, #e05252); border-radius: 8px;
+    background: var(--danger, #e05252); color: #fff; cursor: pointer; font-size: 13px;
+  }
+  .danger-btn:hover:not(:disabled) { filter: brightness(1.08); }
+  .danger-btn:disabled { opacity: .45; cursor: not-allowed; }
+  /* 批量模式：卡片显示为可勾选，左上角的勾选框替代删除× */
+  body.batch-mode .music-grid { cursor: crosshair; user-select: none; }
+  body.batch-mode .track { position: relative; }
+  .track-check {
+    position: absolute; top: 6px; left: 6px; width: 24px; height: 24px;
+    border: 2px solid rgba(255,255,255,.85); border-radius: 6px;
+    background: rgba(18,16,26,.58); display: grid; place-items: center;
+    color: #fff; font-size: 15px; line-height: 1; z-index: 2;
+  }
+  .track.selected { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .track.selected .track-check { background: var(--accent); border-color: var(--accent); }
+  /* 拖拽框选的橡皮筋框 */
+  .batch-marquee {
+    position: fixed; z-index: 9999; pointer-events: none;
+    border: 1px solid var(--accent); background: rgba(127, 90, 240, .18);
   }
 
   /* 挑封面弹层 */
@@ -1501,7 +1524,7 @@
                onchange="setTunnelPlays(this.checked)"> 点封面切歌
       </label>
       <label class="check music-opt" title="勾选：进隧道视图时底部播放条一起显示（画面和播放条都完整）；不勾选：只显示整屏隧道">
-        <input type="checkbox" id="opt-tunnel-player" checked
+        <input type="checkbox" id="opt-tunnel-player"
                onchange="setTunnelShowsPlayer(this.checked)"> 显示播放条
       </label>
       <button class="ghost" id="music-skin-btn" onclick="toggleMusicSkin()"
@@ -1803,6 +1826,18 @@
           </div>
         </div>
         <div class="task-empty" id="music-no-match" hidden></div>
+        <div class="batch-bar" id="batch-bar">
+          <button class="ghost" type="button" id="batch-toggle" onclick="toggleBatchMode()"
+                  title="批量选中并删除歌曲">批量管理</button>
+          <span class="hint" id="batch-hint" hidden>
+            点选 / Shift 连选 / 按住左键拖拽框选 / 滚轮滚动多选
+          </span>
+          <span class="batch-count" id="batch-count" hidden></span>
+          <button class="ghost" type="button" id="batch-all" onclick="batchSelectAll()" hidden>全选</button>
+          <button class="ghost" type="button" id="batch-none" onclick="batchSelectNone()" hidden>清空</button>
+          <button class="danger-btn" type="button" id="batch-delete" onclick="batchDelete()" hidden>删除选中</button>
+          <button class="ghost" type="button" id="batch-cancel" onclick="toggleBatchMode()" hidden>退出</button>
+        </div>
         <div class="music-grid" id="music-grid"></div>
         <div class="music-tunnel-wrap" id="music-tunnel-wrap" hidden>
           <div class="music-tunnel" id="music-tunnel"></div>
@@ -4287,7 +4322,7 @@ let musicView = 'grid';
 let tunnelSig = '';
 let tunnelSelecting = false;   // 隧道里点选时已经在动画，别再让页面反向同步一次
 let tunnelPlays = true;        // 点隧道封面是否切换播放（false = 只换主封面）
-let tunnelShowsPlayer = true;  // 隧道视图是否连播放条一起显示（false = 只显示整屏隧道）
+let tunnelShowsPlayer = false; // 隧道视图是否连播放条一起显示（默认不勾，用户勾选后才显示）
 
 function syncMusicBrowser() {
   if ($('music-browser') && $('browser')) $('music-browser').value = $('browser').value;
@@ -4319,9 +4354,10 @@ function setTunnelPlays(value) {
 
 function setTunnelShowsPlayer(value) {
   tunnelShowsPlayer = !!value;
-  try { localStorage.setItem('dly.tunnelShowsPlayer', tunnelShowsPlayer ? '1' : '0'); } catch (e) { /* 隐私模式 */ }
+  try { localStorage.setItem('dly.tunnelShowsPlayer.v2', tunnelShowsPlayer ? '1' : '0'); } catch (e) { /* 隐私模式 */ }
   document.body.classList.toggle('no-tunnel-player', !tunnelShowsPlayer);
   applyPlayerHidden();
+  syncTunnelScroll();   // 勾选显示播放条后滚到底，画面完整且播放条也露出
   toast(tunnelShowsPlayer ? '隧道视图会显示播放条' : '隧道视图只显示整屏隧道', 'ok');
 }
 
@@ -4361,7 +4397,13 @@ function mountTunnel() {
       reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     });
     window.__dlyTunnel = tunnel;
-    // 新建的隧道要从播放器接上当前状态：若正在播放，对应格子立刻换成视频
+    // 新建的隧道要从播放器接上当前状态：中央封面切到正在播放的歌。
+    // 延后一帧，等相机初始位置算好再挑离视角最近的那层封面。
+    if (player.id) {
+      const tid = player.id;
+      const inst = tunnel;
+      requestAnimationFrame(() => { if (tunnel === inst) inst.selectTrack(tid); });
+    }
     syncTunnelVideo();
   } catch (err) {
     // WebGL 起不来（老显卡、驱动被禁）时不能让整页白屏，退回网格
@@ -4453,10 +4495,14 @@ function setMusicView(view) {
 // 否则会留着上次的滚动位置，画面上下被切掉一截。
 function syncTunnelScroll() {
   if (musicView !== 'tunnel') return;
-  // 隧道改成 flex 自适应后不再靠滚动挤位置；播放条显隐会自然改变画面高度，
-  // 这里只把可能残留的滚动位置归零，避免顶部被切掉。
   const mainEl = document.querySelector('.main');
-  if (mainEl) mainEl.scrollTop = 0;
+  if (!mainEl) return;
+  const withBar = tunnelShowsPlayer;
+  // 双 rAF：等 flex 和高度都算完再对齐
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (musicView !== 'tunnel') return;
+    mainEl.scrollTop = withBar ? mainEl.scrollHeight : 0;
+  }));
 }
 
 function toggleMusicView() {
@@ -4657,8 +4703,17 @@ function renderMusic() {
     item.title = t.missing ? '文件已被移动或删除' : t.title;
     item.setAttribute('role', 'button');
     item.tabIndex = 0;
-    item.onclick = () => playTrack(t.id);
-    item.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') playTrack(t.id); };
+    item.dataset.tid = t.id;
+    item.onclick = ev => {
+      if (batchMode) { batchToggleOne(t.id, ev); return; }
+      playTrack(t.id);
+    };
+    item.onkeydown = e => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        if (batchMode) batchToggleOne(t.id, e); else playTrack(t.id);
+      }
+    };
 
     const cover = document.createElement('span');
     cover.className = 'track-cover';
@@ -4688,14 +4743,12 @@ function renderMusic() {
     fav.onclick = ev => { ev.stopPropagation(); toggleLiked(t.id); };
     cover.append(fav);
 
-    const del = document.createElement('button');
-    del.type = 'button';
-    del.className = 'track-del';
-    del.textContent = '×';
-    del.title = '从歌单移除（可同时删除文件）';
-    del.setAttribute('aria-label', '删除 ' + t.title);
-    del.onclick = ev => { ev.stopPropagation(); removeLibraryTrack(t); };
-    cover.append(del);
+    const check = document.createElement('span');
+    check.className = 'track-check';
+    check.textContent = batchSelected.has(t.id) ? '✓' : '';
+    check.style.display = batchMode ? '' : 'none';
+    cover.append(check);
+    if (batchSelected.has(t.id)) item.classList.add('selected');
 
     const title = document.createElement('span');
     title.className = 'track-title';
@@ -4714,32 +4767,145 @@ function renderMusic() {
   }
 }
 
-async function removeLibraryTrack(t) {
-  if (!t) return;
-  // 正在播的先停掉，不然音频文件删了播放器还在读
-  const wasPlaying = player.id === t.id;
-  if (!window.confirm('从歌单移除《' + t.title + '》？')) return;
+/* ---- 批量管理：点选 / Shift 连选 / 左键拖拽框选 / 滚轮滚动多选 ---- */
+let batchMode = false;
+let batchSelected = new Set();
+let batchAnchor = null;      // Shift 连选的锚点
+let marquee = null;
+let marqueeStart = null;
+
+function batchVisibleTracks() {
+  return [...document.querySelectorAll('#music-grid .track[data-tid]')];
+}
+
+function batchRefresh() {
+  for (const el of batchVisibleTracks()) {
+    const on = batchSelected.has(Number(el.dataset.tid));
+    el.classList.toggle('selected', on);
+    const ck = el.querySelector('.track-check');
+    if (ck) ck.textContent = on ? '✓' : '';
+  }
+  const n = batchSelected.size;
+  const count = $('batch-count');
+  if (count) { count.hidden = !batchMode; count.textContent = '已选 ' + n + ' 首'; }
+  const del = $('batch-delete');
+  if (del) { del.hidden = !batchMode; del.disabled = !n; }
+}
+
+function toggleBatchMode() {
+  batchMode = !batchMode;
+  batchSelected.clear();
+  batchAnchor = null;
+  document.body.classList.toggle('batch-mode', batchMode);
+  const hint = $('batch-hint');
+  if (hint) hint.hidden = !batchMode;
+  for (const id of ('batch-all', 'batch-none', 'batch-cancel')) {
+    const el = $(id); if (el) el.hidden = !batchMode;
+  }
+  const toggle = $('batch-toggle');
+  if (toggle) toggle.hidden = batchMode;
+  // 勾选框是在 renderMusic 里按 batchMode 生成/隐藏的，切换模式要重渲染一次
+  if (typeof renderMusic === 'function') renderMusic();
+  batchRefresh();
+}
+
+function batchToggleOne(id, ev) {
+  if (ev && ev.shiftKey && batchAnchor != null) {
+    const ids = batchVisibleTracks().map(el => Number(el.dataset.tid));
+    const a = ids.indexOf(batchAnchor), b = ids.indexOf(id);
+    if (a >= 0 && b >= 0) {
+      for (let i = Math.min(a, b); i <= Math.max(a, b); i++) batchSelected.add(ids[i]);
+    }
+  } else if (ev && ev.ctrlKey || ev && ev.metaKey) {
+    if (batchSelected.has(id)) batchSelected.delete(id); else batchSelected.add(id);
+  } else {
+    if (batchSelected.has(id)) batchSelected.delete(id); else batchSelected.add(id);
+  }
+  batchAnchor = id;
+  batchRefresh();
+}
+
+function batchSelectAll() {
+  for (const el of batchVisibleTracks()) batchSelected.add(Number(el.dataset.tid));
+  batchRefresh();
+}
+function batchSelectNone() {
+  batchSelected.clear(); batchAnchor = null; batchRefresh();
+}
+
+function batchDelete() {
+  if (!batchSelected.size) { toast('先选中要删除的歌曲', 'err'); return; }
+  const n = batchSelected.size;
+  if (!window.confirm('从歌单移除选中的 ' + n + ' 首？')) return;
   const delFile = window.confirm(
     '要同时删除磁盘上的音频和封面文件吗？\n\n'
     + '确定 = 连文件一起删（不可恢复）\n'
     + '取消 = 只移除歌单记录，文件保留');
-  try {
-    const r = await api('/api/library/remove', {
-      id: t.id, delete_file: !!delFile
-    });
-    if (wasPlaying && $('audio')) {
-      $('audio').pause();
-      $('audio').removeAttribute('src');
-      player.id = 0;
-      setPlayIcon(false);
+  // 串行删除（后端每次返回最新 tracks），删完统一刷新
+  (async () => {
+    let last = null;
+    for (const id of batchSelected) {
+      try { last = await api('/api/library/remove', { id, delete_file: !!delFile }); }
+      catch (e) { toast(e.message, 'err'); }
     }
-    if (typeof musicLib !== 'undefined' && r.tracks) {
-      musicLib.tracks = r.tracks;
-      renderMusic();
+    if (batchSelected.has(player.id) && $('audio')) {
+      $('audio').pause(); $('audio').removeAttribute('src');
+      player.id = 0; setPlayIcon(false);
     }
-    toast(delFile ? '已移除并删除文件' : '已从歌单移除（文件保留）', 'ok');
-  } catch (e) { toast(e.message, 'err'); }
+    if (last && last.tracks && typeof musicLib !== 'undefined') musicLib.tracks = last.tracks;
+    toast('已移除 ' + n + ' 首' + (delFile ? '（含文件）' : '（文件保留）'), 'ok');
+    toggleBatchMode();
+    if (typeof refreshLibrary === 'function') refreshLibrary(false);
+  })();
 }
+
+/* 鼠标左键拖拽框选：在 .music-grid 上按下 Left、拖出矩形，松开时选中相交卡片。
+   滚轮照常滚动（只在 mousedown/move/up 期间画框，不拦截 wheel）。 */
+(function initBatchMarquee() {
+  document.addEventListener('mousedown', ev => {
+    if (!batchMode || ev.button !== 0) return;
+    const grid = $('music-grid');
+    if (!grid || !grid.contains(ev.target)) return;
+    // 点在卡片上也开始框选，但保留单击切换：移动超过 6px 才算框选
+    marqueeStart = { x: ev.clientX, y: ev.clientY, moved: false,
+                     additive: ev.ctrlKey || ev.metaKey || ev.shiftKey };
+  });
+  document.addEventListener('mousemove', ev => {
+    if (!marqueeStart) return;
+    const dx = ev.clientX - marqueeStart.x, dy = ev.clientY - marqueeStart.y;
+    if (!marqueeStart.moved && Math.hypot(dx, dy) < 6) return;
+    marqueeStart.moved = true;
+    if (!marquee) {
+      marquee = document.createElement('div');
+      marquee.className = 'batch-marquee';
+      document.body.append(marquee);
+    }
+    const left = Math.min(ev.clientX, marqueeStart.x);
+    const top = Math.min(ev.clientY, marqueeStart.y);
+    marquee.style.left = left + 'px';
+    marquee.style.top = top + 'px';
+    marquee.style.width = Math.abs(dx) + 'px';
+    marquee.style.height = Math.abs(dy) + 'px';
+  });
+  document.addEventListener('mouseup', ev => {
+    if (!marqueeStart) return;
+    const start = marqueeStart;
+    marqueeStart = null;
+    if (marquee) { marquee.remove(); marquee = null; }
+    if (!start.moved) return;   // 单击由卡片的 onclick 处理
+    const box = {
+      l: Math.min(ev.clientX, start.x), r: Math.max(ev.clientX, start.x),
+      t: Math.min(ev.clientY, start.y), b: Math.max(ev.clientY, start.y),
+    };
+    if (!start.additive) batchSelected.clear();
+    for (const el of batchVisibleTracks()) {
+      const r = el.getBoundingClientRect();
+      if (r.right < box.l || r.left > box.r || r.bottom < box.t || r.top > box.b) continue;
+      batchSelected.add(Number(el.dataset.tid));
+    }
+    batchRefresh();
+  });
+})();
 
 function updatePlayerBar() {
   const audio = $('audio');
@@ -4847,6 +5013,11 @@ function playTrack(id) {
   });
   $('player').hidden = false;
   applyPlayerHidden();
+  // 隧道视图里点封面播放：画面尺寸不变，滚到底把整块往上挤，正好露出完整画面 + 播放条
+  if (musicView === 'tunnel' && tunnelShowsPlayer) {
+    const scroller = document.querySelector('.main');
+    if (scroller) requestAnimationFrame(() => scroller.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' }));
+  }
   // 页面里切歌（点网格、上一首/下一首）时，隧道里的主封面也跟着换
   if (tunnel && !tunnelSelecting) tunnel.selectTrack(id);
   renderMusic();
@@ -5277,7 +5448,7 @@ try {
 } catch (e) { /* 隐私模式读不到就用默认值 */ }
 if ($('opt-tunnel-play')) $('opt-tunnel-play').checked = tunnelPlays;
 try {
-  const savedBar = localStorage.getItem('dly.tunnelShowsPlayer');
+  const savedBar = localStorage.getItem('dly.tunnelShowsPlayer.v2');
   if (savedBar !== null) tunnelShowsPlayer = savedBar === '1';
 } catch (e) { /* 隐私模式读不到就用默认值（显示） */ }
 if ($('opt-tunnel-player')) $('opt-tunnel-player').checked = tunnelShowsPlayer;
