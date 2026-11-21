@@ -807,6 +807,17 @@
     width: 100%; padding: 9px 11px; border: 1px solid var(--border);
     border-radius: 9px; background: var(--card); color: var(--text); font-size: 13px;
   }
+  .qs-login-box {
+    padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+    background: var(--pill-bg);
+  }
+  #qs-qr-wrap { margin-top: 10px; }
+  .qs-playlist-item {
+    display: inline-flex; align-items: center; gap: 6px; margin: 6px 6px 0 0;
+    padding: 5px 10px; border: 1px solid var(--border); border-radius: 18px;
+    background: var(--card); color: var(--text); font-size: 12px; cursor: pointer;
+  }
+  .qs-playlist-item:hover { border-color: var(--accent); }
   .dy-progress { margin-top: 12px; font-size: 13px; color: var(--muted); }
   .dy-list-head {
     display: flex; align-items: center; justify-content: space-between;
@@ -841,6 +852,23 @@
 
   .music-tunnel-wrap { flex: 1; min-height: 0; display: flex; position: relative; }
   .music-tunnel-wrap[hidden] { display: none !important; }
+  /* 隧道歌词：浮在画面底部，跟随 audio 进度高亮当前句 */
+  .tunnel-lyric {
+    position: absolute; left: 0; right: 0; bottom: 18px; z-index: 3;
+    display: flex; justify-content: center; pointer-events: none;
+  }
+  .tunnel-lyric[hidden] { display: none !important; }
+  .tunnel-lyric-line {
+    max-width: 86%; padding: 6px 16px; border-radius: 10px;
+    background: rgba(12, 10, 24, .62); color: #fff;
+    font-size: 18px; line-height: 1.5; text-align: center;
+    text-shadow: 0 1px 6px rgba(0, 0, 0, .7);
+  }
+  .player-lyric {
+    display: block; margin-top: 2px; font-size: 11px; color: rgba(255, 255, 255, .82);
+    max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .player-lyric[hidden] { display: none; }
   .music-tunnel {
     width: 100%; height: auto; flex: 1; min-height: 240px; display: flex;
     align-items: center; justify-content: center; overflow: hidden;
@@ -1773,6 +1801,9 @@
         <div class="music-grid" id="music-grid"></div>
         <div class="music-tunnel-wrap" id="music-tunnel-wrap" hidden>
           <div class="music-tunnel" id="music-tunnel"></div>
+          <div class="tunnel-lyric" id="tunnel-lyric" hidden>
+            <div class="tunnel-lyric-line" id="tunnel-lyric-line"></div>
+          </div>
           <button class="player-restore" type="button" id="pl-restore" hidden
                   onclick="togglePlayerHidden()" title="显示播放条" aria-label="显示播放条">
             <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round">
@@ -1788,6 +1819,7 @@
         <div class="player-meta">
           <strong id="player-title">未在播放</strong>
           <span id="player-sub">点封面开始播放</span>
+          <span class="player-lyric" id="player-lyric" hidden></span>
         </div>
         <div class="player-controls">
           <button class="icon-btn" type="button" onclick="prevTrack()" title="上一首（Shift+←）">⏮</button>
@@ -1893,11 +1925,20 @@
         </div>
         <div class="dy-status" id="qs-status">粘贴汽水音乐的分享文本或歌单链接，音频与封面会直接进歌单。</div>
         <div class="qs-form">
-          <input type="text" id="qs-input" placeholder="粘贴任意一种：歌单/我喜欢短链 qishui.douyin.com/s/xxx、单曲短链、单曲页链接、纯数字曲目 ID">
-          <div class="dy-actions" style="margin-top:0">
-            <button class="ghost" id="qs-like-btn" onclick="qsFillLiked()" title="用上次成功导入的「我喜欢」歌单链接；第一次请先粘贴一次">从我喜欢导入</button>
-            <span class="hint" id="qs-liked-hint"></span>
+          <div class="qs-login-box">
+            <div class="dy-actions" style="margin-top:0">
+              <button class="ghost" id="qs-login-btn" onclick="qsLogin()">扫码登录（抖音 APP）</button>
+              <button class="ghost" id="qs-logout-btn" onclick="qsLogout()" hidden>退出登录</button>
+              <span class="hint" id="qs-login-hint">登录后可直接导入你自己的「我喜欢」歌单</span>
+            </div>
+            <div id="qs-qr-wrap" hidden>
+              <img id="qs-qr-img" alt="扫码登录二维码" style="width:168px;height:168px;image-rendering:auto">
+              <div class="hint">用手机抖音 APP 扫码并确认</div>
+              <button class="ghost" onclick="qsCancelLogin()">取消</button>
+            </div>
+            <div id="qs-playlists" hidden></div>
           </div>
+          <input type="text" id="qs-input" placeholder="或直接粘贴：歌单短链、单曲短链、单曲页链接、纯数字曲目 ID">
           <label class="check"><input type="checkbox" id="qs-limit"> 只取前 10 首（歌单很长时先试一下）</label>
         </div>
         <div class="dy-actions">
@@ -2893,7 +2934,7 @@ async function dyDownload() {
 /* ---------------- 汽水音乐分享链接采集 ----------------
    免登录：分享页里带音频/封面直链，后端解析后直接下载并进歌单。 */
 let qsPoll = null;
-let qsPendingLink = '';
+let qsLastLoggedIn = null;
 
 function escHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
@@ -2908,23 +2949,50 @@ function qsSetStatus(text, kind) {
   el.className = 'dy-status' + (kind ? ' ' + kind : '');
 }
 
-function qsLikedLink() {
-  try { return localStorage.getItem('dly.qishuiLiked') || ''; }
-  catch (e) { return ''; }
+function qsRenderLogin(s) {
+  const hint = $('qs-login-hint');
+  const loginBtn = $('qs-login-btn');
+  const logoutBtn = $('qs-logout-btn');
+  const qrWrap = $('qs-qr-wrap');
+  const plBox = $('qs-playlists');
+  if (!loginBtn) return;
+  loginBtn.hidden = !!s.logged_in;
+  logoutBtn.hidden = !s.logged_in;
+  if (hint) hint.textContent = s.logged_in ? '已登录，选下面的歌单即可导入'
+    : '扫码后可直接导入你自己的「我喜欢」';
+  qrWrap.hidden = !s.qrcode;
+  if (s.qrcode) $('qs-qr-img').src = s.qrcode;
+  plBox.hidden = !s.logged_in || !(s.playlists || []).length;
+  if (s.logged_in && (s.playlists || []).length) {
+    plBox.innerHTML = s.playlists.map(p =>
+      '<span class="qs-playlist-item" data-pid="' + escHtml(p.id) + '" '
+      + 'onclick="qsImportPlaylist(this.dataset.pid)" title="导入这个歌单">'
+      + escHtml(p.title) + (p.count ? ' · ' + escHtml(p.count) : '') + '</span>'
+    ).join('');
+  }
 }
-function qsSyncLikedHint() {
-  const el = $('qs-like-btn');
-  const hint = $('qs-liked-hint');
-  if (!el) return;
-  const link = qsLikedLink();
-  el.disabled = !link;
-  if (hint) hint.textContent = link ? '已记住上次的「我喜欢」链接' : '先粘一次「我喜欢」分享链接，之后即可一键导入';
+
+async function qsLogin() {
+  qsSetStatus('正在获取二维码…');
+  try { await api('/api/qishui/login', {}); }
+  catch (e) { qsSetStatus(e.message, 'err'); }
 }
-function qsFillLiked() {
-  const link = qsLikedLink();
-  if (!link) { qsSetStatus('先粘贴一次「我喜欢」的分享链接，之后就能一键导入了', 'err'); return; }
-  $('qs-input').value = link;
-  qsSetStatus('已填入上次记住的链接，点「开始采集」即可');
+async function qsCancelLogin() {
+  try { await api('/api/qishui/login/cancel', {}); } catch (e) { /* ignore */ }
+}
+async function qsLogout() {
+  try { await api('/api/qishui/logout', {}); } catch (e) { /* ignore */ }
+}
+async function qsLoadPlaylists() {
+  try { await api('/api/qishui/playlists', {}); }
+  catch (e) { qsSetStatus(e.message, 'err'); }
+}
+async function qsImportPlaylist(pid) {
+  const limit = $('qs-limit').checked ? 10 : 0;
+  qsSetStatus('已提交歌单，正在采集…');
+  try {
+    await api('/api/qishui/playlist/start', { playlist_id: pid, limit });
+  } catch (e) { qsSetStatus(e.message, 'err'); }
 }
 
 function openQishui() {
@@ -2932,7 +3000,6 @@ function openQishui() {
   if (!modal) return;
   modal.hidden = true;   // 先隐藏，下面按状态再决定，避免闪一下旧内容
   modal.hidden = false;
-  qsSyncLikedHint();
   qsSetStatus('粘贴汽水音乐的分享文本或歌单链接，音频与封面会直接进歌单。');
   $('qs-list').hidden = true;
   $('qs-progress').hidden = true;
@@ -2994,14 +3061,10 @@ async function pollQsStatus() {
     if (hint && !s.error) hint.textContent += '（' + s.note + '）';
   }
   renderQsList(s.items);
-  // 解析出歌单就把链接记住（含「我喜欢」），下次可一键导入；单曲不记
-  if (s.kind === 'playlist' && qsPendingLink) {
-    try { localStorage.setItem('dly.qishuiLiked', qsPendingLink); } catch (e) { /* 隐私模式 */ }
-    qsPendingLink = '';
-    qsSyncLikedHint();
-  } else if (s.busy === false && qsPendingLink && s.error) {
-    qsPendingLink = '';
-  }
+  qsRenderLogin(s);
+  // 刚登录成功：自动拉一次歌单列表
+  if (s.logged_in && !qsLastLoggedIn) qsLoadPlaylists();
+  qsLastLoggedIn = !!s.logged_in;
   if (!s.busy && s.added && typeof refreshLibrary === 'function') refreshLibrary(false);
 }
 
@@ -3014,7 +3077,6 @@ async function qsStart() {
       text,
       limit: $('qs-limit').checked ? 10 : 0
     });
-    qsPendingLink = text;   // 等 poll 里确认是歌单再记住，避免把单曲记成「我喜欢」
   } catch (e) { qsSetStatus(e.message, 'err'); }
 }
 
@@ -4642,6 +4704,54 @@ function setPlayIcon(playing) {
   if (btn) btn.classList.toggle('playing', !!playing);
 }
 
+/* ---- 歌词：从同目录 .lrc 读取，按 audio 当前时间找当前句 ----
+   取不到就整块隐藏，不影响没有歌词的曲目。 */
+let lyricLines = [];
+let lyricKey = '';
+let lyricSeq = 0;
+
+function parseLrc(text) {
+  const out = [];
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const m = line.match(/^\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\](.*)$/);
+    if (!m) continue;
+    const t = Number(m[1]) * 60 + Number(m[2]) + Number(m[3] || 0) / 100;
+    const words = m[4].trim();
+    if (words) out.push({ t, text: words });
+  }
+  return out.sort((a, b) => a.t - b.t);
+}
+
+async function loadLyric(trackId) {
+  lyricLines = [];
+  const bar = $('player-lyric'), tun = $('tunnel-lyric');
+  if (bar) { bar.hidden = true; bar.textContent = ''; }
+  if (tun) { tun.hidden = true; }
+  if (!trackId) return;
+  const seq = ++lyricSeq;
+  try {
+    const r = await fetch('/api/media/lrc?id=' + trackId);
+    if (!r.ok) return;
+    const lines = parseLrc(await r.text());
+    if (seq !== lyricSeq) return;    // 已切歌，丢弃过期结果
+    lyricLines = lines;
+  } catch (e) { /* 没歌词是正常的 */ }
+}
+
+function renderLyric(t) {
+  if (!lyricLines.length) return;
+  let i = 0;
+  while (i + 1 < lyricLines.length && lyricLines[i + 1].t <= t) i++;
+  const text = lyricLines[i].text;
+  const bar = $('player-lyric'), tun = $('tunnel-lyric-line');
+  if (bar) { bar.textContent = text; bar.hidden = false; }
+  if (tun) {
+    tun.textContent = text;
+    const wrap = $('tunnel-lyric');
+    if (wrap) wrap.hidden = false;
+  }
+}
+
 function playTrack(id) {
   const track = (musicLib.tracks || []).find(t => t.id === id);
   if (!track) return;
@@ -4660,6 +4770,7 @@ function playTrack(id) {
     if (at >= 0) player.shuffleAt = at; else rebuildShuffleQueue();
   }
   player.switching = true;      // 加载完成前不记进度、不动进度条
+  loadLyric(id);                // 有 .lrc 就显示，没有就整块隐藏
   audio.src = '/api/media/audio?id=' + id;
   audio.playbackRate = player.speed;
   if ($('pl-seek')) $('pl-seek').value = '0';
@@ -4807,6 +4918,7 @@ function bindAudio() {
       $('pl-cur').textContent = fmtClock(audio.currentTime);
     }
     if (dur) $('pl-dur').textContent = fmtClock(dur);
+    renderLyric(audio.currentTime || 0);
     // 音频和视频是两个文件，偶尔会漂；超过 0.6 秒才校正一次，别每帧跳
     if (tunnel && tunnel.correctVideoTime) tunnel.correctVideoTime(audio.currentTime || 0);
     savePosition(false);

@@ -6,9 +6,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import shutil
 import threading
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -27,7 +29,18 @@ class QishuiState:
         self._lock = threading.RLock()
         self._stop = threading.Event()
         self._busy = False
+        self._login_stop = threading.Event()
+        self._sessionid = ""
+        self._qr_cookie = ""
+        self._qr_token = ""
+        # 登录态只存本地数据目录，不上传、不进前端快照
+        self._auth_file = data_dir() / "qishui_auth.json"
+        self._load_auth()
         self.snapshot: Dict[str, Any] = {
+            "logged_in": bool(self._sessionid),
+            "qrcode": "",
+            "qr_expire": 0,
+            "playlists": [],
             "busy": False,
             "stage": "",
             "done": 0,
@@ -39,6 +52,24 @@ class QishuiState:
             "error": "",
             "added": 0,
         }
+
+    # -- 登录态 -----------------------------------------------------------
+
+    def _load_auth(self) -> None:
+        try:
+            data = json.loads(self._auth_file.read_text(encoding="utf-8"))
+            self._sessionid = str(data.get("sessionid") or "")
+        except (OSError, ValueError):
+            self._sessionid = ""
+
+    def _save_auth(self) -> None:
+        try:
+            self._auth_file.parent.mkdir(parents=True, exist_ok=True)
+            self._auth_file.write_text(
+                json.dumps({"sessionid": self._sessionid}, ensure_ascii=False),
+                encoding="utf-8")
+        except OSError as exc:
+            logger.debug("保存汽水登录态失败: %s", exc)
 
     # -- 查询 -------------------------------------------------------------
 
@@ -60,6 +91,76 @@ class QishuiState:
     def stop(self) -> None:
         self._stop.set()
         self._log("汽水音乐", "已请求停止采集", "info")
+
+    # -- 扫码登录 ---------------------------------------------------------
+
+    def start_login(self) -> None:
+        """取二维码，开后台线程轮询扫码结果。"""
+        qr = qi.auth_qrcode()
+        self._qr_token = qr["token"]
+        self._qr_cookie = qr.get("cookie", "")
+        self._login_stop.clear()
+        self._set(qrcode=qr["qrcode"], qr_expire=qr.get("expire_at", 0),
+                  logged_in=False)
+        self._log("汽水音乐", "二维码已生成，请用抖音 APP 扫码", "info")
+
+        def poll() -> None:
+            deadline = time.time() + max(60, qr.get("expire_at", 0) - time.time())
+            while time.time() < deadline and not self._login_stop.is_set():
+                try:
+                    r = qi.auth_qrcode_status(self._qr_token, self._qr_cookie)
+                    if r.get("sessionid"):
+                        self._sessionid = r["sessionid"]
+                        self._save_auth()
+                        self._set(logged_in=True, qrcode="", qr_expire=0)
+                        self._log("汽水音乐", "登录成功", "ok")
+                        return
+                    status = r.get("status")
+                    if status in ("expired", "canceled"):
+                        self._set(qrcode="", qr_expire=0,
+                                  error="二维码已失效，请重新获取")
+                        self._log("汽水音乐", "二维码已失效", "err")
+                        return
+                    if status == "scanned":
+                        self._log("汽水音乐", "已扫码，请在手机上确认", "info")
+                except Exception as exc:
+                    logger.debug("轮询汽水扫码状态失败: %s", exc)
+                time.sleep(1.5)
+            if not self._login_stop.is_set():
+                self._set(qrcode="", qr_expire=0)
+                self._log("汽水音乐", "扫码超时，请重新获取二维码", "err")
+
+        threading.Thread(target=poll, daemon=True).start()
+
+    def cancel_login(self) -> None:
+        self._login_stop.set()
+        self._set(qrcode="", qr_expire=0)
+
+    def logout(self) -> None:
+        self._sessionid = ""
+        self._save_auth()
+        self._set(logged_in=False, playlists=[])
+        self._log("汽水音乐", "已退出登录", "info")
+
+    def load_playlists(self) -> List[Dict[str, str]]:
+        """拉我的歌单列表（含「我喜欢」），失败时给出明确错误。"""
+        if not self._sessionid:
+            raise RuntimeError("请先扫码登录")
+        try:
+            pls = qi.me_playlists(self._sessionid)
+        except Exception as exc:
+            self._set(error="拉取歌单失败：" + str(exc)[:160])
+            raise
+        self._set(playlists=pls)
+        return pls
+
+    def start_from_playlist(self, playlist_id: str, limit: int = 0) -> None:
+        """从登录态歌单 ID 采集：把解析结果直接灌进现有采集流程。"""
+        if not self._sessionid:
+            raise RuntimeError("请先扫码登录")
+        result = qi.collect({"kind": "playlist", "value": playlist_id})
+        tracks = result.tracks[:limit] if limit and limit > 0 else result.tracks
+        self._run_download(result.title, result.kind, result.note, tracks, "")
 
     # -- 采集 -------------------------------------------------------------
 
@@ -86,52 +187,71 @@ class QishuiState:
                 tracks: List[qi.QishuiTrack] = result.tracks
                 if limit and limit > 0:
                     tracks = tracks[:limit]
-                self._set(title=result.title, kind=result.kind, note=result.note,
-                          total=len(tracks), done=0, stage="准备下载")
-                self._log("汽水音乐",
-                          f"解析到《{result.title}》共 {len(tracks)} 首", "ok")
-
-                out = Path(output_dir).expanduser() if output_dir else \
-                    data_dir() / "qishui"
-                out.mkdir(parents=True, exist_ok=True)
-
-                added = 0
-                for i, t in enumerate(tracks, 1):
-                    if self._stop.is_set():
-                        self._log("汽水音乐", "采集已停止", "info")
-                        break
-                    self._set(stage="下载", done=i - 1)
-                    self._item(i - 1, title=t.title, artist=t.artist,
-                               status="下载中", id=t.id)
-                    try:
-                        got = qi.download(t, out)
-                        self._item(i - 1, status="入库中")
-                        # 直接进歌单；封面用汽水的原图覆盖默认渐变封面
-                        track = self._library.add(
-                            got.audio, title=t.title, cover_src=got.cover,
-                            source="qishui")
-                        if got.cover:
-                            self._library.set_cover(track["id"], got.cover)
-                            t.cover_url = ""     # 已落地，不用再显示外链
-                        added += 1
-                        self._item(i - 1, status="已入库",
-                                   library_id=track["id"],
-                                   file=got.audio.name)
-                    except Exception as exc:  # 单首失败继续下一首
-                        logger.debug("汽水曲目入库失败 %s: %s", t.id, exc)
-                        self._item(i - 1, status="失败", error=str(exc)[:160])
-                    finally:
-                        self._set(done=i)
-
-                self._set(added=added, stage="完成")
-                self._log("汽水音乐", f"采集完成，已入库 {added} 首", "ok")
+                self._run_download(result.title, result.kind, result.note,
+                                   tracks, output_dir)
             except Exception as exc:  # noqa: BLE001
                 logger.exception("汽水采集失败")
-                self._set(error=str(exc)[:300], stage="失败")
+                self._set(error=str(exc)[:300], stage="失败", busy=False)
                 self._log("汽水音乐", f"采集失败：{exc}", "err")
-            finally:
                 with self._lock:
                     self._busy = False
-                self._set(busy=False)
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _run_download(self, title: str, kind: str, note: str,
+                      tracks: List[qi.QishuiTrack], output_dir: str) -> None:
+        """下载 + 入库 + 写歌词。两种采集入口（分享链接 / 我的歌单）共用。"""
+        try:
+            self._set(title=title, kind=kind, note=note,
+                      total=len(tracks), done=0, stage="准备下载")
+            self._log("汽水音乐", f"解析到《{title}》共 {len(tracks)} 首", "ok")
+
+            out = Path(output_dir).expanduser() if output_dir else \
+                data_dir() / "qishui"
+            out.mkdir(parents=True, exist_ok=True)
+
+            added = 0
+            for i, t in enumerate(tracks, 1):
+                if self._stop.is_set():
+                    self._log("汽水音乐", "采集已停止", "info")
+                    break
+                self._set(stage="下载", done=i - 1)
+                self._item(i - 1, title=t.title, artist=t.artist,
+                           status="下载中", id=t.id)
+                try:
+                    got = qi.download(t, out)
+                    self._item(i - 1, status="入库中")
+                    # 直接进歌单；封面用汽水的原图覆盖默认渐变封面
+                    track = self._library.add(
+                        got.audio, title=t.title, cover_src=got.cover,
+                        source="qishui")
+                    if got.cover:
+                        self._library.set_cover(track["id"], got.cover)
+                        t.cover_url = ""     # 已落地，不用再显示外链
+                    # 歌词写成同目录 .lrc，Library 会按音频名找它
+                    if t.lyric:
+                        try:
+                            lrc_path = got.audio.with_suffix(".lrc")
+                            lrc_path.write_text(
+                                qi.build_lrc(t.lyric, t.duration), encoding="utf-8")
+                        except OSError as exc:
+                            logger.debug("写歌词失败 %s: %s", t.id, exc)
+                    added += 1
+                    self._item(i - 1, status="已入库",
+                               library_id=track["id"],
+                               file=got.audio.name)
+                except Exception as exc:  # 单首失败继续下一首
+                    logger.debug("汽水曲目入库失败 %s: %s", t.id, exc)
+                    self._item(i - 1, status="失败", error=str(exc)[:160])
+                finally:
+                    self._set(done=i)
+
+            self._set(added=added, stage="完成", busy=False)
+            self._log("汽水音乐", f"采集完成，已入库 {added} 首", "ok")
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("汽水下载失败")
+            self._set(error=str(exc)[:300], stage="失败", busy=False)
+            self._log("汽水音乐", f"采集失败：{exc}", "err")
+        finally:
+            with self._lock:
+                self._busy = False

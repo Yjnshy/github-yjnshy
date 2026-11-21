@@ -56,13 +56,47 @@ def test_track_from_option_extracts_fields():
     assert t.album == "测试专辑"
     assert t.audio_url.endswith(".m4a")
     assert t.cover_url.endswith(".jpg")
-    assert t.lyric == "第一句\n第二句"
+    assert "第一句" in t.lyric and "第二句" in t.lyric
     assert t.preview is True
+    lrc = qi.build_lrc(t.lyric, 123.4)
+    assert lrc.startswith("[by:")
+    assert "[length:02:03]" in lrc
+    assert "第一句" in lrc
 
 
 def test_http_rejects_foreign_host():
     with pytest.raises(ValueError, match="不是汽水/抖音域名"):
         qi._http("https://example.com/whatever")
+
+
+def test_build_lrc_with_timestamps():
+    lyric = "[00:01.20]第一句\n[01:02.34]第二句\n无时间的补充"
+    lrc = qi.build_lrc(lyric, 125)
+    assert lrc.startswith("[by:")
+    assert "[length:02:05]" in lrc
+    assert "[00:01.20]第一句" in lrc
+    assert "[01:02.34]第二句" in lrc
+
+
+def test_auth_qrcode_helpers_reject_bad_inputs():
+    with pytest.raises(ValueError, match="登录态无效"):
+        qi._session_cookie("bad;value")
+    assert qi._session_cookie("abc123") == "sessionid=abc123;"
+    with pytest.raises(ValueError, match="token"):
+        qi.auth_qrcode_status("")
+
+
+def test_library_lrc_of(tmp_path, monkeypatch):
+    monkeypatch.setattr(paths, "data_dir", lambda: tmp_path)
+    lib = Library()
+    audio = tmp_path / "song.m4a"
+    audio.write_bytes(b"\x00\x00\x00\x1cftypM4A ")
+    track = lib.add(audio, title="歌")
+    assert lib.lrc_of(track["id"]) is None
+    lrc = tmp_path / "song.lrc"
+    lrc.write_text("[00:01.00]词", encoding="utf-8")
+    assert lib.lrc_of(track["id"]) == lrc
+    assert lib.public()[0]["has_lrc"] is True
 
 
 def test_library_set_cover(tmp_path, monkeypatch):

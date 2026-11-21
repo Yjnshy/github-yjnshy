@@ -27,7 +27,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from dly.core.naming import build_filename, safe_name
 
@@ -39,6 +39,23 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 _API = "https://api.qishui.com"
 _SONG_PAGE = "https://www.douyin.com/qishui/song/{id}"
 _PLAYLIST_API = _API + "/luna/playlist/detail?playlist_id={pid}"
+_QRCODE_API = _API + "/passport/web/get_qrcode/"
+_QRSTATUS_API = _API + "/passport/web/check_qrconnect/"
+_ME_PLAYLISTS_API = _API + "/luna/pc/me/playlist"
+# 抖音 passport 固定参数（从汽水 PC 客户端抓包得到，开源实现同款）
+_AID = "386088"
+_IID = "27960026095955"
+_VERSION_CODE = "30020100"
+_PASSPORT_FIXED = {
+    "passport_jssdk_version": "2.4.13",
+    "passport_jssdk_type": "normal",
+    "is_from_ttaccountsdk": "1",
+    "aid": _AID,
+    "next": _API,
+    "need_logo": "false",
+    "need_short_url": "false",
+    "is_new_login": "1",
+}
 
 # 只接受汽水/抖音域名，防止分享文本里夹带别的链接被当成资源去请求
 # douyinvod.com / douyinpic.com 是音频与封面的 CDN，必须一起放行
@@ -77,6 +94,22 @@ class QishuiCollection:
     note: str = ""
 
 
+def build_lrc(lyric: str, duration: float = 0) -> str:
+    """把解析出的歌词整理成标准 LRC 文本。
+
+    汽水句子带 ``[mm:ss.cc]`` 前缀；没有时间轴的（例如纯文本）直接保留。
+    """
+    lines = [ln for ln in (lyric or "").splitlines() if ln.strip()]
+    if not lines:
+        return ""
+    out = ["[by:DLY 汽水音乐采集]"]
+    if duration:
+        total = int(duration)
+        out.append(f"[length:{total // 60:02d}:{total % 60:02d}]")
+    out.extend(lines)
+    return "\n".join(out) + "\n"
+
+
 # ---------------------------------------------------------------------------
 # 网络
 # ---------------------------------------------------------------------------
@@ -98,6 +131,96 @@ def _http(url: str, timeout: float = 25.0, referer: str = "") -> bytes:
     req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
+
+
+def _request(url: str, data: Optional[bytes] = None, headers: Optional[dict] = None,
+             timeout: float = 25.0):
+    """返回 (body, headers)。扫码轮询要从 Set-Cookie 里取 sessionid。"""
+    if not _allowed(url):
+        raise ValueError("链接不是汽水/抖音域名，已拒绝请求")
+    h = {"User-Agent": UA}
+    h.update(headers or {})
+    req = urllib.request.Request(url, data=data, headers=h)
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read(), r.headers
+
+
+def _session_cookie(sessionid: str) -> str:
+    """校验并拼出 Cookie 头；只允许安全字符，避免注入。"""
+    sid = str(sessionid or "").strip()
+    if not sid or re.search(r"[;\s\x00-\x1F\x7F]", sid):
+        raise ValueError("登录态无效，请重新扫码")
+    return f"sessionid={sid};"
+
+
+def auth_qrcode() -> Dict[str, Any]:
+    """获取扫码登录二维码。返回 {token, qrcode(data:image...), expire_at}。"""
+    query = urllib.parse.urlencode(_PASSPORT_FIXED)
+    body, headers = _request(_QRCODE_API + "?" + query)
+    data = json.loads(body).get("data") or {}
+    token = str(data.get("token") or "")
+    qrcode = str(data.get("qrcode") or "")
+    if not token or not qrcode:
+        raise ValueError("获取二维码失败，请稍后重试")
+    # 拿二维码时服务端会给一个临时 cookie，轮询要带着它
+    cookies = headers.get_all("Set-Cookie") or []
+    cookie_header = "; ".join(c.split(";", 1)[0] for c in cookies)
+    return {"token": token, "qrcode": qrcode,
+            "expire_at": int(data.get("expire_time") or 0),
+            "cookie": cookie_header}
+
+
+def auth_qrcode_status(token: str, cookie: str = "") -> Dict[str, Any]:
+    """轮询扫码状态。已确认时从 Set-Cookie 里取 sessionid。"""
+    if not token:
+        raise ValueError("扫码 token 为空")
+    query = urllib.parse.urlencode({
+        "passport_jssdk_version": _PASSPORT_FIXED["passport_jssdk_version"],
+        "passport_jssdk_type": _PASSPORT_FIXED["passport_jssdk_type"],
+        "is_from_ttaccountsdk": _PASSPORT_FIXED["is_from_ttaccountsdk"],
+        "aid": _AID, "iid": _IID,
+        "need_logo": "false", "need_short_url": "false",
+        "is_frontier": "true", "token": token, "is_new_login": "1",
+        "next": _API,
+    })
+    form = urllib.parse.urlencode({
+        "need_logo": "false", "need_short_url": "false",
+        "is_frontier": "true", "token": token, "is_new_login": "1",
+        "next": _API,
+    }).encode()
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    if cookie:
+        headers["Cookie"] = cookie
+    body, resp_headers = _request(_QRSTATUS_API + "?" + query, data=form,
+                                  headers=headers)
+    data = json.loads(body).get("data") or {}
+    sessionid = ""
+    for value in resp_headers.get_all("Set-Cookie") or []:
+        m = re.search(r"(?:^|[;,]\s*)sessionid=([^;,\s]+)", value, re.I)
+        if m:
+            sessionid = m.group(1)
+            break
+    return {"status": str(data.get("status") or ""),
+            "sessionid": sessionid,
+            "error_code": int(data.get("error_code") or 0)}
+
+
+def me_playlists(sessionid: str) -> List[Dict[str, str]]:
+    """登录态下拉我的歌单列表，返回 [{id, title, count}]。"""
+    query = urllib.parse.urlencode({"aid": _AID, "iid": _IID,
+                                    "version_code": _VERSION_CODE})
+    headers = {"User-Agent": "LunaPC/3.0.0(290101097)",
+               "Cookie": _session_cookie(sessionid)}
+    body, _ = _request(_ME_PLAYLISTS_API + "?" + query, headers=headers)
+    data = json.loads(body) or {}
+    out = []
+    for p in data.get("playlists") or []:
+        pid = str(p.get("id") or "")
+        if not pid:
+            continue
+        out.append({"id": pid, "title": str(p.get("title") or "歌单"),
+                    "count": str(p.get("count_tracks") or p.get("resource_cnt") or "")})
+    return out
 
 
 def _router_data(html: str) -> dict:
@@ -263,7 +386,15 @@ def _track_from_option(opt: dict, source_url: str) -> QishuiTrack:
     lines = []
     for s in lyrics.get("sentences") or []:
         text = s.get("text")
-        if text:
+        if not text:
+            continue
+        start = int(s.get("startMs") or 0)
+        if start > 0:
+            mm = start // 60000
+            ss = (start % 60000) // 1000
+            cc = (start % 1000) // 10
+            lines.append(f"[{mm:02d}:{ss:02d}.{cc:02d}]{text}")
+        else:
             lines.append(text)
     dur = opt.get("duration") or 0
     try:

@@ -758,6 +758,24 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _send_lrc(self) -> None:
+        """歌词：与音频同目录的同名 .lrc，只返回歌单里登记过的曲目。"""
+        path = self.state.library.lrc_of(self._track_id())
+        if not path:
+            self._send(404, b"", "text/plain; charset=utf-8")
+            return
+        try:
+            data = path.read_bytes()
+        except OSError:
+            self._send(404, b"", "text/plain; charset=utf-8")
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
     def _send_frame(self) -> None:
         """候选封面帧：只允许读歌单缓存目录里的 frame_<id>_<i>.jpg。"""
         from urllib.parse import parse_qs
@@ -1003,6 +1021,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send_frame()
             return
 
+        if path == "/api/media/lrc":
+            self._send_lrc()
+            return
+
         self._json({"error": "not found"}, 404)
 
     # ---- POST ----
@@ -1116,6 +1138,45 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/qishui/stop":
             self.state.qishui.stop()
             self._json({"ok": True})
+            return
+
+        if path == "/api/qishui/login":
+            try:
+                self.state.qishui.start_login()
+                self._json({"ok": True})
+            except Exception as exc:  # noqa: BLE001
+                self._json({"error": str(exc)}, 409)
+            return
+
+        if path == "/api/qishui/login/cancel":
+            self.state.qishui.cancel_login()
+            self._json({"ok": True})
+            return
+
+        if path == "/api/qishui/logout":
+            self.state.qishui.logout()
+            self._json({"ok": True})
+            return
+
+        if path == "/api/qishui/playlists":
+            try:
+                self._json({"ok": True,
+                            "playlists": self.state.qishui.load_playlists()})
+            except Exception as exc:  # noqa: BLE001
+                self._json({"error": str(exc)}, 409)
+            return
+
+        if path == "/api/qishui/playlist/start":
+            pid = (data.get("playlist_id") or "").strip()
+            if not pid:
+                self._json({"error": "先选一个歌单"}, 400)
+                return
+            try:
+                self.state.qishui.start_from_playlist(
+                    pid, limit=int(data.get("limit") or 0))
+                self._json({"ok": True})
+            except Exception as exc:  # noqa: BLE001
+                self._json({"error": str(exc)}, 409)
             return
 
         if path == "/api/library/add":

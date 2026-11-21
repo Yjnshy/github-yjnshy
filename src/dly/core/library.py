@@ -243,6 +243,7 @@ class Library:
                     "cover_ver": (int(Path(t["cover"]).stat().st_mtime * 1000)
                                   if t["cover"] and Path(t["cover"]).is_file() else 0),
                     "has_video": bool(_video_for(t)),
+                    "has_lrc": Path(t["path"]).with_suffix(".lrc").is_file(),
                 })
             return rows
 
@@ -264,6 +265,14 @@ class Library:
         """曲目对应的原视频：隧道里播视频用，没视频就返回 None。"""
         track = self.get(track_id)
         return _video_for(track) if track else None
+
+    def lrc_of(self, track_id: int) -> Optional[Path]:
+        """曲目同目录的同名 .lrc 歌词文件。"""
+        track = self.get(track_id)
+        if not track:
+            return None
+        path = Path(track["path"]).with_suffix(".lrc")
+        return path if path.is_file() else None
 
     # ---- 写入 ----
 
