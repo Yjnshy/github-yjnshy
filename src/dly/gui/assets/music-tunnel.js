@@ -138,15 +138,9 @@ const CoverShader = {
     varying vec2 vState;
     float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
     void main(){
-      // 视频按真实宽高比等比缩放并居中，整帧都在画面内，不拉伸也不裁切；
-      // 方盒面多出来的上下（本例视频 2346x1080）填暗底。封面仍是原样铺满。
+      // 盒子面在 JS 里按视频真实比例改成了横条/竖条，UV 直接铺满就是完整画面：
+      // 既不留暗边，也不拉伸裁切。静态封面仍是原样铺满方盒面。
       vec2 uv = vUv;
-      float inside = 1.0;
-      if (uIsVideo > 0.5) {
-        vec2 fit = uAspect > 1.0 ? vec2(1.0, 1.0 / uAspect) : vec2(uAspect, 1.0);
-        uv = (vUv - 0.5) / fit + 0.5;
-        inside = step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
-      }
       // 远处轻微虚化：视频不做大半径取样，否则运动画面会糊
       float dof = uIsVideo > 0.5 ? 0.0 : smoothstep(14.0, 34.0, vFogDepth);
       vec2 texel = vec2((0.5 + dof * 3.6) / 512.0, (0.5 + dof * 3.6) / 512.0);
@@ -175,7 +169,6 @@ const CoverShader = {
       // 边缘淡紫 fresnel
       float rim = pow(1.0 - bevel, 6.0);
       col += rim * vec3(0.70, 0.67, 0.94) * 0.07;
-      if (uIsVideo > 0.5) col = mix(vec3(0.035, 0.030, 0.060), col, inside);
 
       float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
       col = mix(col, fogColor, fogFactor);
@@ -360,6 +353,7 @@ export function mountMusicTunnel(host, options = {}) {
 
   const coverMeshes = [];
   const matsByTrack = new Map();
+  const meshesByTrack = new Map();
   byTrack.forEach((list, trackIndex) => {
     const tex = textures[trackIndex % Math.max(1, textures.length)] || null;
     const frontMat = new THREE.ShaderMaterial({
@@ -389,7 +383,9 @@ export function mountMusicTunnel(host, options = {}) {
       slot.mesh = mesh;
     });
     mesh.userData.slots = list;
+    mesh.userData.baseGeo = geo;      // 方形封面几何，暂停时换回来
     matsByTrack.set(trackIndex, frontMat);
+    meshesByTrack.set(trackIndex, mesh);
     coverGroup.add(mesh);
     coverMeshes.push(mesh);
   });
@@ -416,20 +412,42 @@ export function mountMusicTunnel(host, options = {}) {
     const t = tracks.find(x => x.id === trackId);
     return t && t.videoUrl ? t.videoUrl : '';
   }
+  /* 视频要「完整且不空余」，只能让盒子面跟着视频比例走：
+     横屏把高度缩到 S/aspect，竖屏把宽度缩到 S*aspect，始终不超过原 S，
+     不会跟上下左右的格子重叠。aState 实例属性沿用原几何的那一份。 */
+  const aspectGeoCache = new Map();
+  function aspectGeo(trackIndex, aspect) {
+    const a = Number.isFinite(aspect) && aspect > 0 ? aspect : 16 / 9;
+    const key = trackIndex + ':' + a.toFixed(3);
+    let geo = aspectGeoCache.get(key);
+    if (!geo) {
+      const base = meshesByTrack.get(trackIndex).userData.baseGeo;
+      const w = a >= 1 ? S : S * a;
+      const h = a >= 1 ? S / a : S;
+      geo = new THREE.BoxGeometry(w, h, TH);
+      geo.setAttribute('aState', base.getAttribute('aState'));
+      aspectGeoCache.set(key, geo);
+    }
+    return geo;
+  }
   function applyVideoToTrack(trackId, on) {
     const idx = tracks.findIndex(t => t.id === trackId);
     if (idx < 0 || on && !videoUrlFor(trackId)) return;
     const mat = matsByTrack.get(idx);
+    const mesh = meshesByTrack.get(idx);
     if (!mat) return;
     if (on && videoTexture && videoReady) {
       const a = (videoEl.videoWidth || 16) / (videoEl.videoHeight || 9);
+      const aspect = Number.isFinite(a) && a > 0 ? a : 16 / 9;
       mat.uniforms.map.value = videoTexture;
       mat.uniforms.uIsVideo.value = 1;
-      mat.uniforms.uAspect.value = Number.isFinite(a) && a > 0 ? a : 16 / 9;
+      mat.uniforms.uAspect.value = aspect;
+      if (mesh) mesh.geometry = aspectGeo(idx, aspect);
     } else {
       mat.uniforms.map.value = textures[idx] || null;
       mat.uniforms.uIsVideo.value = 0;
       mat.uniforms.uAspect.value = 1;
+      if (mesh) mesh.geometry = mesh.userData.baseGeo;
     }
   }
   videoEl.addEventListener('loadedmetadata', () => {
@@ -844,8 +862,12 @@ export function mountMusicTunnel(host, options = {}) {
       textures.forEach(tex => tex.dispose());
       coverMeshes.forEach(mesh => {
         mesh.material.forEach(mat => mat.dispose());
+        if (mesh.userData.baseGeo && mesh.userData.baseGeo !== mesh.geometry) {
+          mesh.userData.baseGeo.dispose();
+        }
         mesh.geometry.dispose();
       });
+      aspectGeoCache.forEach(g => g.dispose());
       sideMat.dispose();
       backMat.dispose();
       pGeo.dispose();
@@ -950,6 +972,12 @@ export function mountMusicTunnel(host, options = {}) {
             ? videoEl.videoWidth / videoEl.videoHeight : 0).toFixed(3),
           time: +videoEl.currentTime.toFixed(2),
           onMeshes: coverMeshes.filter(m => m.material[4].uniforms.uIsVideo.value > 0.5).length,
+          boxAspect: (() => {
+            const idx = tracks.findIndex(t => t.id === videoTrackId);
+            const mesh = idx >= 0 ? meshesByTrack.get(idx) : null;
+            const p = mesh && mesh.geometry.parameters;
+            return p && p.height ? +(p.width / p.height).toFixed(3) : 1;
+          })(),
         },
       };
     },

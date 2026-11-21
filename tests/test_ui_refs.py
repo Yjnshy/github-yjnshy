@@ -374,14 +374,16 @@ def test_tunnel_plays_video_for_current_track(html):
     assert "new THREE.VideoTexture(videoEl)" in module
     assert "syncVideo(info)" in module
     assert "correctVideoTime(t)" in module
-    # 等比缩放 + 留边：整帧都在方盒面里，不拉伸不裁切
+    # 不留空余：盒子面本身按视频比例变形，UV 直接铺满（不拉伸不裁切）
     assert "uniform float uAspect" in module
-    assert "vec2 fit = uAspect > 1.0 ? vec2(1.0, 1.0 / uAspect) : vec2(uAspect, 1.0);" in module
-    assert "inside = step(0.0, uv.x) * step(uv.x, 1.0)" in module
-    assert "if (uIsVideo > 0.5) col = mix(vec3(0.035, 0.030, 0.060), col, inside);" in module
-    # 暂停 / 没有原视频 / 解码失败都要退回封面
+    assert "盒子面在 JS 里按视频真实比例改成了横条/竖条" in module
+    assert "const w = a >= 1 ? S : S * a;" in module
+    assert "const h = a >= 1 ? S / a : S;" in module
+    assert "mesh.geometry = aspectGeo(idx, aspect);" in module
+    # 暂停 / 没有原视频 / 解码失败都要退回方形封面
     assert "applyVideoToTrack(videoTrackId, false);" in module
     assert "mat.uniforms.map.value = textures[idx] || null;" in module
+    assert "mesh.geometry = mesh.userData.baseGeo;" in module
 
 
 def test_tunnel_matches_grid_margins(html):
