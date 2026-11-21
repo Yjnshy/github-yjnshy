@@ -3952,7 +3952,7 @@ function renderHistory(kind, boxId) {
 /* ---------------- 歌单与播放器 ---------------- */
 let musicLib = { tracks: [], folder: '', ffmpeg: false };
 let dlActivePrev = false;          // 上一帧的下载状态，用来在结束时刷新歌单
-const player = { id: 0, mode: 'list', speed: 1, seeking: false, savedAt: 0 };
+const player = { id: 0, mode: 'list', speed: 1, seeking: false, savedAt: 0, shuffleOrder: [], shuffleAt: -1 };
 const MODE_LABEL = { list: '顺序播放', single: '单曲循环', shuffle: '随机播放' };
 const SPEEDS = [1, 1.25, 1.5, 2, 0.9, 0.75];
 const SOURCE_LABEL = { download: '下载', extract: '提取', import: '导入' };
@@ -3998,6 +3998,30 @@ function fmtClock(sec) {
 
 function playableTracks() {
   return (musicLib.tracks || []).filter(t => !t.missing);
+}
+
+/* 随机播放的队列：洗牌一次，按队列走到尾再重洗、从第一首继续，不会中途停住 */
+function shuffledIds(ids, avoid) {
+  const arr = ids.slice();
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  // 新一轮的第一首不要正好是刚播完那首
+  if (avoid != null && arr.length > 1 && arr[0] === avoid) {
+    [arr[0], arr[arr.length - 1]] = [arr[arr.length - 1], arr[0]];
+  }
+  return arr;
+}
+function validShuffleQueue(ids) {
+  const q = player.shuffleOrder;
+  if (!Array.isArray(q) || q.length !== ids.length) return false;
+  const set = new Set(ids);
+  return q.every(id => set.has(id));
+}
+function rebuildShuffleQueue() {
+  player.shuffleOrder = shuffledIds(playableTracks().map(t => t.id));
+  player.shuffleAt = player.shuffleOrder.indexOf(player.id);
 }
 
 /* ---- 隧道视图：three.js 场景按需挂载，切回网格就销毁 ---- */
@@ -4450,6 +4474,11 @@ function playTrack(id) {
   }
   // 换歌一律从头放；切换瞬间 timeupdate 会带着上一首的 currentTime，靠 switching 挡掉
   player.id = id;
+  // 点歌/自动续播后，随机队列从这首接着往后走
+  if (player.mode === 'shuffle') {
+    const at = player.shuffleOrder.indexOf(id);
+    if (at >= 0) player.shuffleAt = at; else rebuildShuffleQueue();
+  }
   player.switching = true;      // 加载完成前不记进度、不动进度条
   audio.src = '/api/media/audio?id=' + id;
   audio.playbackRate = player.speed;
@@ -4496,22 +4525,35 @@ function nextTrack(auto) {
     audio.play().catch(() => {});
     return;
   }
-  if (list.length === 1) { playTrack(list[0].id); return; }
-  let next;
-  if (player.mode === 'shuffle') {
-    do { next = list[Math.floor(Math.random() * list.length)]; }
-    while (next.id === player.id);
-  } else {
-    const index = list.findIndex(t => t.id === player.id);
-    if (auto && player.mode === 'list' && index === list.length - 1) {
-      // 顺序播放：放完最后一首就停，不绕回开头
+  if (list.length === 1) {
+    if (auto) {
+      // 只有一首：自动续播时从头再放，别被 playTrack 当成点当前曲而暂停
       const audio = $('audio');
-      audio.pause();
       audio.currentTime = 0;
-      setPlayIcon(false);
-      toast('顺序播放已到最后一首', 'ok');
+      audio.play().catch(() => {});
       return;
     }
+    playTrack(list[0].id);
+    return;
+  }
+  let next;
+  if (player.mode === 'shuffle') {
+    const ids = list.map(t => t.id);
+    if (!validShuffleQueue(ids)) rebuildShuffleQueue();
+    let at = player.shuffleAt;
+    if (at < 0) { rebuildShuffleQueue(); at = player.shuffleAt; }
+    let nextAt = at + 1;
+    if (nextAt >= player.shuffleOrder.length) {
+      // 随机播放到队尾：重洗一遍，从第一首继续
+      player.shuffleOrder = shuffledIds(ids, player.id);
+      nextAt = 0;
+    }
+    player.shuffleAt = nextAt;
+    next = list.find(t => t.id === player.shuffleOrder[nextAt]);
+    if (!next) { rebuildShuffleQueue(); next = list[0]; player.shuffleAt = 0; }
+  } else {
+    const index = list.findIndex(t => t.id === player.id);
+    // 顺序播放：最后一首之后绕过头回到第一首，不中断
     next = list[(index + 1) % list.length];
   }
   playTrack(next.id);
@@ -4533,6 +4575,7 @@ function setPlayMode(mode) {
     btn.title = MODE_LABEL[player.mode] + '（点击切换）';
   }
   try { localStorage.setItem('dly.playMode', player.mode); } catch (e) { /* 隐私模式 */ }
+  if (player.mode === 'shuffle') rebuildShuffleQueue();
   toast('播放模式：' + MODE_LABEL[player.mode], 'ok');
 }
 

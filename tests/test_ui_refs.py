@@ -141,8 +141,12 @@ def test_playback_modes_are_explicit(html):
     for label in ("顺序播放", "单曲循环", "随机播放"):
         assert label in html
     assert "function setPlayMode(" in html
-    # 顺序播放放完最后一首要停，而不是绕回第一首
-    assert "auto && player.mode === 'list' && index === list.length - 1" in html
+    # 顺序播放放到最后一首后绕回第一首，不中断
+    assert "顺序播放已到最后一首" not in html
+    assert "next = list[(index + 1) % list.length];" in html
+    # 随机播放走完一轮后重洗、从头继续
+    assert "if (nextAt >= player.shuffleOrder.length)" in html
+    assert "player.shuffleOrder = shuffledIds(ids, player.id);" in html
     assert "localStorage.setItem('dly.playMode'" in html
     # 图标按钮：点一下切换，图标随模式换
     assert 'data-mode="list"' in html and 'data-mode="single"' in html
