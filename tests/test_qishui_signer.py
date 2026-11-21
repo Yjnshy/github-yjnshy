@@ -72,3 +72,12 @@ def test_full_version_uses_signing(tmp_path):
     assert info and info["audio_url"], info
     assert info["duration"] > 200, info
     assert info["lyric"]
+
+
+def test_qishui_aes_key():
+    """PlayAuth(spade) 解出 16 字节 AES key。"""
+    from dly.core.qishui_import import qishui_aes_key
+    # 从真实 GetPlayInfo 抓到的 hi_res PlayAuth
+    key = qishui_aes_key("orws9le6L/ZluCrAVroe9FOyKs5hiRv3Vroq9mW5N8RJvgGOjg==")
+    assert len(key) == 32, key
+    bytes.fromhex(key)  # 合法 hex

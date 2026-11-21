@@ -22,6 +22,7 @@ import json
 import logging
 import re
 import shutil
+import subprocess
 import time
 import urllib.parse
 import urllib.request
@@ -84,6 +85,7 @@ class QishuiTrack:
     lyric: str = ""
     source_url: str = ""
     error: str = ""
+    decrypt_key: str = ""   # 完整版 CENC 音频的 AES key（ffmpeg -decryption_key）
 
 
 @dataclass
@@ -491,12 +493,37 @@ def full_version(track_id: str, sessionid: str) -> Optional[Dict[str, Any]]:
         if not model_raw:
             return None
         model = json.loads(model_raw) if isinstance(model_raw, str) else model_raw
-        vlist = model.get("video_list") or []
-        if not vlist:
-            return None
-        # 取码率最高的一档（列表通常按码率升序）
-        best = vlist[-1]
-        audio_url = str(best.get("main_url") or "")
+        # 视频直链是 CENC-AES-CTR 加密流，直接用会解码失败、播放条卡 00:00。
+        # 必须先调 GetPlayInfo 拿 PlayAuth → 还原 AES key，下载后交给 ffmpeg 解密。
+        play_info_url = str(player.get("url_player_info") or "")
+        key = ""
+        audio_url = ""
+        if play_info_url:
+            try:
+                info = json.loads(_http(play_info_url, timeout=25).decode("utf-8", "replace"))
+                entries = (((info.get("Result") or {}).get("Data") or {})
+                           .get("PlayInfoList") or [])
+                aac_entries = [e for e in entries
+                               if str(e.get("Codec", "")).lower() == "aac"
+                               and e.get("MainPlayUrl") and e.get("PlayAuth")]
+                if aac_entries:
+                    # 选码率最高的 aac（有解密就无忧，取最好音质）
+                    def _br(e):
+                        try:
+                            return int(e.get("Bitrate") or 0)
+                        except (ValueError, TypeError):
+                            return 0
+                    best = max(aac_entries, key=_br)
+                    audio_url = str(best["MainPlayUrl"])
+                    key = qishui_aes_key(str(best["PlayAuth"]))
+            except Exception as exc:
+                logger.debug("GetPlayInfo 失败 %s: %s", track_id, exc)
+        if not audio_url:
+            # 兜底：老办法用 video_model 直链（试听/未加密流还能用）
+            vlist = model.get("video_list") or []
+            if not vlist:
+                return None
+            audio_url = str(vlist[-1].get("main_url") or "")
         if not audio_url:
             return None
         duration = float(model.get("video_duration") or 0)
@@ -505,10 +532,59 @@ def full_version(track_id: str, sessionid: str) -> Optional[Dict[str, Any]]:
         content = (data.get("lyric") or {}).get("content") or ""
         if content:
             lyric = _ttml_to_lrc(content, offset_ms=0)
-        return {"audio_url": audio_url, "duration": duration, "lyric": lyric}
+        return {"audio_url": audio_url, "duration": duration,
+                "lyric": lyric, "decrypt_key": key}
     except Exception as exc:
         logger.debug("汽水完整版获取失败 %s: %s", track_id, exc)
         return None
+
+
+def qishui_aes_key(play_auth: str) -> str:
+    """从汽水 PlayAuth(spade) 还原 16 字节 AES key（32 位 hex）。
+
+    算法移植自 libresoda/src/soda/crypto.rs 的 extract_key（AGPL-3.0）：
+    Base64 → 前3字节异或算 padding → spade 逆变换 → base36 skip → hex key。
+    解出的 key 供 ffmpeg `-decryption_key` 解 CENC-AES-CTR 音频。
+    """
+    import base64 as _b64
+
+    def bitcount(n: int) -> int:
+        c = 0
+        while n:
+            c += n & 1
+            n >>= 1
+        return c
+
+    def decode_base36(b: int) -> int:
+        ch = chr(b) if b < 128 else ""
+        if "0" <= ch <= "9":
+            return ord(ch) - 48
+        if "a" <= ch <= "z":
+            return ord(ch) - 87
+        if "A" <= ch <= "Z":
+            return ord(ch) - 55
+        return 0
+
+    data = _b64.b64decode(str(play_auth).strip())
+    if len(data) < 3:
+        raise ValueError("PlayAuth 太短")
+    padding = (data[0] ^ data[1] ^ data[2]) - 48
+    if padding < 0 or len(data) < padding + 2:
+        raise ValueError("PlayAuth padding 无效")
+    inner = data[1:len(data) - padding]
+    # decrypt_spade_inner：buff 前缀 FA 55，逐字节异或后减 bitcount 和 21
+    buff = bytes([0xFA, 0x55]) + inner
+    tmp = bytearray()
+    for i, x in enumerate(inner):
+        v = (x ^ buff[i]) - bitcount(i) - 21
+        while v < 0:
+            v += 255
+        tmp.append(v & 0xFF)
+    skip = decode_base36(tmp[0])
+    end = 1 + (len(data) - padding - 2) - skip
+    if end < 1 or end > len(tmp):
+        raise ValueError("PlayAuth 索引越界")
+    return bytes(tmp[1:end]).decode("ascii", "replace").strip()
 
 
 def _ttml_to_lrc(content: str, offset_ms: int = 0) -> str:
@@ -557,6 +633,7 @@ def _song_page(track_id: str, sessionid: str = "") -> QishuiTrack:
                 track.duration = full["duration"]
             if full.get("lyric"):
                 track.lyric = full["lyric"]
+            track.decrypt_key = full.get("decrypt_key") or ""
             track.preview = False
             track.clip_duration = 0
     return track
@@ -684,7 +761,31 @@ def download(track: QishuiTrack, out_dir: Path,
         raise ValueError("音频文件太小，可能已经失效")
     if not data[4:12].startswith(b"ftyp"):
         raise ValueError("下载到的不是 M4A 音频")
-    audio_path.write_bytes(data)
+
+    if track.decrypt_key:
+        # 完整版是 CENC-AES-CTR 加密流：密文直接落盘浏览器解不了（卡 00:00），
+        # 用随程序分发的 ffmpeg -decryption_key 解密，-c:a copy 无损、不重编码。
+        from dly.core import ffmpeg as ffmpeg_mod
+        exe = ffmpeg_mod.find_ffmpeg()
+        if not exe:
+            raise ValueError("缺少 ffmpeg，无法解密汽水完整版音频")
+        cipher = out_dir / (audio_path.stem + ".cipher.m4a")
+        cipher.write_bytes(data)
+        try:
+            proc = subprocess.run(
+                [exe, "-v", "error", "-y", "-decryption_key",
+                 track.decrypt_key, "-i", str(cipher),
+                 "-c:a", "copy", str(audio_path)],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180,
+                creationflags=0x08000000,
+            )
+            if proc.returncode != 0 or not audio_path.is_file() or audio_path.stat().st_size < 1024:
+                msg = proc.stderr.decode("utf-8", "replace").strip()[:120]
+                raise ValueError(f"汽水音频解密失败：{msg or '无输出'}")
+        finally:
+            cipher.unlink(missing_ok=True)
+    else:
+        audio_path.write_bytes(data)
 
     cover_path = None
     if track.cover_url:
