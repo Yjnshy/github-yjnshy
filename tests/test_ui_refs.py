@@ -539,6 +539,9 @@ def test_batch_delete_ui(html):
     # 右键框选取消 + 完成按钮
     assert "start.remove" in html
     assert "marquee.classList.toggle('removing', !!willRemove)" in html
+    # 选框必须带 batch-marquee 基类：否则不可见且撑出底部空白
+    assert "marquee.className = 'batch-marquee';" in html
+    assert "function clearMarquee()" in html
     # 左键框住已选中的自动变取消（框变红），不必非得用右键
     assert "[...inBox].every(id => batchSelected.has(id))" in html
     # 切模式要重渲染，勾选框才会出现

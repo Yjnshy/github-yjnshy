@@ -4893,6 +4893,17 @@ function marqueeMain() { return document.querySelector('.main'); }
 function docY(clientY) { return clientY + (marqueeMain()?.scrollTop || 0); }
 function viewY(y) { return y - (marqueeMain()?.scrollTop || 0); }
 
+// 统一清理选框/滚动定时器，拖拽开始、结束、窗口失焦都调用，避免残留元素撑布局
+function clearMarquee() {
+  if (marqueeRAF) { cancelAnimationFrame(marqueeRAF); marqueeRAF = 0; }
+  if (marqueeScrollTimer) { clearInterval(marqueeScrollTimer); marqueeScrollTimer = 0; }
+  marqueeScrollDir = 0;
+  if (marquee) { marquee.remove(); marquee = null; }
+}
+window.addEventListener('blur', () => {
+  if (marqueeStart || marquee) { marqueeStart = null; clearMarquee(); }
+});
+
 function gridViewport() {
   const grid = $('music-grid');
   const main = marqueeMain();
@@ -4937,6 +4948,9 @@ function drawMarquee() {
     (!marqueeStart.additive && inBox.size > 0 && [...inBox].every(id => batchSelected.has(id)));
   if (!marquee) {
     marquee = document.createElement('div');
+    // 必须带基类：position:fixed 让它脱离文档流（否则撑出底部空白）、
+    // 也提供边框/背景让框可见、pointer-events:none 不挡点击
+    marquee.className = 'batch-marquee';
     document.body.append(marquee);
   }
   marquee.classList.toggle('removing', !!willRemove);
@@ -4973,6 +4987,7 @@ function drawMarquee() {
     if (!main || !main.contains(ev.target)) return;
     if (ev.target.closest('button, input, select, textarea, a, #batch-bar')) return;
     ev.preventDefault();   // 禁掉原生图片拖拽和文字选中
+    clearMarquee();        // 先清掉上次可能残留的框
     marqueeClient = { x: ev.clientX, y: ev.clientY };
     marqueeStart = { x: ev.clientX, y: docY(ev.clientY), moved: false,
                      remove: ev.button === 2,
@@ -4993,12 +5008,9 @@ function drawMarquee() {
   });
   document.addEventListener('mouseup', ev => {
     if (!marqueeStart) return;
-    if (marqueeRAF) { cancelAnimationFrame(marqueeRAF); marqueeRAF = 0; }
-    if (marqueeScrollTimer) { clearInterval(marqueeScrollTimer); marqueeScrollTimer = 0; }
-    marqueeScrollDir = 0;
+    clearMarquee();
     const start = marqueeStart;
     marqueeStart = null;
-    if (marquee) { marquee.remove(); marquee = null; }
     if (!start.moved) return;   // 单击由卡片的 onclick 处理
     const vp = gridViewport() || { l: -1e9, r: 1e9 };
     // box 全用文档坐标；卡片 rect 也加 scrollTop 转文档坐标比较
