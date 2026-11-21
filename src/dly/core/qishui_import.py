@@ -47,6 +47,7 @@ _ALLOWED_HOSTS = ("douyin.com", "qishui.com", "bytedance.com",
 _URL_RE = re.compile(r"https?://[^\s\u4e00-\u9fff]+", re.I)
 _SONG_RE = re.compile(r"/qishui/(?:song|track)/(\d+)")
 _PLAYLIST_RE = re.compile(r"[?&]playlist_id=(\d+)")
+_TRACK_ID_RE = re.compile(r"[?&]track_id=(\d+)")
 _SHORT_RE = re.compile(r"qishui\.douyin\.com/s/([A-Za-z0-9_-]+)")
 _VO_PAGE_RE = re.compile(r"[?&]modal_id=(\d+)")
 
@@ -206,19 +207,30 @@ def _resolve_short(url: str) -> Dict[str, str]:
                     pid = str(medias[0].get("id") or "")
             if pid:
                 return {"kind": "playlist", "value": pid}
-            # 最终 URL 本身也带 playlist_id
+            # 单曲页的 _ROUTER_DATA 带 track_id
+            ld_song = ld.get("song_(id)/page") or {}
+            tid = str(ld_song.get("track_id") or "")
+            if tid:
+                return {"kind": "track", "value": tid}
+            # 最终 URL 本身也带 playlist_id / track_id
             m = _PLAYLIST_RE.search(final)
             if m:
                 return {"kind": "playlist", "value": m.group(1)}
+            m = _TRACK_ID_RE.search(final)
+            if m:
+                return {"kind": "track", "value": m.group(1)}
             return {"kind": "playlist", "value": ""}
         except urllib.error.HTTPError as exc:
             location = exc.headers.get("Location") if exc.headers else ""
             if exc.code in (301, 302, 303, 307, 308) and location:
                 final = urllib.parse.urljoin(final, location)
-                # 重定向地址里通常就带 playlist_id，直接用它，不再多打一次页面
+                # 重定向地址里通常就带 playlist_id / track_id，直接用它，不再多打一次页面
                 m = _PLAYLIST_RE.search(final)
                 if m:
                     return {"kind": "playlist", "value": m.group(1)}
+                m = _TRACK_ID_RE.search(final)
+                if m:
+                    return {"kind": "track", "value": m.group(1)}
                 continue
             raise
     raise ValueError("短链跳转次数过多")

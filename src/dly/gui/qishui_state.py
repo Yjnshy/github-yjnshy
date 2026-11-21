@@ -33,6 +33,7 @@ class QishuiState:
             "done": 0,
             "total": 0,
             "title": "",
+            "kind": "",
             "note": "",
             "items": [],
             "error": "",
@@ -69,7 +70,7 @@ class QishuiState:
             self._busy = True
         self._stop.clear()
         self._set(busy=True, error="", items=[], done=0, total=0,
-                  stage="解析链接", title="", note="", added=0)
+                  stage="解析链接", title="", kind="", note="", added=0)
 
         def work() -> None:
             try:
@@ -85,7 +86,7 @@ class QishuiState:
                 tracks: List[qi.QishuiTrack] = result.tracks
                 if limit and limit > 0:
                     tracks = tracks[:limit]
-                self._set(title=result.title, note=result.note,
+                self._set(title=result.title, kind=result.kind, note=result.note,
                           total=len(tracks), done=0, stage="准备下载")
                 self._log("汽水音乐",
                           f"解析到《{result.title}》共 {len(tracks)} 首", "ok")

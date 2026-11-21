@@ -1893,13 +1893,17 @@
         </div>
         <div class="dy-status" id="qs-status">粘贴汽水音乐的分享文本或歌单链接，音频与封面会直接进歌单。</div>
         <div class="qs-form">
-          <input type="text" id="qs-input" placeholder="例如：https://qishui.douyin.com/s/xxxx/  或单曲链接 / 纯数字曲目 ID">
+          <input type="text" id="qs-input" placeholder="粘贴任意一种：歌单/我喜欢短链 qishui.douyin.com/s/xxx、单曲短链、单曲页链接、纯数字曲目 ID">
+          <div class="dy-actions" style="margin-top:0">
+            <button class="ghost" id="qs-like-btn" onclick="qsFillLiked()" title="用上次成功导入的「我喜欢」歌单链接；第一次请先粘贴一次">从我喜欢导入</button>
+            <span class="hint" id="qs-liked-hint"></span>
+          </div>
           <label class="check"><input type="checkbox" id="qs-limit"> 只取前 10 首（歌单很长时先试一下）</label>
         </div>
         <div class="dy-actions">
           <button class="primary" id="qs-start" onclick="qsStart()">开始采集</button>
           <button class="ghost" id="qs-stop" onclick="qsStop()" hidden>停止</button>
-          <span class="hint">免登录可用；音频可能只有试听片段，完整版需要抓包凭证。</span>
+          <span class="hint">短链和单曲页链接都能直接粘；免登录可用，音频可能只有试听片段。</span>
         </div>
         <div class="dy-progress" id="qs-progress" hidden><span id="qs-progress-text"></span></div>
         <div class="dy-list" id="qs-list" hidden></div>
@@ -2889,6 +2893,7 @@ async function dyDownload() {
 /* ---------------- 汽水音乐分享链接采集 ----------------
    免登录：分享页里带音频/封面直链，后端解析后直接下载并进歌单。 */
 let qsPoll = null;
+let qsPendingLink = '';
 
 function escHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
@@ -2903,11 +2908,31 @@ function qsSetStatus(text, kind) {
   el.className = 'dy-status' + (kind ? ' ' + kind : '');
 }
 
+function qsLikedLink() {
+  try { return localStorage.getItem('dly.qishuiLiked') || ''; }
+  catch (e) { return ''; }
+}
+function qsSyncLikedHint() {
+  const el = $('qs-like-btn');
+  const hint = $('qs-liked-hint');
+  if (!el) return;
+  const link = qsLikedLink();
+  el.disabled = !link;
+  if (hint) hint.textContent = link ? '已记住上次的「我喜欢」链接' : '先粘一次「我喜欢」分享链接，之后即可一键导入';
+}
+function qsFillLiked() {
+  const link = qsLikedLink();
+  if (!link) { qsSetStatus('先粘贴一次「我喜欢」的分享链接，之后就能一键导入了', 'err'); return; }
+  $('qs-input').value = link;
+  qsSetStatus('已填入上次记住的链接，点「开始采集」即可');
+}
+
 function openQishui() {
   const modal = $('qs-modal');
   if (!modal) return;
   modal.hidden = true;   // 先隐藏，下面按状态再决定，避免闪一下旧内容
   modal.hidden = false;
+  qsSyncLikedHint();
   qsSetStatus('粘贴汽水音乐的分享文本或歌单链接，音频与封面会直接进歌单。');
   $('qs-list').hidden = true;
   $('qs-progress').hidden = true;
@@ -2969,6 +2994,14 @@ async function pollQsStatus() {
     if (hint && !s.error) hint.textContent += '（' + s.note + '）';
   }
   renderQsList(s.items);
+  // 解析出歌单就把链接记住（含「我喜欢」），下次可一键导入；单曲不记
+  if (s.kind === 'playlist' && qsPendingLink) {
+    try { localStorage.setItem('dly.qishuiLiked', qsPendingLink); } catch (e) { /* 隐私模式 */ }
+    qsPendingLink = '';
+    qsSyncLikedHint();
+  } else if (s.busy === false && qsPendingLink && s.error) {
+    qsPendingLink = '';
+  }
   if (!s.busy && s.added && typeof refreshLibrary === 'function') refreshLibrary(false);
 }
 
@@ -2981,6 +3014,7 @@ async function qsStart() {
       text,
       limit: $('qs-limit').checked ? 10 : 0
     });
+    qsPendingLink = text;   // 等 poll 里确认是歌单再记住，避免把单曲记成「我喜欢」
   } catch (e) { qsSetStatus(e.message, 'err'); }
 }
 

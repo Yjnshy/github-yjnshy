@@ -21,6 +21,10 @@ def test_parse_share_recognizes_song_playlist_and_id():
     assert pl["kind"] == "short"
     assert pl["value"].startswith("https://qishui.douyin.com/s/")
 
+    # 短链本身分不出单曲/歌单，解析函数都返回 short
+    song_short = qi.parse_share("《四季予你》@汽水音乐 https://qishui.douyin.com/s/i41FQxYa/")
+    assert song_short["kind"] == "short"
+
     direct = qi.parse_share("https://music.douyin.com/qishui/share/playlist?playlist_id=7096700219496368135")
     assert direct == {"kind": "playlist", "value": "7096700219496368135"}
 
