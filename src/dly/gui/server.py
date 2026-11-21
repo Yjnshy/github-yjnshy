@@ -129,6 +129,10 @@ class AppState:
         # 抖音「喜欢/收藏」批量导入（独立状态机，耗时操作在后台线程）
         from dly.gui.dyimport_state import DyImportState
         self.dyimport = DyImportState(lambda tab, msg, lvl="info": self.log(tab, msg, lvl))
+        # 汽水音乐分享链接采集（免登录，音频与封面直接进歌单）
+        from dly.gui.qishui_state import QishuiState
+        self.qishui = QishuiState(
+            lambda tab, msg, lvl="info": self.log(tab, msg, lvl), self.library)
 
     # ---- 事件流 ----
 
@@ -970,6 +974,10 @@ class Handler(BaseHTTPRequestHandler):
             self._json(self.state.dyimport.status())
             return
 
+        if path == "/api/qishui/status":
+            self._json(self.state.qishui.status())
+            return
+
         if path == "/api/library":
             library = self.state.library
             self._json({
@@ -1087,6 +1095,27 @@ class Handler(BaseHTTPRequestHandler):
                                    bool(data.get("extract_mp3"))),
                              daemon=True).start()
             self._json({"ok": True, "count": len(ids)})
+            return
+
+        # 汽水音乐分享链接采集 ---------------------------------------------
+        if path == "/api/qishui/start":
+            text = (data.get("text") or "").strip()
+            if not text:
+                self._json({"error": "先粘贴汽水音乐的分享链接"}, 400)
+                return
+            try:
+                self.state.qishui.start(
+                    text,
+                    output_dir=(data.get("output_dir") or "").strip(),
+                    limit=int(data.get("limit") or 0))
+                self._json({"ok": True})
+            except Exception as exc:  # noqa: BLE001
+                self._json({"error": str(exc)}, 409)
+            return
+
+        if path == "/api/qishui/stop":
+            self.state.qishui.stop()
+            self._json({"ok": True})
             return
 
         if path == "/api/library/add":

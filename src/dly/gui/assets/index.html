@@ -801,6 +801,12 @@
   .dy-status.ok { color: var(--accent); }
   .dy-status.err { color: var(--danger, #e05252); }
   .dy-actions, .dy-scan { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+  /* 汽水音乐采集 */
+  .qs-form { display: grid; gap: 10px; margin-top: 12px; }
+  .qs-form input[type="text"] {
+    width: 100%; padding: 9px 11px; border: 1px solid var(--border);
+    border-radius: 9px; background: var(--card); color: var(--text); font-size: 13px;
+  }
   .dy-progress { margin-top: 12px; font-size: 13px; color: var(--muted); }
   .dy-list-head {
     display: flex; align-items: center; justify-content: space-between;
@@ -1547,6 +1553,7 @@
         <div class="row">
           <button class="primary" id="dl-btn" onclick="startDownload()">开始下载</button>
           <button class="ghost" id="dy-import-btn" onclick="openDyImport()" title="从已登录的抖音账号批量导入喜欢/收藏">从抖音喜欢/收藏导入</button>
+          <button class="ghost" id="qs-import-btn" onclick="openQishui()" title="粘贴汽水音乐分享链接，采集音频与封面进歌单">从汽水音乐导入</button>
           <button class="ghost" id="dl-open" onclick="openLast('download')" hidden>打开文件位置</button>
           <label class="check" id="dl-keep-wrap" hidden>
             <input type="checkbox" id="dl-keep"> 保留原素材
@@ -1874,6 +1881,28 @@
           <span class="hint">下载设置沿用「下载视频」页的画质与目录</span>
           <button class="primary" id="dy-download-btn" onclick="dyDownload()">导入下载</button>
         </div>
+      </div>
+    </div>
+
+    <!-- 汽水音乐分享链接采集 -->
+    <div class="modal" id="qs-modal" hidden>
+      <div class="modal-card dy-modal-card">
+        <div class="modal-head">
+          <h3>从汽水音乐导入</h3>
+          <button class="icon-btn" type="button" onclick="closeQishui()" aria-label="关闭">×</button>
+        </div>
+        <div class="dy-status" id="qs-status">粘贴汽水音乐的分享文本或歌单链接，音频与封面会直接进歌单。</div>
+        <div class="qs-form">
+          <input type="text" id="qs-input" placeholder="例如：https://qishui.douyin.com/s/xxxx/  或单曲链接 / 纯数字曲目 ID">
+          <label class="check"><input type="checkbox" id="qs-limit"> 只取前 10 首（歌单很长时先试一下）</label>
+        </div>
+        <div class="dy-actions">
+          <button class="primary" id="qs-start" onclick="qsStart()">开始采集</button>
+          <button class="ghost" id="qs-stop" onclick="qsStop()" hidden>停止</button>
+          <span class="hint">免登录可用；音频可能只有试听片段，完整版需要抓包凭证。</span>
+        </div>
+        <div class="dy-progress" id="qs-progress" hidden><span id="qs-progress-text"></span></div>
+        <div class="dy-list" id="qs-list" hidden></div>
       </div>
     </div>
 
@@ -2855,6 +2884,108 @@ async function dyDownload() {
     closeDyImport();
     activateTab('download');
   } catch (e) { toast(e.message, 'err'); }
+}
+
+/* ---------------- 汽水音乐分享链接采集 ----------------
+   免登录：分享页里带音频/封面直链，后端解析后直接下载并进歌单。 */
+let qsPoll = null;
+
+function escHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[c]);
+}
+
+function qsSetStatus(text, kind) {
+  const el = $('qs-status');
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'dy-status' + (kind ? ' ' + kind : '');
+}
+
+function openQishui() {
+  const modal = $('qs-modal');
+  if (!modal) return;
+  modal.hidden = true;   // 先隐藏，下面按状态再决定，避免闪一下旧内容
+  modal.hidden = false;
+  qsSetStatus('粘贴汽水音乐的分享文本或歌单链接，音频与封面会直接进歌单。');
+  $('qs-list').hidden = true;
+  $('qs-progress').hidden = true;
+  $('qs-start').hidden = false;
+  $('qs-stop').hidden = true;
+  startQsPoll();
+}
+
+function closeQishui() {
+  const modal = $('qs-modal');
+  if (modal) modal.hidden = true;
+  stopQsPoll();
+}
+
+function startQsPoll() {
+  stopQsPoll();
+  qsPoll = setInterval(pollQsStatus, 1200);
+  pollQsStatus();
+}
+function stopQsPoll() {
+  if (qsPoll) { clearInterval(qsPoll); qsPoll = null; }
+}
+
+function renderQsList(items) {
+  const box = $('qs-list');
+  if (!box) return;
+  box.hidden = !items || !items.length;
+  box.innerHTML = (items || []).map(it => {
+    const label = it.status === '已入库' ? 'ok'
+      : it.status === '失败' ? 'err' : '';
+    return '<div class="dy-item"><div class="dy-txt">'
+      + '<div class="dy-desc">' + escHtml(it.title || '（未命名）') + '</div>'
+      + '<div class="dy-author">' + escHtml(it.artist || '') + ' · '
+      + escHtml(it.status || '') + (it.error ? ' · ' + escHtml(it.error) : '')
+      + '</div></div></div>';
+  }).join('');
+}
+
+async function pollQsStatus() {
+  let s;
+  try {
+    const r = await fetch('/api/qishui/status');
+    s = await r.json();
+  } catch (e) { return; }
+  if (s.error) qsSetStatus(s.error, 'err');
+  else if (s.busy) qsSetStatus(s.stage || '采集中…');
+  else if (s.added) qsSetStatus('已入库 ' + s.added + ' 首，可在「歌单」页查看', 'ok');
+  $('qs-start').hidden = !!s.busy;
+  $('qs-stop').hidden = !s.busy;
+  const prog = $('qs-progress');
+  prog.hidden = !s.busy;
+  if (s.busy) {
+    $('qs-progress-text').textContent =
+      (s.stage || '处理中') + (s.total ? '  ' + (s.done || 0) + '/' + s.total : '')
+      + (s.title ? '  ·  ' + s.title : '');
+  }
+  if (s.note && !s.busy) {
+    const hint = $('qs-status');
+    if (hint && !s.error) hint.textContent += '（' + s.note + '）';
+  }
+  renderQsList(s.items);
+  if (!s.busy && s.added && typeof refreshLibrary === 'function') refreshLibrary(false);
+}
+
+async function qsStart() {
+  const text = ($('qs-input').value || '').trim();
+  if (!text) { qsSetStatus('请先粘贴分享链接', 'err'); return; }
+  qsSetStatus('正在解析分享链接…');
+  try {
+    await api('/api/qishui/start', {
+      text,
+      limit: $('qs-limit').checked ? 10 : 0
+    });
+  } catch (e) { qsSetStatus(e.message, 'err'); }
+}
+
+async function qsStop() {
+  try { await api('/api/qishui/stop', {}); } catch (e) { /* ignore */ }
 }
 
 /* ---------------- 直播间标题自动识别 ----------------

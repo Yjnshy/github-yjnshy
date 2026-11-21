@@ -376,6 +376,28 @@ class Library:
                             "at": round(duration * ratio, 1)})
         return out
 
+    def set_cover(self, track_id: int, source: str | Path) -> bool:
+        """把外部图片（如平台分享页的封面）设为正式封面。"""
+        source = Path(source)
+        if not source.is_file():
+            return False
+        track = self.get(track_id)
+        if not track:
+            return False
+        cover = self.covers / f"{track_id}.jpg"
+        cover.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copyfile(source, cover)
+        except OSError:
+            return False
+        with self._lock:
+            for row in self.tracks:
+                if row["id"] == track_id:
+                    row["cover"] = str(cover)
+                    self._save()
+                    return True
+        return False
+
     def use_frame(self, track_id: int, index: int) -> bool:
         """把选中的候选帧设为正式封面。"""
         track = self.get(track_id)
