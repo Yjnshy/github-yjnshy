@@ -5133,9 +5133,18 @@ function playTrack(id) {
     player.switching = false;
   };
   audio.volume = Number($('pl-vol').value || 100) / 100;
-  audio.play().then(() => setPlayIcon(true)).catch(err => {
+  // 快速切歌时，上一次 play() 的 Promise 会被后续 pause/load 打断，抛 AbortError
+  // （"The play() request was interrupted by a call to pause()"）——这是无害竞态，
+  // 不该弹错误提示吓人。只认最后一次播放请求的结果。
+  const seq = (player.playSeq = (player.playSeq || 0) + 1);
+  audio.play().then(() => { if (seq === player.playSeq) setPlayIcon(true); }).catch(err => {
+    const name = err && err.name;
+    const msg = (err && err.message) || '';
+    // AbortError / 被打断 = 用户又点了别的，正常；只有真实失败才提示
+    if (name === 'AbortError' || /interrupted by/i.test(msg)) return;
+    if (seq !== player.playSeq) return;
     setPlayIcon(false);
-    toast('播放失败：' + (err && err.message ? err.message : '未知原因'), 'err');
+    toast('播放失败：' + msg, 'err');
   });
   $('player').hidden = false;
   applyPlayerHidden();
