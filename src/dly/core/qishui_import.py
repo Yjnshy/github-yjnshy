@@ -194,15 +194,45 @@ def auth_qrcode_status(token: str, cookie: str = "") -> Dict[str, Any]:
     body, resp_headers = _request(_QRSTATUS_API + "?" + query, data=form,
                                   headers=headers)
     data = json.loads(body).get("data") or {}
+    # 登录凭证可能叫 sessionid / sessionid_ss / sid_tt / sid_guard，
+    # 也可能直接出现在响应体里；都要认，不然「扫码成功却没反应」。
     sessionid = ""
+    names = ("sessionid", "sessionid_ss", "sid_tt", "sid_guard")
     for value in resp_headers.get_all("Set-Cookie") or []:
-        m = re.search(r"(?:^|[;,]\s*)sessionid=([^;,\s]+)", value, re.I)
-        if m:
-            sessionid = m.group(1)
+        for name in names:
+            m = re.search(r"(?:^|[;,]\s*)" + name + r"=([^;,\s]+)", value, re.I)
+            if m:
+                sessionid = m.group(1)
+                break
+        if sessionid:
             break
-    return {"status": str(data.get("status") or ""),
+    if not sessionid:
+        for name in names:
+            v = data.get(name)
+            if v:
+                sessionid = str(v)
+                break
+    status = str(data.get("status") or "")
+    # 有的实现确认后只给 redirect_url，登录 cookie 要访问它才下发
+    redirect = str(data.get("redirect_url") or "")
+    if not sessionid and redirect and _allowed(redirect):
+        try:
+            _, redirect_headers = _request(redirect, headers={"Cookie": cookie})
+            for value in redirect_headers.get_all("Set-Cookie") or []:
+                for name in names:
+                    m = re.search(r"(?:^|[;,]\s*)" + name + r"=([^;,\s]+)",
+                                  value, re.I)
+                    if m:
+                        sessionid = m.group(1)
+                        break
+                if sessionid:
+                    break
+        except Exception as exc:
+            logger.debug("扫码跳转取登录态失败: %s", exc)
+    return {"status": status,
             "sessionid": sessionid,
-            "error_code": int(data.get("error_code") or 0)}
+            "error_code": int(data.get("error_code") or 0),
+            "has_cookie": bool(resp_headers.get_all("Set-Cookie"))}
 
 
 def me_playlists(sessionid: str) -> List[Dict[str, str]]:

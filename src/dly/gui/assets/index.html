@@ -1932,8 +1932,9 @@
               <span class="hint" id="qs-login-hint">登录后可直接导入你自己的「我喜欢」歌单</span>
             </div>
             <div id="qs-qr-wrap" hidden>
-              <img id="qs-qr-img" alt="扫码登录二维码" style="width:168px;height:168px;image-rendering:auto">
-              <div class="hint">用手机抖音 APP 扫码并确认</div>
+              <img id="qs-qr-img" alt="扫码登录二维码" style="width:220px;height:220px;image-rendering:auto">
+              <div class="hint" id="qs-qr-hint">用手机抖音 APP 扫码并确认</div>
+              <div class="hint">扫不出来可右键图片另存为，再用抖音「扫一扫」从相册识别</div>
               <button class="ghost" onclick="qsCancelLogin()">取消</button>
             </div>
             <div id="qs-playlists" hidden></div>
@@ -2961,7 +2962,11 @@ function qsRenderLogin(s) {
   if (hint) hint.textContent = s.logged_in ? '已登录，选下面的歌单即可导入'
     : '扫码后可直接导入你自己的「我喜欢」';
   qrWrap.hidden = !s.qrcode;
-  if (s.qrcode) $('qs-qr-img').src = s.qrcode;
+  if (s.qrcode) {
+    $('qs-qr-img').src = s.qrcode;
+    const qh = $('qs-qr-hint');
+    if (qh) qh.textContent = s.qr_hint || '用手机抖音 APP 扫码并确认';
+  }
   plBox.hidden = !s.logged_in || !(s.playlists || []).length;
   if (s.logged_in && (s.playlists || []).length) {
     plBox.innerHTML = s.playlists.map(p =>
@@ -3044,7 +3049,9 @@ async function pollQsStatus() {
     const r = await fetch('/api/qishui/status');
     s = await r.json();
   } catch (e) { return; }
-  if (s.error) qsSetStatus(s.error, 'err');
+  if (s.logged_in && s.error) qsSetStatus(s.error, 'err');
+  else if (s.qrcode) qsSetStatus(s.qr_hint || '请用抖音 APP 扫码并确认');
+  else if (s.error) qsSetStatus(s.error, 'err');
   else if (s.busy) qsSetStatus(s.stage || '采集中…');
   else if (s.added) qsSetStatus('已入库 ' + s.added + ' 首，可在「歌单」页查看', 'ok');
   $('qs-start').hidden = !!s.busy;

@@ -40,6 +40,9 @@ class QishuiState:
             "logged_in": bool(self._sessionid),
             "qrcode": "",
             "qr_expire": 0,
+            "qr_hint": "",
+            "qr_last_status": "",
+            "qr_got_credential": False,
             "playlists": [],
             "busy": False,
             "stage": "",
@@ -101,7 +104,7 @@ class QishuiState:
         self._qr_cookie = qr.get("cookie", "")
         self._login_stop.clear()
         self._set(qrcode=qr["qrcode"], qr_expire=qr.get("expire_at", 0),
-                  logged_in=False)
+                  qr_hint="请用抖音 APP 扫码并确认", logged_in=False)
         self._log("汽水音乐", "二维码已生成，请用抖音 APP 扫码", "info")
 
         def poll() -> None:
@@ -109,6 +112,9 @@ class QishuiState:
             while time.time() < deadline and not self._login_stop.is_set():
                 try:
                     r = qi.auth_qrcode_status(self._qr_token, self._qr_cookie)
+                    # 只记状态和「是否拿到凭证」，绝不把 sessionid 写进日志
+                    self._set(qr_last_status=r.get("status", ""),
+                              qr_got_credential=bool(r.get("sessionid")))
                     if r.get("sessionid"):
                         self._sessionid = r["sessionid"]
                         self._save_auth()
@@ -116,15 +122,20 @@ class QishuiState:
                         self._log("汽水音乐", "登录成功", "ok")
                         return
                     status = r.get("status")
-                    if status in ("expired", "canceled"):
+                    if status in ("expired", "canceled", "cancelled", "5", "4"):
                         self._set(qrcode="", qr_expire=0,
                                   error="二维码已失效，请重新获取")
                         self._log("汽水音乐", "二维码已失效", "err")
                         return
-                    if status == "scanned":
+                    if status in ("scanned", "2"):
+                        self._set(qr_hint="已扫码，请在手机上确认")
                         self._log("汽水音乐", "已扫码，请在手机上确认", "info")
+                    elif status in ("success", "3", "confirmed"):
+                        self._set(qr_hint="已确认，正在获取登录态…")
+                        self._log("汽水音乐", "已确认，正在获取登录态…", "info")
                 except Exception as exc:
-                    logger.debug("轮询汽水扫码状态失败: %s", exc)
+                    logger.warning("轮询汽水扫码状态失败: %s", exc)
+                    self._set(qr_hint="轮询失败：" + str(exc)[:60])
                 time.sleep(1.5)
             if not self._login_stop.is_set():
                 self._set(qrcode="", qr_expire=0)
