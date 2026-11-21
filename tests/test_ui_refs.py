@@ -531,6 +531,11 @@ def test_batch_delete_ui(html):
     assert "-webkit-user-drag: none" in html
     assert "ev.preventDefault();" in html
     assert "marqueeScrollDir" in html
+    # 文档坐标框选：滚动后选框跟内容走，不固定在屏幕
+    assert "function docY(clientY)" in html
+    assert "function viewY(y)" in html
+    assert "body.batch-mode { user-select: none;" in html
+    assert "ev.target.closest('button, input, select, textarea, a, #batch-bar')" in html
     # 右键框选取消 + 完成按钮
     assert "start.remove" in html
     assert "marquee.className = 'batch-marquee' + (marqueeStart.remove ? ' removing' : '')" in html

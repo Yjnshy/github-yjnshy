@@ -777,7 +777,9 @@
   .danger-btn:disabled { opacity: .45; cursor: not-allowed; }
   /* 批量管理只在网格视图出现；隧道视图把这一条的空间全部还给画面 */
   body.music-tunnel-view .batch-bar { display: none !important; }
-  /* 批量模式：卡片显示为可勾选，左上角的勾选框替代删除× */
+  /* 批量模式：整页禁止选中文字变蓝、禁止原生拖拽，任意位置都能拖动框选 */
+  body.batch-mode { user-select: none; -webkit-user-select: none; }
+  body.batch-mode .main { cursor: crosshair; }
   body.batch-mode .music-grid { cursor: crosshair; user-select: none; }
   /* 关键：禁掉图片/链接的浏览器原生拖拽，否则左键按住封面会拖出一张半透明图片，
      框选根本收不到 mousemove（用户看到的「只拖图标、选不了」就是这个）。 */
@@ -4874,20 +4876,24 @@ function batchDelete() {
   })();
 }
 
-/* 鼠标左键拖拽框选：在 .music-grid 上按下 Left、拖出矩形，松开时选中相交卡片。
-   滚轮照常滚动（只在 mousedown/move/up 期间画框，不拦截 wheel）。 */
+/* 批量框选（拖拽）。关键：**用文档坐标**存起点/终点——起点 = clientY + scrollTop。
+   这样页面滚动时，选框和卡片一起移动，不会「框固定在屏幕上、卡片却滚走了」。
+   左键拖拽=选中；右键拖拽=取消选中；Shift/Ctrl 叠加。滚轮照常滚动。 */
 let marqueeRAF = 0;
-let marqueeLast = { x: 0, y: 0 };
-let marqueeScrollDir = 0;    // 拖到边缘时的自动滚动方向
+let marqueeScrollDir = 0;
 let marqueeScrollTimer = 0;
+let marqueeClient = { x: 0, y: 0 };   // 鼠标当前视口位置（用于边缘自动滚动）
+
+function marqueeMain() { return document.querySelector('.main'); }
+function docY(clientY) { return clientY + (marqueeMain()?.scrollTop || 0); }
+function viewY(y) { return y - (marqueeMain()?.scrollTop || 0); }
 
 function gridViewport() {
   const grid = $('music-grid');
-  const main = document.querySelector('.main');
+  const main = marqueeMain();
   if (!grid || !main) return null;
   const g = grid.getBoundingClientRect(), m = main.getBoundingClientRect();
-  // 框选只在歌单列表的可视区内：上不下于页头，下不压到 sticky 播放条。
-  // 播放条就贴在 .main 底部，把选框裁到 .main 可视区即可。
+  // 上不下于页头、下不压到 sticky 播放条；左右到歌单网格边缘
   return { l: g.left, r: g.right,
            t: Math.max(g.top, m.top),
            b: Math.min(g.bottom, m.bottom) };
@@ -4898,30 +4904,35 @@ function drawMarquee() {
   if (!marqueeStart || !marqueeStart.moved) return;
   const vp = gridViewport();
   if (!vp) return;
-  const x = Math.min(Math.max(marqueeLast.x, vp.l), vp.r);
-  const y = Math.min(Math.max(marqueeLast.y, vp.t), vp.b);
-  const left = Math.min(x, marqueeStart.x), top = Math.min(y, marqueeStart.y);
+  // 文档坐标 → 视口坐标画框；起点滚动后自然跟着内容走
+  const startVY = viewY(marqueeStart.y);
+  const endVY = viewY(marqueeLast.y);
+  const endX = Math.min(Math.max(marqueeLast.x, vp.l), vp.r);
+  const endY = Math.min(Math.max(endVY, vp.t), vp.b);
   if (!marquee) {
     marquee = document.createElement('div');
     marquee.className = 'batch-marquee' + (marqueeStart.remove ? ' removing' : '');
     document.body.append(marquee);
   }
-  marquee.style.left = left + 'px';
-  marquee.style.top = top + 'px';
-  marquee.style.width = Math.abs(x - marqueeStart.x) + 'px';
-  marquee.style.height = Math.abs(y - marqueeStart.y) + 'px';
+  marquee.style.left = Math.min(endX, marqueeStart.x) + 'px';
+  marquee.style.top = Math.min(endY, startVY) + 'px';
+  marquee.style.width = Math.abs(endX - marqueeStart.x) + 'px';
+  marquee.style.height = Math.abs(endY - startVY) + 'px';
 
-  // 拖到列表上下边缘时自动滚动，才能框到屏幕外的卡片。
-  // 用独立定时器持续滚，鼠标停在边缘不动也会继续滚。
+  // 鼠标停在列表上下边缘时持续自动滚动，框随之延伸
   const edge = 46;
-  marqueeScrollDir = y < vp.t + edge ? -1 : (y > vp.b - edge ? 1 : 0);
+  marqueeScrollDir = endY < vp.t + edge ? -1 : (endY > vp.b - edge ? 1 : 0);
   if (marqueeScrollDir && !marqueeScrollTimer) {
     marqueeScrollTimer = setInterval(() => {
-      const main = document.querySelector('.main');
+      const main = marqueeMain();
       if (!marqueeStart || !main) { clearInterval(marqueeScrollTimer); marqueeScrollTimer = 0; return; }
       const before = main.scrollTop;
       main.scrollTop += marqueeScrollDir * 14;
-      if (main.scrollTop !== before) drawMarquee();   // 滚动后选框跟着内容重算
+      if (main.scrollTop !== before) {
+        // 终点是鼠标视口位置 + 新的 scrollTop：滚动后框往文档下方/上方延伸
+        marqueeLast = { x: marqueeClient.x, y: docY(marqueeClient.y) };
+        drawMarquee();
+      }
     }, 30);
   } else if (!marqueeScrollDir && marqueeScrollTimer) {
     clearInterval(marqueeScrollTimer); marqueeScrollTimer = 0;
@@ -4929,29 +4940,29 @@ function drawMarquee() {
 }
 
 (function initBatchMarquee() {
+  // 批量模式下，歌单页任意位置按下都能开始框选（按钮/控件除外），避免误触发文字选择
   document.addEventListener('mousedown', ev => {
     if (!batchMode || (ev.button !== 0 && ev.button !== 2)) return;
-    const grid = $('music-grid');
-    if (!grid || !grid.contains(ev.target)) return;
-    const vp = gridViewport();
-    if (!vp || ev.clientX < vp.l || ev.clientX > vp.r
-        || ev.clientY < vp.t || ev.clientY > vp.b) return;   // 点列表外（播放条等）不框选
-    // 关键：阻止默认行为，禁止浏览器原生拖拽图片/选中文字
-    ev.preventDefault();
-    marqueeStart = { x: ev.clientX, y: ev.clientY, moved: false,
+    const main = marqueeMain();
+    if (!main || !main.contains(ev.target)) return;
+    if (ev.target.closest('button, input, select, textarea, a, #batch-bar')) return;
+    ev.preventDefault();   // 禁掉原生图片拖拽和文字选中
+    marqueeClient = { x: ev.clientX, y: ev.clientY };
+    marqueeStart = { x: ev.clientX, y: docY(ev.clientY), moved: false,
                      remove: ev.button === 2,
                      additive: ev.ctrlKey || ev.metaKey || ev.shiftKey };
-    marqueeLast = { x: ev.clientX, y: ev.clientY };
+    marqueeLast = { x: ev.clientX, y: docY(ev.clientY) };
   });
   document.addEventListener('contextmenu', ev => {
-    if (batchMode && $('music-grid') && $('music-grid').contains(ev.target)) ev.preventDefault();
+    if (batchMode && marqueeMain() && marqueeMain().contains(ev.target)) ev.preventDefault();
   });
   document.addEventListener('mousemove', ev => {
     if (!marqueeStart) return;
-    const dx = ev.clientX - marqueeStart.x, dy = ev.clientY - marqueeStart.y;
+    marqueeClient = { x: ev.clientX, y: ev.clientY };
+    const dx = ev.clientX - marqueeStart.x, dy = ev.clientY - viewY(marqueeStart.y);
     if (!marqueeStart.moved && Math.hypot(dx, dy) < 6) return;
     marqueeStart.moved = true;
-    marqueeLast = { x: ev.clientX, y: ev.clientY };
+    marqueeLast = { x: ev.clientX, y: docY(ev.clientY) };
     if (!marqueeRAF) marqueeRAF = requestAnimationFrame(drawMarquee);
   });
   document.addEventListener('mouseup', ev => {
@@ -4963,26 +4974,27 @@ function drawMarquee() {
     marqueeStart = null;
     if (marquee) { marquee.remove(); marquee = null; }
     if (!start.moved) return;   // 单击由卡片的 onclick 处理
-    const vp = gridViewport() || { l: -1e9, r: 1e9, t: -1e9, b: 1e9 };
-    const x = Math.min(Math.max(ev.clientX, vp.l), vp.r);
-    const y = Math.min(Math.max(ev.clientY, vp.t), vp.b);
+    const vp = gridViewport() || { l: -1e9, r: 1e9 };
+    // box 全用文档坐标；卡片 rect 也加 scrollTop 转文档坐标比较
+    const scrollTop = marqueeMain()?.scrollTop || 0;
+    const endX = Math.min(Math.max(ev.clientX, vp.l), vp.r);
     const box = {
-      l: Math.min(x, start.x), r: Math.max(x, start.x),
-      t: Math.min(y, start.y), b: Math.max(y, start.y),
+      l: Math.min(endX, start.x), r: Math.max(endX, start.x),
+      t: Math.min(docY(ev.clientY), start.y), b: Math.max(docY(ev.clientY), start.y),
     };
+    const inBox = new Set();
+    for (const el of batchVisibleTracks()) {
+      const r = el.getBoundingClientRect();
+      const top = r.top + scrollTop, bottom = r.bottom + scrollTop;
+      if (r.right < box.l || r.left > box.r || bottom < box.t || top > box.b) continue;
+      inBox.add(Number(el.dataset.tid));
+    }
     if (start.remove) {
-      for (const el of batchVisibleTracks()) {
-        const r = el.getBoundingClientRect();
-        if (r.right < box.l || r.left > box.r || r.bottom < box.t || r.top > box.b) continue;
-        batchSelected.delete(Number(el.dataset.tid));
-      }
+      for (const id of inBox) batchSelected.delete(id);          // 右键框：取消框内
+    } else if (start.additive) {
+      for (const id of inBox) batchSelected.add(id);             // 叠加
     } else {
-      if (!start.additive) batchSelected.clear();
-      for (const el of batchVisibleTracks()) {
-        const r = el.getBoundingClientRect();
-        if (r.right < box.l || r.left > box.r || r.bottom < box.t || r.top > box.b) continue;
-        batchSelected.add(Number(el.dataset.tid));
-      }
+      batchSelected = inBox;                                     // 普通框：只留框内
     }
     batchRefresh();
   });
