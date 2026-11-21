@@ -107,6 +107,8 @@ const CoverShader = {
   uniforms: {
     map: { value: null },
     uTime: { value: 0 },
+    uIsVideo: { value: 0 },          // 1 = 当前纹理是视频帧
+    uAspect: { value: 1 },           // 视频真实宽高比（2346/1080 ≈ 2.17）
     fogColor: { value: new THREE.Color(0x05060f) },
     fogNear: { value: D * 2.2 },
     fogFar: { value: D * 10.5 },
@@ -126,6 +128,8 @@ const CoverShader = {
   fragmentShader: `
     uniform sampler2D map;
     uniform float uTime;
+    uniform float uIsVideo;
+    uniform float uAspect;
     uniform vec3 fogColor;
     uniform float fogNear;
     uniform float fogFar;
@@ -134,14 +138,23 @@ const CoverShader = {
     varying vec2 vState;
     float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
     void main(){
-      // 远处轻微虚化：越远取样半径越大，画面才有景深，不像一面贴图墙
-      float dof = smoothstep(14.0, 34.0, vFogDepth);
+      // 视频按真实宽高比等比缩放并居中，整帧都在画面内，不拉伸也不裁切；
+      // 方盒面多出来的上下（本例视频 2346x1080）填暗底。封面仍是原样铺满。
+      vec2 uv = vUv;
+      float inside = 1.0;
+      if (uIsVideo > 0.5) {
+        vec2 fit = uAspect > 1.0 ? vec2(1.0, 1.0 / uAspect) : vec2(uAspect, 1.0);
+        uv = (vUv - 0.5) / fit + 0.5;
+        inside = step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
+      }
+      // 远处轻微虚化：视频不做大半径取样，否则运动画面会糊
+      float dof = uIsVideo > 0.5 ? 0.0 : smoothstep(14.0, 34.0, vFogDepth);
       vec2 texel = vec2((0.5 + dof * 3.6) / 512.0, (0.5 + dof * 3.6) / 512.0);
-      vec3 col = texture2D(map, vUv).rgb * 0.36
-               + texture2D(map, vUv + vec2(texel.x, 0.0)).rgb * 0.16
-               + texture2D(map, vUv - vec2(texel.x, 0.0)).rgb * 0.16
-               + texture2D(map, vUv + vec2(0.0, texel.y)).rgb * 0.16
-               + texture2D(map, vUv - vec2(0.0, texel.y)).rgb * 0.16;
+      vec3 col = texture2D(map, uv).rgb * 0.36
+               + texture2D(map, uv + vec2(texel.x, 0.0)).rgb * 0.16
+               + texture2D(map, uv - vec2(texel.x, 0.0)).rgb * 0.16
+               + texture2D(map, uv + vec2(0.0, texel.y)).rgb * 0.16
+               + texture2D(map, uv - vec2(0.0, texel.y)).rgb * 0.16;
 
       float edge = min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y));
       // 最外 .014 是倒角：左上亮、右下暗
@@ -152,15 +165,17 @@ const CoverShader = {
       // 倒角内侧一条细暗边
       float inner = smoothstep(0.014, 0.020, edge);
       col *= mix(0.93, 1.0, inner);
-      // 纸张颗粒
-      col += (hash(vUv * 700.0) - 0.5) * 0.009;
-      // 覆膜高光：从左上方斜扫，抬起/主封面时更亮
-      float sweep = fract(uTime * 0.07 + vUv.y * 0.6) * 2.6 - 0.8;
-      float band = exp(-pow((vUv.x * 0.7 + (1.0 - vUv.y) * 0.3) - sweep, 2.0) * 90.0);
-      col += band * (0.04 + 0.12 * max(vState.y, vState.x)) * vec3(1.0, 0.95, 1.0);
+      // 纸张颗粒和覆膜扫光只给静态封面，视频画面保持干净
+      if (uIsVideo < 0.5) {
+        col += (hash(vUv * 700.0) - 0.5) * 0.009;
+        float sweep = fract(uTime * 0.07 + vUv.y * 0.6) * 2.6 - 0.8;
+        float band = exp(-pow((vUv.x * 0.7 + (1.0 - vUv.y) * 0.3) - sweep, 2.0) * 90.0);
+        col += band * (0.04 + 0.12 * max(vState.y, vState.x)) * vec3(1.0, 0.95, 1.0);
+      }
       // 边缘淡紫 fresnel
       float rim = pow(1.0 - bevel, 6.0);
       col += rim * vec3(0.70, 0.67, 0.94) * 0.07;
+      if (uIsVideo > 0.5) col = mix(vec3(0.035, 0.030, 0.060), col, inside);
 
       float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
       col = mix(col, fogColor, fogFactor);
@@ -344,12 +359,15 @@ export function mountMusicTunnel(host, options = {}) {
   });
 
   const coverMeshes = [];
+  const matsByTrack = new Map();
   byTrack.forEach((list, trackIndex) => {
     const tex = textures[trackIndex % Math.max(1, textures.length)] || null;
     const frontMat = new THREE.ShaderMaterial({
       uniforms: {
         map: { value: tex },
         uTime: { value: 0 },
+        uIsVideo: { value: 0 },
+        uAspect: { value: 1 },
         fogColor: { value: bgColor },
         fogNear: { value: D * 2.2 },
         fogFar: { value: D * 10.5 },
@@ -371,8 +389,69 @@ export function mountMusicTunnel(host, options = {}) {
       slot.mesh = mesh;
     });
     mesh.userData.slots = list;
+    matsByTrack.set(trackIndex, frontMat);
     coverGroup.add(mesh);
     coverMeshes.push(mesh);
+  });
+
+  /* ---- 视频：全场只有一个隐藏 video，只替换「正在播放那首」的纹理 ----
+     其余曲目继续用封面；暂停、无原视频、解码失败都退回封面。
+     视频静音，声音仍由抽出来的 mp3 负责，避免双份声。 */
+  const videoEl = document.createElement('video');
+  videoEl.muted = true;
+  videoEl.defaultMuted = true;
+  videoEl.playsInline = true;
+  videoEl.setAttribute('playsinline', '');
+  videoEl.preload = 'auto';
+  videoEl.loop = true;               // 视频比音频短时不会定格在末帧
+  videoEl.style.display = 'none';
+  host.appendChild(videoEl);
+  let videoTexture = null;
+  let videoTrackId = 0;
+  let videoReady = false;
+  let videoWanted = false;
+  let videoTime = 0;
+
+  function videoUrlFor(trackId) {
+    const t = tracks.find(x => x.id === trackId);
+    return t && t.videoUrl ? t.videoUrl : '';
+  }
+  function applyVideoToTrack(trackId, on) {
+    const idx = tracks.findIndex(t => t.id === trackId);
+    if (idx < 0 || on && !videoUrlFor(trackId)) return;
+    const mat = matsByTrack.get(idx);
+    if (!mat) return;
+    if (on && videoTexture && videoReady) {
+      const a = (videoEl.videoWidth || 16) / (videoEl.videoHeight || 9);
+      mat.uniforms.map.value = videoTexture;
+      mat.uniforms.uIsVideo.value = 1;
+      mat.uniforms.uAspect.value = Number.isFinite(a) && a > 0 ? a : 16 / 9;
+    } else {
+      mat.uniforms.map.value = textures[idx] || null;
+      mat.uniforms.uIsVideo.value = 0;
+      mat.uniforms.uAspect.value = 1;
+    }
+  }
+  videoEl.addEventListener('loadedmetadata', () => {
+    if (!videoTexture) {
+      videoTexture = new THREE.VideoTexture(videoEl);
+      videoTexture.colorSpace = THREE.SRGBColorSpace;
+      videoTexture.minFilter = THREE.LinearFilter;
+      videoTexture.magFilter = THREE.LinearFilter;
+      videoTexture.generateMipmaps = false;
+    }
+    videoReady = true;
+    applyVideoToTrack(videoTrackId, videoWanted);
+    if (videoWanted) {
+      if (videoTime > 0 && Math.abs(videoEl.currentTime - videoTime) > 0.4) {
+        try { videoEl.currentTime = videoTime; } catch (e) { /* 还没可跳 */ }
+      }
+      if (!state.paused) videoEl.play().catch(() => {});
+    }
+  });
+  videoEl.addEventListener('error', () => {
+    videoReady = false;
+    applyVideoToTrack(videoTrackId, false);
   });
 
   const dummy = new THREE.Object3D();
@@ -750,6 +829,11 @@ export function mountMusicTunnel(host, options = {}) {
       state.destroyed = true;
       cancelAnimationFrame(state.raf);
       observer.disconnect();
+      videoEl.pause();
+      videoEl.removeAttribute('src');
+      videoEl.load();
+      videoEl.remove();
+      if (videoTexture) videoTexture.dispose();
       const el = renderer.domElement;
       el.removeEventListener('wheel', onWheel);
       el.removeEventListener('pointerdown', onPointerDown);
@@ -775,8 +859,50 @@ export function mountMusicTunnel(host, options = {}) {
       renderer.dispose();
       el.remove();
     },
-    setPaused(value) { state.paused = !!value; },
+    setPaused(value) {
+      state.paused = !!value;
+      // 离开歌单页时连视频一起停，别在后台白解码；回来再接着放
+      if (state.paused) videoEl.pause();
+      else if (videoWanted && videoReady) videoEl.play().catch(() => {});
+    },
     setTravel(value) { state.travel = value; },
+    /* 播放器把 audio 的状态推过来：切歌换 src，播/停同步，拖动进度同步时间。
+       videoReady 之前只记状态，等 loadedmetadata 再一次性接上纹理。 */
+    syncVideo(info) {
+      const id = Number(info && info.id) || 0;
+      const playing = !!(info && info.playing);
+      const t = Math.max(0, Number(info && info.time) || 0);
+      if (id !== videoTrackId) {
+        if (videoTrackId) applyVideoToTrack(videoTrackId, false);
+        videoTrackId = id;
+        videoReady = false;
+        const url = videoUrlFor(id);
+        if (url) { videoEl.src = url; videoEl.load(); }
+        else { videoEl.removeAttribute('src'); videoEl.load(); }
+      }
+      videoWanted = playing;
+      videoTime = t;
+      if (videoReady && videoUrlFor(videoTrackId)) {
+        if (playing) {
+          applyVideoToTrack(videoTrackId, true);
+          if (Math.abs(videoEl.currentTime - t) > 0.4) {
+            try { videoEl.currentTime = t; } catch (e) { /* 还没可跳 */ }
+          }
+          if (!state.paused) videoEl.play().catch(() => {});
+        } else {
+          // 不播了就换回封面，别把视频的末帧留在隧道里
+          videoEl.pause();
+          applyVideoToTrack(videoTrackId, false);
+        }
+      }
+    },
+    // 每帧不必都校正，audio 在 timeupdate 里发现偏差超过 0.6 秒才调
+    correctVideoTime(t) {
+      if (!videoReady || !videoWanted || !videoUrlFor(videoTrackId)) return;
+      if (Math.abs(videoEl.currentTime - t) > 0.6) {
+        try { videoEl.currentTime = t; } catch (e) { /* 忽略 */ }
+      }
+    },
     selectTrack(trackId) {
       // 外部切歌（自动下一首、上一首/下一首按钮）：挑离当前视角最近的一层里，
       // 属于这首歌的封面飞入中央。不能随便取第一张，否则相机会被拽到隧道深处。
@@ -814,6 +940,17 @@ export function mountMusicTunnel(host, options = {}) {
           const d = camera.position.z - s.z;
           return d > 2 && d < D * 10.5;
         }).length,
+        video: {
+          track: videoTrackId,
+          ready: videoReady,
+          wanted: videoWanted,
+          playing: !videoEl.paused,
+          src: !!videoEl.src,
+          aspect: +(videoEl.videoWidth && videoEl.videoHeight
+            ? videoEl.videoWidth / videoEl.videoHeight : 0).toFixed(3),
+          time: +videoEl.currentTime.toFixed(2),
+          onMeshes: coverMeshes.filter(m => m.material[4].uniforms.uIsVideo.value > 0.5).length,
+        },
       };
     },
   };

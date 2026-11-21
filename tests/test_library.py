@@ -127,6 +127,51 @@ def test_audio_endpoint_supports_range(tmp_path, monkeypatch, fake_mp3: Path):
         ctx.shutdown()
 
 
+def test_video_endpoint_supports_range(tmp_path, monkeypatch):
+    """隧道视频走同一套 Range：拖进度、切歌时不能跳回开头。"""
+    mp3 = tmp_path / "同名字幕.mp3"
+    mp3.write_bytes(bytes(range(256)) * 4)
+    mp4 = tmp_path / "同名字幕.mp4"
+    mp4.write_bytes(bytes(range(256)) * 12)      # 3072 字节，同名兄弟视频
+    monkeypatch.setattr(paths, "data_dir", lambda: tmp_path)
+    monkeypatch.setattr(srv, "DEFAULT_PORT", 8922)
+    ctx = srv.create_app(desktop=False)
+    ctx.start()
+    try:
+        req = urllib.request.Request(
+            ctx.url + "api/library/add",
+            data=json.dumps({"path": str(mp3)}).encode(),
+            method="POST", headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as res:
+            track = json.loads(res.read())["track"]
+
+        with urllib.request.urlopen(ctx.url + "api/library", timeout=5) as res:
+            assert json.loads(res.read())["tracks"][0]["has_video"] is True
+
+        full = urllib.request.urlopen(
+            f"{ctx.url}api/media/video?id={track['id']}", timeout=5)
+        assert full.status == 200
+        assert full.headers.get("Accept-Ranges") == "bytes"
+        assert int(full.headers["Content-Length"]) == 3072
+
+        req = urllib.request.Request(
+            f"{ctx.url}api/media/video?id={track['id']}",
+            headers={"Range": "bytes=100-199"})
+        with urllib.request.urlopen(req, timeout=5) as part:
+            assert part.status == 206
+            assert part.headers["Content-Range"] == "bytes 100-199/3072"
+            assert len(part.read()) == 100
+
+        req = urllib.request.Request(
+            f"{ctx.url}api/media/video?id={track['id']}",
+            headers={"Range": "bytes=-16"})
+        with urllib.request.urlopen(req, timeout=5) as tail:
+            assert tail.status == 206
+            assert tail.headers["Content-Range"] == "bytes 3056-3071/3072"
+    finally:
+        ctx.shutdown()
+
+
 def test_tunnel_assets_are_served(tmp_path, monkeypatch):
     """三维视图用到三个脚本：隧道模块本身 + 内置的 three.js 两个包。"""
     monkeypatch.setattr(paths, "data_dir", lambda: tmp_path)

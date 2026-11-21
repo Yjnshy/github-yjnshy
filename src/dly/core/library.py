@@ -260,6 +260,11 @@ class Library:
         path = Path(track["cover"])
         return path if path.is_file() else None
 
+    def video_of(self, track_id: int) -> Optional[Path]:
+        """曲目对应的原视频：隧道里播视频用，没视频就返回 None。"""
+        track = self.get(track_id)
+        return _video_for(track) if track else None
+
     # ---- 写入 ----
 
     def add(self, path: str | Path, title: str = "",

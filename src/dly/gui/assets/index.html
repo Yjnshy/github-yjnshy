@@ -4074,7 +4074,20 @@ function tunnelTracks() {
     coverUrl: t.has_cover
       ? '/api/media/cover?id=' + t.id + '&v=' + (t.cover_ver || 0)
       : 'logo.png',
+    videoUrl: t.has_video ? '/api/media/video?id=' + t.id : '',
   }));
+}
+
+/* 把 audio 的状态推给隧道里的视频：播/停、切歌、拖进度都走这一处。
+   隧道视频静音，声音只由 mp3 出。 */
+function syncTunnelVideo(playing) {
+  if (!tunnel || !tunnel.syncVideo) return;
+  const audio = $('audio');
+  tunnel.syncVideo({
+    id: player.id,
+    playing: playing === undefined ? !!(audio && !audio.paused) : !!playing,
+    time: audio ? Math.max(0, audio.currentTime || 0) : 0,
+  });
 }
 
 function mountTunnel() {
@@ -4091,6 +4104,8 @@ function mountTunnel() {
       reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     });
     window.__dlyTunnel = tunnel;
+    // 新建的隧道要从播放器接上当前状态：若正在播放，对应格子立刻换成视频
+    syncTunnelVideo();
   } catch (err) {
     // WebGL 起不来（老显卡、驱动被禁）时不能让整页白屏，退回网格
     console.error('三维视图启动失败', err);
@@ -4531,6 +4546,7 @@ function nextTrack(auto) {
       const audio = $('audio');
       audio.currentTime = 0;
       audio.play().catch(() => {});
+      syncTunnelVideo(true);   // 单曲重播：audio 还在播，不会触发 play 事件
       return;
     }
     playTrack(list[0].id);
@@ -4626,20 +4642,25 @@ function bindAudio() {
       $('pl-cur').textContent = fmtClock(audio.currentTime);
     }
     if (dur) $('pl-dur').textContent = fmtClock(dur);
+    // 音频和视频是两个文件，偶尔会漂；超过 0.6 秒才校正一次，别每帧跳
+    if (tunnel && tunnel.correctVideoTime) tunnel.correctVideoTime(audio.currentTime || 0);
     savePosition(false);
   });
   // 媒体加载失败或提前可播时也要解除「切换中」，否则进度永远不会被保存
   audio.addEventListener('canplay', () => { player.switching = false; });
   audio.addEventListener('error', () => { player.switching = false; });
   audio.addEventListener('ended', () => nextTrack(true));
-  audio.addEventListener('play', () => setPlayIcon(true));
-  audio.addEventListener('pause', () => { setPlayIcon(false); savePosition(true); });
+  audio.addEventListener('play', () => { setPlayIcon(true); syncTunnelVideo(true); });
+  audio.addEventListener('pause', () => {
+    setPlayIcon(false); savePosition(true); syncTunnelVideo(false);
+  });
 
   seek.addEventListener('input', () => { player.seeking = true; });
   seek.addEventListener('change', () => {
     const dur = audio.duration || 0;
     if (dur) audio.currentTime = dur * (Number(seek.value) / 1000);
     player.seeking = false;
+    syncTunnelVideo(!audio.paused);
   });
   const vol = $('pl-vol');
   if (vol) {

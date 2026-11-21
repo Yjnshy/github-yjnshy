@@ -781,21 +781,12 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def _send_audio(self) -> None:
-        """音频：必须支持 Range。
+    def _send_range(self, path: Path, default_ctype: str, label: str) -> None:
+        """音频/视频共用：必须支持 Range。
 
-        浏览器播本地音频时先发 ``Range: bytes=0-``，拖动进度条还要再发
+        浏览器播本地媒体时先发 ``Range: bytes=0-``，拖动进度条还要再发
         区间请求；不支持 206 的话时间轴会跳回开头、时长显示成 Infinity。
         """
-        track = self.state.library.get(self._track_id())
-        if not track:
-            self._send(404, b"", "audio/mpeg")
-            return
-        path = Path(track["path"])
-        if not path.is_file():
-            self._send(404, b"", "audio/mpeg")
-            return
-
         size = path.stat().st_size
         start, end, status = 0, size - 1, 200
         raw = (self.headers.get("Range") or "").strip()
@@ -816,7 +807,7 @@ class Handler(BaseHTTPRequestHandler):
             status = 206
 
         length = end - start + 1
-        ctype = mimetypes.guess_type(path.name)[0] or "audio/mpeg"
+        ctype = mimetypes.guess_type(path.name)[0] or default_ctype
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Accept-Ranges", "bytes")
@@ -837,7 +828,25 @@ class Handler(BaseHTTPRequestHandler):
                     left -= len(chunk)
             except (BrokenPipeError, ConnectionResetError):
                 # 用户拖进度条/切歌时浏览器会直接断开，属于正常现象，别刷异常
-                logger.debug("音频连接被中断：%s", path.name)
+                logger.debug("%s连接被中断：%s", label, path.name)
+
+    def _send_audio(self) -> None:
+        track = self.state.library.get(self._track_id())
+        if not track:
+            self._send(404, b"", "audio/mpeg")
+            return
+        path = Path(track["path"])
+        if not path.is_file():
+            self._send(404, b"", "audio/mpeg")
+            return
+        self._send_range(path, "audio/mpeg", "音频")
+
+    def _send_video(self) -> None:
+        path = self.state.library.video_of(self._track_id())
+        if not path:
+            self._send(404, b"", "video/mp4")
+            return
+        self._send_range(path, "video/mp4", "视频")
 
     def _read_json(self) -> Dict[str, Any]:
         length = int(self.headers.get("Content-Length") or 0)
@@ -972,6 +981,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/media/audio":
             self._send_audio()
+            return
+
+        if path == "/api/media/video":
+            self._send_video()
             return
 
         if path == "/api/media/cover":
