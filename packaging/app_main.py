@@ -49,7 +49,24 @@ def main() -> int:
     if "--login" in sys.argv:
         from dly.gui import login_window
 
-        return login_window.main()
+        try:
+            return login_window.main()
+        except BaseException as exc:  # noqa: BLE001 登录窗崩了也不能弹原始 .NET 堆栈
+            logging.getLogger("dly").exception("登录窗异常退出")
+            # pythonnet/.NET 的类型加载异常可能是 Python 层 catch 不到的，
+            # 这里兜底弹友好提示，引导用户用「手动粘贴 Cookie」登录。
+            try:
+                from dly.gui.desktop import alert
+
+                alert(
+                    "登录窗口在这台电脑上启动失败（系统 .NET 组件不兼容）。\n\n"
+                    "请回 DLY 设置页，用「手动粘贴 Cookie 登录」完成登录。\n"
+                    "下载视频功能不受影响。",
+                    "登录方式已切换",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            return 2
 
     # 一次性小助手：独立进程给无边框主窗口补最小化样式位
     if "--patch-window-style" in sys.argv:

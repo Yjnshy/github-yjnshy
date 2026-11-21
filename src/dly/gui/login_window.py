@@ -165,6 +165,34 @@ def _has_marker(cookies, host: str, markers: tuple) -> bool:
     return False
 
 
+def _browser_fallback(site: "Site", reason: str) -> int:
+    """登录窗起不来时的降级：开系统浏览器 + 提示用户手动粘 Cookie。
+
+    某些机器（尤其是装了 .NET 8 桌面对应组件的）上，pywebview 的 WebView2
+    控件在 pythonnet 里创建会抛 ``System.Windows.Forms.ContextMenu`` 类型加载
+    异常。这不是账号/网络问题，继续弹原始堆栈只会吓到用户。这里改成：
+    用系统浏览器打开登录页，让用户登录，然后回 DLY 的登录区「手动粘贴 Cookie」。
+    """
+    _debug("登录窗降级到系统浏览器：%s（%s）", site.key, reason)
+    try:
+        import webbrowser
+        webbrowser.open(site.url)
+    except Exception:  # noqa: BLE001 打不开浏览器也别崩
+        pass
+    try:
+        from dly.gui.desktop import alert
+        alert(
+            "登录窗口在这台电脑上启动失败（系统 .NET 组件不兼容）。\n\n"
+            "已经用默认浏览器打开登录页。请在浏览器里登录完成后，\n"
+            "回到 DLY 设置页的「手动粘贴 Cookie 登录」，\n"
+            "把该网站的 Cookie 粘进去即可。下载视频功能不受影响。",
+            "登录方式已切换",
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    return EXIT_CANCELLED
+
+
 def run(platform: str) -> int:
     """打开登录窗并阻塞到结束，返回进程退出码。"""
     _debug("启动登录窗：platform=%r 用户=%s 家目录=%s 会话文件=%s",
@@ -188,12 +216,16 @@ def run(platform: str) -> int:
     from urllib.parse import urlparse
 
     host = urlparse(site.url).netloc
-    window = webview.create_window(
-        site.window_title, site.url,
-        width=480, height=760,
-        min_size=(400, 600),
-        text_select=True,
-    )
+    try:
+        window = webview.create_window(
+            site.window_title, site.url,
+            width=480, height=760,
+            min_size=(400, 600),
+            text_select=True,
+        )
+    except Exception as exc:  # noqa: BLE001 WebView2/.NET 控件创建失败
+        _debug("创建登录窗失败：%r", exc)
+        return _browser_fallback(site, f"create_window: {exc}")
 
     state = {"saved": False, "done": False,
              "final_check": False, "closing_once": False}
@@ -287,8 +319,9 @@ def run(platform: str) -> int:
 
     try:
         webview.start()
-    except Exception as exc:         # noqa: BLE001 WebView2 环境问题
-        raise DesktopUnavailable(f"登录窗口打开失败：{exc}") from exc
+    except Exception as exc:         # noqa: BLE001 WebView2/.NET 环境问题
+        _debug("登录窗启动失败：%r", exc)
+        return _browser_fallback(site, f"start: {exc}")
 
     return EXIT_OK if state["saved"] else EXIT_CANCELLED
 

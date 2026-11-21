@@ -139,3 +139,15 @@ def test_simplecookie_objects_are_supported():
     assert login_window._header_from_cookies([c, other], host) == "SESSDATA=sess-value"
     assert login_window._has_marker([c], host, ("SESSDATA",)) is True
     assert login_window._has_marker([other], host, ("SESSDATA",)) is False
+
+
+def test_browser_fallback_opens_browser_and_returns(monkeypatch):
+    """登录窗起不来时降级到系统浏览器，不抛异常。"""
+    opened = {}
+    monkeypatch.setattr("webbrowser.open", lambda url: opened.setdefault("url", url))
+    monkeypatch.setattr("dly.gui.desktop.alert", lambda *a, **k: None)
+    site = login_window.site_of("douyin")
+    assert site is not None
+    rc = login_window._browser_fallback(site, "test: .NET incompatible")
+    assert rc == login_window.EXIT_CANCELLED
+    assert opened.get("url") == site.url

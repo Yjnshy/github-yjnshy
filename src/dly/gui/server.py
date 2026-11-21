@@ -699,6 +699,24 @@ def _spawn_login_window(platform: str, force: bool = False) -> bool:
                                 stdout=subprocess.DEVNULL,
                                 stderr=subprocess.DEVNULL)
         _LOGIN_PROCS[platform] = proc
+
+        # 登录窗若在很短时间内就退出，多半是本机 .NET/WebView2 不兼容起不来。
+        # 子进程自己会弹降级提示，这里再在界面日志里说一句，避免看起来「没反应」。
+        def _watch_early_exit(p=proc, plat=platform):
+            try:
+                rc = p.wait(timeout=6)
+            except subprocess.TimeoutExpired:
+                return  # 活过 6 秒 = 正常打开，等用户登录
+            except Exception:  # noqa: BLE001 进程对象异常（含测试替身）就别管
+                return
+            if rc == 0:
+                return
+            # _LogBridge 会把模块日志转发到界面日志区，无需直接持有 state
+            logger.error("%s 登录窗未能启动（退出码 %s），请改用设置页的"
+                         "「手动粘贴 Cookie 登录」；下载视频不受影响。", plat, rc)
+
+        threading.Thread(target=_watch_early_exit, daemon=True,
+                         name=f"login-watch-{platform}").start()
         return True
 
 
