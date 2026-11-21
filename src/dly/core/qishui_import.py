@@ -452,7 +452,94 @@ def _track_from_option(opt: dict, source_url: str) -> QishuiTrack:
     )
 
 
-def _song_page(track_id: str) -> QishuiTrack:
+def full_version(track_id: str, sessionid: str) -> Optional[Dict[str, Any]]:
+    """用本机汽水客户端的签名 + 登录态，向 pc/track_v2 取完整版音频信息。
+
+    返回 dict(audio_url, duration, lyric) 或 None（没有签名/登录态/该曲无完整流）。
+    只借用客户端的 bdms.node 算签名头，不破解任何加密；仅用于个人离线备份。
+    """
+    sid = str(sessionid or "").strip()
+    if not sid or re.search(r"[;\s\x00-\x1F\x7F]", sid):
+        return None
+    try:
+        from dly.core import qishui_signer as signer
+        if not signer.signer_available():
+            logger.debug("汽水完整版跳过：本机无 node 或 bdms.node")
+            return None
+        ident = signer.device_identity()
+        url = signer.pc_track_v2_url(ident)
+        body = json.dumps({"track_id": str(track_id)}, ensure_ascii=False).encode("utf-8")
+        req_headers = {
+            "Host": "api.qishui.com",
+            "User-Agent": UA,
+            "Content-Type": "application/json",
+            "X-SS-STUB": signer.md5_stub(body),
+            "Cookie": f"sessionid={sid};",
+        }
+        signed = signer.sign_request(url, req_headers)
+        headers = dict(req_headers)
+        headers.update(signed)
+        req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            raw = resp.read()
+        if not raw:
+            logger.debug("汽水完整版返回空 body（签名可能被拒）")
+            return None
+        data = json.loads(raw.decode("utf-8", "replace"))
+        player = data.get("track_player") or {}
+        model_raw = player.get("video_model") or ""
+        if not model_raw:
+            return None
+        model = json.loads(model_raw) if isinstance(model_raw, str) else model_raw
+        vlist = model.get("video_list") or []
+        if not vlist:
+            return None
+        # 取码率最高的一档（列表通常按码率升序）
+        best = vlist[-1]
+        audio_url = str(best.get("main_url") or "")
+        if not audio_url:
+            return None
+        duration = float(model.get("video_duration") or 0)
+        # 完整版歌词：ttML 格式（[t,d]文本），转成 LRC
+        lyric = ""
+        content = (data.get("lyric") or {}).get("content") or ""
+        if content:
+            lyric = _ttml_to_lrc(content, offset_ms=0)
+        return {"audio_url": audio_url, "duration": duration, "lyric": lyric}
+    except Exception as exc:
+        logger.debug("汽水完整版获取失败 %s: %s", track_id, exc)
+        return None
+
+
+def _ttml_to_lrc(content: str, offset_ms: int = 0) -> str:
+    """汽水逐字歌词 [startMs,dur]<...>文本 行 → 普通 LRC（只要整行时间）。"""
+    lines = []
+    for raw in (content or "").splitlines():
+        raw = raw.strip()
+        if not raw.startswith("["):
+            continue
+        close = raw.find("]")
+        if close < 0:
+            continue
+        head = raw[1:close]
+        parts = head.split(",")
+        try:
+            start = int(parts[0])
+        except (ValueError, IndexError):
+            continue
+        start = max(0, start - offset_ms)
+        # 去掉 <...> 逐字标注，只留文字
+        text = re.sub(r"<[^>]*>", "", raw[close + 1:]).strip()
+        if not text:
+            continue
+        mm = start // 60000
+        ss = (start % 60000) // 1000
+        cc = (start % 1000) // 10
+        lines.append(f"[{mm:02d}:{ss:02d}.{cc:02d}]{text}")
+    return "\n".join(lines)
+
+
+def _song_page(track_id: str, sessionid: str = "") -> QishuiTrack:
     url = _SONG_PAGE.format(id=track_id)
     data = _page_router(url)
     ld = data.get("loaderData", {})
@@ -460,7 +547,19 @@ def _song_page(track_id: str) -> QishuiTrack:
     opt = page.get("audioWithLyricsOption") or {}
     if not opt:
         raise ValueError("单曲页里没有音频数据（可能需要登录或已下架）")
-    return _track_from_option(opt, url)
+    track = _track_from_option(opt, url)
+    # 有登录态 + 本机签名 → 用完整版覆盖试听数据
+    if sessionid:
+        full = full_version(track_id, sessionid)
+        if full:
+            track.audio_url = full["audio_url"]
+            if full.get("duration"):
+                track.duration = full["duration"]
+            if full.get("lyric"):
+                track.lyric = full["lyric"]
+            track.preview = False
+            track.clip_duration = 0
+    return track
 
 
 def _playlist_detail(playlist_id: str) -> QishuiCollection:
@@ -486,14 +585,15 @@ def _playlist_detail(playlist_id: str) -> QishuiCollection:
         kind="playlist",
         title=str(pl.get("title") or "汽水歌单"),
         tracks=tracks,
-        note="免登录只能拿到试听片段（约 30 秒）；完整音频需要抓包凭证",
+        note="免登录只能拿到试听片段（约 30 秒）；登录后可取完整版",
     )
 
 
-def _fill_audio(track: QishuiTrack, on_progress: Optional[Callable[[str, int, int], None]] = None) -> None:
-    """歌单接口不带音频直链，用单曲分享页补齐（仍免登录）。"""
+def _fill_audio(track: QishuiTrack, on_progress: Optional[Callable[[str, int, int], None]] = None,
+                sessionid: str = "") -> None:
+    """歌单接口不带音频直链，用单曲分享页补齐（有登录态则取完整版）。"""
     try:
-        full = _song_page(track.id)
+        full = _song_page(track.id, sessionid)
         track.audio_url = full.audio_url
         track.cover_url = track.cover_url or full.cover_url
         track.lyric = track.lyric or full.lyric
@@ -510,11 +610,12 @@ def _fill_audio(track: QishuiTrack, on_progress: Optional[Callable[[str, int, in
 
 def collect(parsed: Dict[str, str],
             on_progress: Optional[Callable[[str, int, int], None]] = None,
-            limit: int = 0) -> QishuiCollection:
+            limit: int = 0, sessionid: str = "") -> QishuiCollection:
     """按 parse_share 的结果采集。on_progress(阶段, 当前, 总数)。
 
     limit 在解析音频**之前**截断：歌单几百首时，只解析前 N 首，
     不然「只取前 10 首」还是要等全部解析完，看起来像没生效。
+    sessionid 有值时，配合本机汽水客户端签名取完整版音频（否则试听）。
     """
     kind, value = parsed.get("kind", ""), parsed.get("value", "")
     if kind == "short":
@@ -524,10 +625,10 @@ def collect(parsed: Dict[str, str],
         kind, value = parsed["kind"], parsed["value"]
 
     if kind == "track":
-        t = _song_page(value)
+        t = _song_page(value, sessionid)
+        note = "完整音频（本机签名 + 登录态）" if not t.preview else "免登录只能拿到试听片段（约 30 秒）"
         return QishuiCollection(
-            kind="track", title=t.title, tracks=[t],
-            note="免登录只能拿到试听片段（约 30 秒）",
+            kind="track", title=t.title, tracks=[t], note=note,
         )
 
     if kind == "playlist":
@@ -538,7 +639,7 @@ def collect(parsed: Dict[str, str],
         for i, t in enumerate(result.tracks, 1):
             if on_progress:
                 on_progress("解析音频", i, total)
-            _fill_audio(t, on_progress)
+            _fill_audio(t, on_progress, sessionid)
         return result
 
     raise ValueError("不支持的分享类型")
@@ -565,7 +666,20 @@ def download(track: QishuiTrack, out_dir: Path,
     audio_path = out_dir / build_filename(
         "汽水音乐", track.artist, track.title, ext=".m4a")
 
-    data = _http(track.audio_url, timeout=60, referer="https://www.douyin.com/")
+    # 完整版走 CDN，偶发代理 502；重试两次再放弃
+    data = b""
+    last_exc: Optional[Exception] = None
+    for attempt in range(3):
+        try:
+            data = _http(track.audio_url, timeout=60, referer="https://www.douyin.com/")
+            if data:
+                break
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if attempt < 2:
+                time.sleep(1.5 * (attempt + 1))
+    if not data and last_exc:
+        raise ValueError(f"音频下载失败（已重试）：{str(last_exc)[:100]}")
     if len(data) < 1024:
         raise ValueError("音频文件太小，可能已经失效")
     if not data[4:12].startswith(b"ftyp"):

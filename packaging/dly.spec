@@ -120,6 +120,7 @@ hiddenimports = [
     "dly.downloader.engine",
     "dly.downloader.images",
     "dly.core.douyin_import",
+    "dly.core.qishui_signer",   # 完整版签名桥接（函数内延迟导入）
     "dly.gui.dyimport_state",
     "websocket",
     "dly.recorder.recorder",

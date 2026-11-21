@@ -209,7 +209,8 @@ class QishuiState:
                     if cur <= 3 or cur % 20 == 0:
                         self._log("汽水音乐", f"{stage} {cur}/{total}", "info")
 
-                result = qi.collect(parsed, on_progress=progress, limit=limit)
+                result = qi.collect(parsed, on_progress=progress, limit=limit,
+                                    sessionid=self._sessionid)
                 self._run_download(result.title, result.kind, result.note,
                                    list(result.tracks), output_dir)
             except Exception as exc:  # noqa: BLE001
