@@ -389,10 +389,13 @@ def test_tunnel_plays_video_for_current_track(html):
 def test_tunnel_matches_grid_margins(html):
     """隧道视图跟网格视图保持同样的页边距和宽度：画面在卡片内铺满（padding 归零），
     卡片圆角裁剪画面，且不再用负边距突破 .main 留白。"""
-    assert "body.music-tunnel-view .main { overflow-y: auto; }" in html
-    # 画面尺寸固定（不随播放条出现而缩小）；没有播放条时加高撑满整屏
-    assert "height: calc(100vh - 142px);" in html
-    assert ":has(.player[hidden]) .music-card" in html
+    assert "body.music-tunnel-view .main { overflow: hidden; }" in html
+    # 画面用 flex 自适应，播放条显隐自动让位，不再写死高度+强制滚动
+    # （旧写法 calc(100vh-142px) 会在显示播放条时把隧道顶部切掉）
+    assert "height: calc(100vh - 142px);" not in html
+    assert "body.music-tunnel-view #panel-music .music-card {" in html
+    assert "flex: 1; min-height: 0; height: auto;" in html
+    assert "body.music-tunnel-view #panel-music .music-tunnel-wrap { flex: 1; min-height: 0; }" in html
     # 「显示播放条」开关：有它才在隧道里露出播放条，否则只显示整屏隧道
     assert 'id="opt-tunnel-player"' in html
     assert "tunnelHide = musicView === 'tunnel' && !tunnelShowsPlayer" in html
@@ -400,7 +403,7 @@ def test_tunnel_matches_grid_margins(html):
     assert "function syncTunnelScroll()" in html
     # 未勾选时用 CSS 兜底强制藏播放条（JS 时序靠不住）
     assert "body.music-tunnel-view.no-tunnel-player #panel-music .player { display: none !important; }" in html
-    assert "body.music-tunnel-view #panel-music .player { position: static; margin-top: 0; }" in html
+    assert "body.music-tunnel-view #panel-music .player { position: static; margin-top: 0; flex: none; }" in html
     assert "padding: 0; border: 0; border-radius: 14px; overflow: hidden;" in html
     assert "body.music-tunnel-view #panel-music .music-tunnel { border-radius: 0; }" in html
     # 不能再靠负边距把卡片撑到窗口边缘

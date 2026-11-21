@@ -79,6 +79,7 @@ class QishuiTrack:
     cover_url: str = ""
     audio_url: str = ""
     duration: float = 0.0
+    clip_duration: float = 0.0   # 试听片段实际时长（LRC length 用它）
     preview: bool = True
     lyric: str = ""
     source_url: str = ""
@@ -413,19 +414,24 @@ def _track_from_option(opt: dict, source_url: str) -> QishuiTrack:
     if not artist and artists:
         artist = artists[0].get("name") or artists[0].get("simple_display_name") or ""
     lyrics = opt.get("lyrics") or {}
+    # 免登录拿到的是试听片段：音频从原曲 offsetStart 秒开始，但歌词时间戳
+    # 是按整首算的。生成 LRC 必须减掉这个偏移，否则歌词整体提前一大截。
+    try:
+        offset_ms = int(float(opt.get("offsetStart") or 0) * 1000)
+    except (TypeError, ValueError):
+        offset_ms = 0
     lines = []
     for s in lyrics.get("sentences") or []:
         text = s.get("text")
         if not text:
             continue
-        start = int(s.get("startMs") or 0)
-        if start > 0:
-            mm = start // 60000
-            ss = (start % 60000) // 1000
-            cc = (start % 1000) // 10
-            lines.append(f"[{mm:02d}:{ss:02d}.{cc:02d}]{text}")
-        else:
-            lines.append(text)
+        start = int(s.get("startMs") or 0) - offset_ms
+        if start < 0:
+            continue          # 试听开始前的句子，音频里根本没有
+        mm = start // 60000
+        ss = (start % 60000) // 1000
+        cc = (start % 1000) // 10
+        lines.append(f"[{mm:02d}:{ss:02d}.{cc:02d}]{text}")
     dur = opt.get("duration") or 0
     try:
         duration = float(dur)
@@ -439,6 +445,7 @@ def _track_from_option(opt: dict, source_url: str) -> QishuiTrack:
         cover_url=str(opt.get("coverURL") or _cover_of(info) or ""),
         audio_url=str(opt.get("url") or ""),
         duration=duration,
+        clip_duration=float(opt.get("offsetDuration") or 0),
         preview=True,
         lyric="\n".join(lines),
         source_url=source_url,
@@ -502,8 +509,13 @@ def _fill_audio(track: QishuiTrack, on_progress: Optional[Callable[[str, int, in
 
 
 def collect(parsed: Dict[str, str],
-            on_progress: Optional[Callable[[str, int, int], None]] = None) -> QishuiCollection:
-    """按 parse_share 的结果采集。on_progress(阶段, 当前, 总数)。"""
+            on_progress: Optional[Callable[[str, int, int], None]] = None,
+            limit: int = 0) -> QishuiCollection:
+    """按 parse_share 的结果采集。on_progress(阶段, 当前, 总数)。
+
+    limit 在解析音频**之前**截断：歌单几百首时，只解析前 N 首，
+    不然「只取前 10 首」还是要等全部解析完，看起来像没生效。
+    """
     kind, value = parsed.get("kind", ""), parsed.get("value", "")
     if kind == "short":
         parsed = _resolve_short(value)
@@ -520,6 +532,8 @@ def collect(parsed: Dict[str, str],
 
     if kind == "playlist":
         result = _playlist_detail(value)
+        if limit and limit > 0:
+            result.tracks = result.tracks[:limit]   # 先截断，再逐首解析
         total = len(result.tracks)
         for i, t in enumerate(result.tracks, 1):
             if on_progress:

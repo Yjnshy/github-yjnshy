@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shutil
 import threading
 import time
@@ -153,6 +154,24 @@ class QishuiState:
         self._set(logged_in=False, playlists=[])
         self._log("汽水音乐", "已退出登录", "info")
 
+    def login_with_cookie(self, raw: str) -> None:
+        """扫码失败时的兜底：直接粘浏览器 Cookie，从中取 sessionid。"""
+        cookie = (raw or "").strip()
+        if not cookie:
+            raise ValueError("先粘贴 Cookie")
+        sid = ""
+        for name in ("sessionid", "sessionid_ss", "sid_tt", "sid_guard"):
+            m = re.search(r"(?:^|[;\s])" + name + r"=([^;\s]+)", cookie, re.I)
+            if m:
+                sid = m.group(1)
+                break
+        if not sid:
+            raise ValueError("Cookie 里没有找到 sessionid 等登录凭证")
+        self._sessionid = sid
+        self._save_auth()
+        self._set(logged_in=True, qrcode="", qr_expire=0, error="")
+        self._log("汽水音乐", "已从 Cookie 登录", "ok")
+
     def load_playlists(self) -> List[Dict[str, str]]:
         """拉我的歌单列表（含「我喜欢」），失败时给出明确错误。"""
         if not self._sessionid:
@@ -166,16 +185,15 @@ class QishuiState:
         return pls
 
     def start_from_playlist(self, playlist_id: str, limit: int = 0) -> None:
-        """从登录态歌单 ID 采集：把解析结果直接灌进现有采集流程。"""
+        """从登录态歌单 ID 采集：走和链接采集完全一样的后台流程。"""
         if not self._sessionid:
             raise RuntimeError("请先扫码登录")
-        result = qi.collect({"kind": "playlist", "value": playlist_id})
-        tracks = result.tracks[:limit] if limit and limit > 0 else result.tracks
-        self._run_download(result.title, result.kind, result.note, tracks, "")
+        self._start_common({"kind": "playlist", "value": playlist_id},
+                           limit=limit, output_dir="")
 
-    # -- 采集 -------------------------------------------------------------
-
-    def start(self, text: str, output_dir: str = "", limit: int = 0) -> None:
+    def _start_common(self, parsed: dict, limit: int = 0,
+                      output_dir: str = "") -> None:
+        """两个入口共用：检查 busy → 清空旧结果 → 后台解析下载。"""
         with self._lock:
             if self._busy:
                 raise RuntimeError("正在采集中，请稍候")
@@ -186,28 +204,29 @@ class QishuiState:
 
         def work() -> None:
             try:
-                parsed = qi.parse_share(text)
-                self._set(stage="读取歌单")
-
                 def progress(stage: str, cur: int, total: int) -> None:
                     self._set(stage=stage, total=total)
                     if cur <= 3 or cur % 20 == 0:
                         self._log("汽水音乐", f"{stage} {cur}/{total}", "info")
 
-                result = qi.collect(parsed, on_progress=progress)
-                tracks: List[qi.QishuiTrack] = result.tracks
-                if limit and limit > 0:
-                    tracks = tracks[:limit]
+                result = qi.collect(parsed, on_progress=progress, limit=limit)
                 self._run_download(result.title, result.kind, result.note,
-                                   tracks, output_dir)
+                                   list(result.tracks), output_dir)
             except Exception as exc:  # noqa: BLE001
                 logger.exception("汽水采集失败")
                 self._set(error=str(exc)[:300], stage="失败", busy=False)
                 self._log("汽水音乐", f"采集失败：{exc}", "err")
+            finally:
                 with self._lock:
                     self._busy = False
 
         threading.Thread(target=work, daemon=True).start()
+
+    # -- 采集 -------------------------------------------------------------
+
+    def start(self, text: str, output_dir: str = "", limit: int = 0) -> None:
+        self._start_common(qi.parse_share(text), limit=limit,
+                           output_dir=output_dir)
 
     def _run_download(self, title: str, kind: str, note: str,
                       tracks: List[qi.QishuiTrack], output_dir: str) -> None:
@@ -244,7 +263,8 @@ class QishuiState:
                         try:
                             lrc_path = got.audio.with_suffix(".lrc")
                             lrc_path.write_text(
-                                qi.build_lrc(t.lyric, t.duration), encoding="utf-8")
+                                qi.build_lrc(t.lyric, t.clip_duration or t.duration),
+                                encoding="utf-8")
                         except OSError as exc:
                             logger.debug("写歌词失败 %s: %s", t.id, exc)
                     added += 1

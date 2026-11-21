@@ -1158,6 +1158,15 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": True})
             return
 
+        if path == "/api/qishui/cookie":
+            try:
+                self.state.qishui.login_with_cookie(
+                    (data.get("cookie") or "").strip())
+                self._json({"ok": True})
+            except Exception as exc:  # noqa: BLE001
+                self._json({"error": str(exc)}, 400)
+            return
+
         if path == "/api/qishui/playlists":
             try:
                 self._json({"ok": True,

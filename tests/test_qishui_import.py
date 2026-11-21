@@ -58,6 +58,23 @@ def test_track_from_option_extracts_fields():
     assert t.cover_url.endswith(".jpg")
     assert "第一句" in t.lyric and "第二句" in t.lyric
     assert t.preview is True
+
+
+def test_track_lyric_offsets_for_preview():
+    """免登录是试听片段：歌词时间戳必须减掉 offsetStart，否则整体不同步。"""
+    opt = {
+        "track_id": "123", "trackName": "歌", "offsetStart": 143.808,
+        "lyrics": {"sentences": [
+            {"startMs": 100, "text": "前奏（试听前，丢弃）"},
+            {"startMs": 145000, "text": "第一句"},
+            {"startMs": 146500, "text": "第二句"},
+        ]},
+        "trackInfo": {},
+    }
+    t = qi._track_from_option(opt, "")
+    assert "前奏" not in t.lyric
+    assert "[00:01.19]第一句" in t.lyric
+    assert "[00:02.69]第二句" in t.lyric
     lrc = qi.build_lrc(t.lyric, 123.4)
     assert lrc.startswith("[by:")
     assert "[length:02:03]" in lrc
