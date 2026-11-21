@@ -519,7 +519,7 @@ def test_batch_delete_ui(html):
     for marker in ('id="batch-bar"', 'id="batch-toggle"', 'id="batch-delete"',
                    'function toggleBatchMode()', 'function batchToggleOne(id, ev) {', 'id="batch-done"',
                    'function batchSelectAll()', 'function batchDelete()',
-                   "marquee.className = 'batch-marquee'", 'batchSelected.has(Number(el.dataset.tid))'):
+                   "marquee.classList.toggle('removing', !!willRemove)", 'batchSelected.has(Number(el.dataset.tid))'):
         assert marker in html, marker
     # 删除必须经过后端的 library/remove（支持 delete_file）
     assert "'/api/library/remove'" in html
@@ -538,7 +538,9 @@ def test_batch_delete_ui(html):
     assert "ev.target.closest('button, input, select, textarea, a, #batch-bar')" in html
     # 右键框选取消 + 完成按钮
     assert "start.remove" in html
-    assert "marquee.className = 'batch-marquee' + (marqueeStart.remove ? ' removing' : '')" in html
+    assert "marquee.classList.toggle('removing', !!willRemove)" in html
+    # 左键框住已选中的自动变取消（框变红），不必非得用右键
+    assert "[...inBox].every(id => batchSelected.has(id))" in html
     # 切模式要重渲染，勾选框才会出现
     assert "if (typeof renderMusic === 'function') renderMusic();" in html
 
