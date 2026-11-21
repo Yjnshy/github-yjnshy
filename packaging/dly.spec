@@ -212,4 +212,16 @@ if _out_bin.is_dir():
             _node_src = Path(_nf) if _nf else None
         if _node_src and _node_src.is_file():
             _shutil.copy2(_node_src, _out_bin / "node.exe")
-            print(f"[打包修复] 覆盖 {_tool}: {_source_tool}")
+
+# pywebview 自带的 WebView2 互操作 DLL 版本较旧，WinForms.dll 引用了
+# System.Windows.Forms.ContextMenu（.NET 6+ 已移除）。在装了 .NET 8 桌面运行时的
+# 机器上，创建登录窗会抛 TypeLoadException（"Could not load type ContextMenu"），
+# 登录窗起不来。用 NuGet 1.0.3240.44 的 netcoreapp3.0 版 DLL 覆盖，
+# 改用 ContextMenuStrip，.NET Framework 与 .NET 8 都能用。
+_wv2_src = ROOT / "packaging" / "webview2_dlls"
+_wv2_dst = Path(DISTPATH) / APP_NAME / "_internal" / "webview" / "lib"
+if _wv2_src.is_dir() and _wv2_dst.is_dir():
+    for _dll in ("Microsoft.Web.WebView2.WinForms.dll", "Microsoft.Web.WebView2.Core.dll"):
+        if (_wv2_src / _dll).is_file():
+            _shutil.copy2(_wv2_src / _dll, _wv2_dst / _dll)
+            print(f"[打包修复] 覆盖新版 WebView2 DLL: {_dll}")
