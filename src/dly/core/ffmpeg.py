@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -34,10 +35,16 @@ def _search_dirs(configured: str, name: str) -> Optional[str]:
     if found:
         return found
 
-    for c in (rf"C:\ffmpeg\bin\{name}{_EXE}",
-              rf"E:\Program Files (x86)\ytdlp\bin\{name}{_EXE}"):
-        if Path(c).is_file():
-            return c
+    # 最后兜底：扫描所有盘符的常见 ffmpeg 位置（不写死具体盘）
+    if sys.platform.startswith("win"):
+        import string as _string
+        for letter in _string.ascii_uppercase:
+            drive = f"{letter}:\\"
+            for sub in (r"ffmpeg\bin", r"Program Files (x86)\ytdlp\bin",
+                        r"Program Files\ytdlp\bin"):
+                c = Path(drive) / sub / f"{name}{_EXE}"
+                if c.is_file():
+                    return str(c)
     return None
 
 

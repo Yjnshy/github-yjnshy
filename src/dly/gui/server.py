@@ -1743,9 +1743,12 @@ def browser_exe(name: str) -> str:
     except OSError:
         pass
     roots = [os.environ.get("ProgramFiles(x86)", ""),
-             os.environ.get("ProgramFiles", ""),
-             r"C:\Program Files (x86)", r"C:\Program Files",
-             r"D:\Program Files (x86)", r"D:\Program Files"]
+             os.environ.get("ProgramFiles", "")]
+    # 枚举所有盘符的 Program Files，浏览器可能装在不常见的盘（不写死 C/D）
+    import string as _string
+    for letter in _string.ascii_uppercase:
+        drive = f"{letter}:\\"
+        roots += [drive + "Program Files (x86)", drive + "Program Files"]
     folder = "Microsoft/Edge/Application" if name == "msedge.exe" else "Google/Chrome/Application"
     for root in roots:
         if not root:

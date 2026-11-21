@@ -42,13 +42,26 @@ except Exception:  # noqa: BLE001 退回按路径找 WindowsDesktop 运行时里
     import glob as _glob
     import os as _os
 
-    _root = _os.environ.get("DOTNET_ROOT") or r"C:\\Program Files\\dotnet"
-    _hits = sorted(_glob.glob(_os.path.join(
-        _root, "shared", "Microsoft.WindowsDesktop.App", "*",
-        "Microsoft.Win32.SystemEvents.dll")))
+    import string as _string
+    _roots = []
+    _env_root = _os.environ.get("DOTNET_ROOT", "").strip()
+    if _env_root:
+        _roots.append(_env_root)
+    for _env in ("ProgramFiles", "ProgramFiles(x86)"):
+        _pf = _os.environ.get(_env, "").strip()
+        if _pf:
+            _roots.append(_os.path.join(_pf, "dotnet"))
+    for _letter in _string.ascii_uppercase:
+        _roots.append(_os.path.join(_letter + ":", _os.sep, "Program Files", "dotnet"))
+        _roots.append(_os.path.join(_letter + ":", _os.sep, "Program Files (x86)", "dotnet"))
+    _hits = []
+    for _root in _roots:
+        _hits += _glob.glob(_os.path.join(
+            _root, "shared", "Microsoft.WindowsDesktop.App", "*",
+            "Microsoft.Win32.SystemEvents.dll"))
     if not _hits:
         raise
-    clr.AddReference(_hits[-1])
+    clr.AddReference(sorted(_hits)[-1])
 from Microsoft.Win32 import SystemEvents  # noqa: E402'''
 
 STUB = '''class OpenFolderDialog:  # patched: 原实现依赖 .NET Framework 的 FileDialogNative

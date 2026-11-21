@@ -44,13 +44,28 @@ except Exception:  # noqa: BLE001 退回按路径找 WindowsDesktop 运行时里
     import glob as _glob
     import os as _os
 
-    _root = _os.environ.get("DOTNET_ROOT") or r"C:\Program Files\dotnet"
-    _hits = sorted(_glob.glob(_os.path.join(
-        _root, "shared", "Microsoft.WindowsDesktop.App", "*",
-        "Microsoft.Win32.SystemEvents.dll")))
+    # .NET 桌面运行时可能装在不同盘/目录：环境变量优先，其次各盘 Program Files，
+    # 不写死 C 盘（用户把 .NET 装在 D 盘时旧写法会失败）。
+    import string as _string
+    _roots = []
+    _env_root = _os.environ.get("DOTNET_ROOT", "").strip()
+    if _env_root:
+        _roots.append(_env_root)
+    for _env in ("ProgramFiles", "ProgramFiles(x86)"):
+        _pf = _os.environ.get(_env, "").strip()
+        if _pf:
+            _roots.append(_os.path.join(_pf, "dotnet"))
+    for _letter in _string.ascii_uppercase:
+        _roots.append(_os.path.join(_letter + ":", _os.sep, "Program Files", "dotnet"))
+        _roots.append(_os.path.join(_letter + ":", _os.sep, "Program Files (x86)", "dotnet"))
+    _hits = []
+    for _root in _roots:
+        _hits += _glob.glob(_os.path.join(
+            _root, "shared", "Microsoft.WindowsDesktop.App", "*",
+            "Microsoft.Win32.SystemEvents.dll"))
     if not _hits:
         raise
-    clr.AddReference(_hits[-1])
+    clr.AddReference(sorted(_hits)[-1])
 from Microsoft.Win32 import SystemEvents  # noqa: E402
 from System import Array, Environment, Func, Int32, IntPtr, Object, Type, UInt32  # noqa: E402
 from System.Drawing import Color, ColorTranslator, Icon, Point, Size, SizeF  # noqa: E402
