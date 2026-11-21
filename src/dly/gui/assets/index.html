@@ -5290,7 +5290,12 @@ function bindAudio() {
   audio.addEventListener('canplay', () => { player.switching = false; });
   audio.addEventListener('error', () => { player.switching = false; });
   audio.addEventListener('ended', () => nextTrack(true));
-  audio.addEventListener('play', () => { setPlayIcon(true); syncTunnelVideo(true); });
+  audio.addEventListener('play', () => {
+    // 已经在播了，必然加载完成：兜底解除 switching。
+    // 否则某些音频不触发 loadedmetadata/canplay 时 switching 卡 true，进度条永久不动。
+    player.switching = false;
+    setPlayIcon(true); syncTunnelVideo(true);
+  });
   audio.addEventListener('pause', () => {
     setPlayIcon(false); savePosition(true); syncTunnelVideo(false);
   });
